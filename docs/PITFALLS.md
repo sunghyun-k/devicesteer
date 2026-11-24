@@ -15,7 +15,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Topic | Entries |
 |---|---|
 | Screen streams (displayservice) | #1, #2, #7, #11, #13 |
-| Connection and tunnel | #3, #4 |
+| Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8 |
 | Display info | #9 |
@@ -57,7 +57,7 @@ device keeps one RSD peer per tunnel.
 
 The Rust path opens its **own** tunnel through lockdown's CoreDeviceProxy (as pymobiledevice3 and
 iphone-cli do), so it should not share `remoted`'s tunnel. Still unverified: after touching
-connection code, run an Xcode build to the device while a session is open.
+connection code, run an Xcode build to the device while a session is open. (Checked once: #16.)
 
 ### 4. Wi-Fi needs a heartbeat, and timing differs from USB
 
@@ -230,3 +230,13 @@ the page to its picture (worst 116 ms, the first keyframe). The page reports the
 - Windows (WebView2) is untested. If a web view lacks HEVC in WebCodecs, the fallback is to
   decode in the Tauri process (VideoToolbox / Media Foundation) and send pictures, or to have the
   daemon send JPEG snapshots.
+
+### 16. Xcode keeps working while our tunnel is open (#3 checked)
+
+With the daemon holding its own tunnel, an audio + video media session, HID and the accessibility
+subscription (iPhone, iOS 27.2.1, USB): `devicectl list devices`, `device info details` (tunnel
+`connected`, DDI services available), `device info apps` and `device info processes` all
+succeeded; `xcodebuild -showdestinations` listed the device; and `xcodebuild build -destination
+id=<udid>` of a small app succeeded in 12 s. Our session survived it: streams kept flowing and a
+tap afterwards worked. Installing and launching from Xcode (`xcodebuild test` or Run) was not
+tried.

@@ -31,9 +31,9 @@ usbmuxd (USB or Wi-Fi) -> lockdown -> CoreDeviceProxy -> CDTunnel
   -> userspace TCP stack (jktcp) -> RSD handshake -> RemoteXPC services
 ```
 
-Planned shape: one daemon per device owns the tunnel and the screen stream; the CLI, an MCP server
-for agents, and the Tauri viewer (live screen, human control, take over/stop while an agent drives,
-touch indicators, recording) all attach to it.
+Shape: one daemon per device owns the tunnel, the screen-sharing media session, HID and the
+accessibility subscription; the CLI, the Tauri viewer (live screen, human control, take over/stop
+while an agent drives, touch indicators) and later an MCP server all attach to it.
 
 There is no public API for any of this, so **observation, not documentation, is the source of
 truth.** `docs/PITFALLS.md` records why things are the way they are.
@@ -42,10 +42,17 @@ truth.** `docs/PITFALLS.md` records why things are the way they are.
 
 ```text
 Cargo.toml          Workspace; pins idevice to a git commit (see below)
-crates/core/        iphone-use-core: device list, tunnel session, RSD services, screenshot
-crates/cli/         iphone-use-cli, binary `iphone-use`: devices, services, screenshot (JSON output)
-app/                Tauri v2 viewer: Vite + TypeScript front end
-app/src-tauri/      Tauri shell (workspace member), depends on iphone-use-core
+crates/core/        iphone-use-core: all device I/O. Tunnel session, display info, media streams
+                    (media.rs), HID input, accessibility tree (ax/), video frames, MP4 recording,
+                    and Controller, which ties them together for one device
+crates/daemon/      iphone-use-daemon: the per-device daemon (Unix socket; Windows pipe still to
+                    do), its wire format, agent/human control state, and the Client both the CLI
+                    and the viewer use
+crates/cli/         binary `iphone-use`: JSON CLI. Device commands go through the daemon, which
+                    it starts on demand (`--no-daemon` for the direct path)
+app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC decoding)
+app/src-tauri/      Tauri shell (workspace member), a daemon client
+THIRD_PARTY_NOTICES.md  Code adapted from other projects, with their licenses
 docs/PITFALLS.md    Numbered observations, cited from code as PITFALLS #N
 ```
 
