@@ -67,6 +67,8 @@ connection code, run an Xcode build to the device while a session is open.
 
 - Old #13: captures arrive as 16-bit PNG (about 10 MB for a 1290×2796 screen). Re-encoding to 8-bit
   makes them ~30× smaller. `screenshot` does not re-encode yet.
+  Still true on the idevice path: an iPhone on iOS 27.2.1 over USB returned a 16-bit RGBA PNG of
+  8.6 MB for 1284×2778 (about 2.9 s for the whole command in a debug build).
 - Old #25: a capture succeeds with a black image while the screen is off.
 - Old #51: a foldable iPhone has two panels. Without `displayUniqueID` the device captures the
   first one (the cover panel), which is black while unfolded. Pick the `active` panel from
