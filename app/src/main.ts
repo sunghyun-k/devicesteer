@@ -1,5 +1,9 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+// Dev only: `?mock` runs the viewer against a fake backend in a plain browser (see src/mock.ts).
+// Vite replaces `import.meta.env.DEV` with false in builds, which drops the mock entirely.
+if (import.meta.env.DEV && new URLSearchParams(location.search).has("mock")) (await import("./mock")).installMock();
+
 /** Mirrors `iphone_use_core::DeviceInfo`. */
 interface DeviceInfo {
   udid: string;
