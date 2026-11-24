@@ -1768,6 +1768,7 @@ dependencies = [
  "idevice",
  "plist",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "uuid",

@@ -8,8 +8,9 @@ so at the top, with the source path.
 <https://github.com/HyunSeob/iphone-cli>
 
 Adapted: CoreDevice request building, stopping streams by `RemoteSSRC`, the media-session
-bring-up, HID input timing, `getdisplayinfo` parsing (`crates/core/src/coredevice.rs`,
-`media.rs`, `input.rs`, `display.rs`).
+bring-up, HID input timing, `getdisplayinfo` parsing, the accessibility subscription, NSKeyedArchive reader, dump format,
+attribute table and tree walk (`crates/core/src/coredevice.rs`, `media.rs`, `input.rs`,
+`display.rs`, `ax/`).
 
 ```text
 MIT License

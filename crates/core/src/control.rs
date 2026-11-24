@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::{
     Session,
+    ax::{AxClient, BuildOptions, Screen},
     display::Display,
     input::{Button, Input, Motion, TAP_HOLD},
     media::{MediaMode, MediaSession, MediaStatus},
@@ -32,13 +33,19 @@ pub struct Controller {
     display: Option<Display>,
     media: Option<MediaSession>,
     input: Option<Input>,
+    ax: Option<AxClient>,
     mode: MediaMode,
+    /// The last reading, for `@eN` refs.
+    pub last_screen: Option<Screen>,
 }
+
+/// Longest wait for one accessibility reading.
+const AX_TIMEOUT: Duration = Duration::from_secs(15);
 
 impl Controller {
     /// Wraps an open session. `mode` decides whether the media session also carries video.
     pub fn new(session: Session, mode: MediaMode) -> Self {
-        Self { session, display: None, media: None, input: None, mode }
+        Self { session, display: None, media: None, input: None, ax: None, mode, last_screen: None }
     }
 
     /// The display in use, asked once and then reused (call [`Self::refresh_display`] after a turn).
@@ -117,6 +124,25 @@ impl Controller {
     pub async fn button(&mut self, button: Button) -> Result<()> {
         let (input, _) = self.ensure_input().await?;
         input.button(button).await
+    }
+
+    /// Reads the screen's accessibility tree. `full` waits for the second pass (identifiers).
+    pub async fn ui(&mut self, opts: BuildOptions, full: bool) -> Result<Screen> {
+        if self.ax.is_none() {
+            self.ax = Some(AxClient::open(self.session.adapter(), self.session.rsd()).await?);
+        }
+        let read = self.ax.as_mut().expect("opened above").read(AX_TIMEOUT, full).await;
+        let dump = match read {
+            Ok(d) => d,
+            Err(e) => {
+                // A closed or stuck subscription is reopened on the next call.
+                self.ax = None;
+                return Err(e);
+            }
+        };
+        let screen = tokio::task::spawn_blocking(move || Screen::build(&dump, opts)).await?;
+        self.last_screen = Some(screen.clone());
+        Ok(screen)
     }
 
     pub fn media(&self) -> Option<&MediaSession> {

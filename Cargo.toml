@@ -24,6 +24,8 @@ idevice = { git = "https://github.com/jkcoxson/idevice", rev = "c8fff6d7fb2690ea
   "core_device",
   # Screen-sharing media streams and CoreDevice HID (touch, buttons).
   "display_stream",
+  # DTX, for the accessibility service.
+  "dvt",
 ] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

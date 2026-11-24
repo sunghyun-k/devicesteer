@@ -19,6 +19,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8 |
 | Display info | #9 |
+| Accessibility tree | #10 |
 
 ## Entries
 
@@ -129,3 +130,22 @@ The answer lists the panel plus sizeless "wireless" displays. Only foldables mar
 sized display with `primary: true` there. Its touchscreen's HID product name is
 `CoreDevice touchscreen(nil)`, so "nil" stands in for the missing id. `displayId` (1 for the
 panel) is what the video stream's `VideoStreamForDisplayID` takes.
+
+### 10. Reading the accessibility tree
+
+`remoteAXService` over DTX, as iphone-cli does it (`crates/core/src/ax/`):
+
+- `clientNeedsAccessibility:` asks for a dump; it comes back as `processDataFromRemoteDevice:`,
+  two NSKeyedArchive layers deep, in two passes: labels/frames/roles/traits/values first,
+  identifiers about 0.5 s later. Every new request restarts the device's quiet period before it
+  answers, so ask once and wait; ask again only after 6.5 s without an answer. A dump arriving
+  within 0.7 s of a request answers an older one (or was sent unasked) and is not taken.
+- Measured on the test iPhone (iOS 27.2.1, USB, new tunnel per command): the first pass took
+  0.8 to 1.6 s on a still screen; with `--full` 2.0 to 2.9 s. A `ui` command took ~2.4 s end to end.
+- Right after `launch`, the first reading had no elements (the app was still animating in); the
+  next one, a second later, was complete.
+- Calculator's display has no label or value: the number is only in the second pass's
+  identifier (`StandardInputView;value:15`). So `ui` keeps containers that carry an identifier,
+  and reading such values needs `ui --full`.
+- Labels are localized (the test device is Korean). Labels compared in code would have to be
+  per-language; `tap <label>` takes whatever the screen shows.

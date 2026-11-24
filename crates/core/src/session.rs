@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, bail};
 use idevice::{
     IdeviceService, RsdService,
-    core_device::{ImageFormat, ScreenCaptureServiceClient},
+    core_device::{AppServiceClient, ImageFormat, ScreenCaptureServiceClient},
     core_device_proxy::CoreDeviceProxy,
     heartbeat::HeartbeatClient,
     provider::IdeviceProvider,
@@ -133,6 +133,17 @@ impl Session {
     pub async fn display(&mut self) -> Result<Display> {
         let mut link: DeviceInfoLink = self.connect().await?;
         step("display info", link.active_display()).await
+    }
+
+    /// Launches an app by bundle id (bringing it to the front if it runs). Returns its pid.
+    pub async fn launch(&mut self, bundle_id: &str, relaunch: bool) -> Result<u64> {
+        let mut client: AppServiceClient<_> = self.connect().await?;
+        let r = step(
+            "app launch",
+            client.launch_application(bundle_id, &[], relaunch, false, None, None, None),
+        )
+        .await?;
+        Ok(u64::from(r.pid))
     }
 
     /// Captures the active display as PNG.

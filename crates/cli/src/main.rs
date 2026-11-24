@@ -6,7 +6,9 @@ use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use iphone_use_core::{Button, Controller, MediaMode, Motion, Session, list_devices};
+use iphone_use_core::{
+    Button,
+    ax::{BuildOptions, Screen}, Controller, MediaMode, Motion, Session, list_devices};
 use serde_json::json;
 
 #[derive(Parser)]
@@ -48,11 +50,24 @@ enum Command {
         #[command(flatten)]
         target: Target,
     },
-    /// Tap a point given as `x,y` in screen points (as the screen is turned now).
+    /// Read the screen's accessibility tree: elements with role, label, value, frame and an
+    /// `@eN` ref that `tap` takes until the next `ui`.
+    Ui {
+        #[command(flatten)]
+        target: Target,
+        /// Also list containers with nothing to read and elements outside the screen.
+        #[arg(long)]
+        all: bool,
+        /// Wait for the second pass, which adds accessibility identifiers (slower).
+        #[arg(long)]
+        full: bool,
+    },
+    /// Tap a point (`x,y` in screen points), an element by `@eN` ref from the last `ui`, or an
+    /// element by its label (read fresh; exact match first, then a unique substring).
     Tap {
         #[command(flatten)]
         target: Target,
-        /// `x,y` in points.
+        /// `x,y`, `@eN`, or a label.
         at: String,
     },
     /// Drag one finger from `x,y` to `x,y` (points).
@@ -68,6 +83,15 @@ enum Command {
         /// (a scroll step). Without it the content keeps coasting.
         #[arg(long)]
         place: bool,
+    },
+    /// Launch an app by bundle id, such as com.apple.calculator.
+    Launch {
+        #[command(flatten)]
+        target: Target,
+        bundle_id: String,
+        /// Kill the running instance first.
+        #[arg(long)]
+        relaunch: bool,
     },
     /// Press a hardware button: home, lock, volume_up, volume_down.
     Button {
@@ -141,11 +165,35 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             let d = session.display().await?;
             json!({ "udid": session.udid, "display": d, "screen": d.size() })
         }
-        Command::Tap { target, at } => {
-            let at = parse_point(&at)?;
+        Command::Ui { target, all, full } => {
             with_controller(&target, async |c| {
-                let sent = c.tap(at).await?;
-                Ok(json!({ "tapped": [at.0, at.1], "screen": sent.screen, "ms": sent.ms }))
+                let began = std::time::Instant::now();
+                let screen = c.ui(BuildOptions { all }, full).await?;
+                save_refs(&c.session.udid, &screen);
+                let mut v = serde_json::to_value(&screen)?;
+                v["ms"] = json!(began.elapsed().as_millis() as u64);
+                Ok(v)
+            })
+            .await?
+        }
+        Command::Tap { target, at } => {
+            with_controller(&target, async |c| {
+                let (point, element) = if let Ok(p) = parse_point(&at) {
+                    (p, json!(null))
+                } else if at.starts_with('@') {
+                    let saved = load_refs(&c.session.udid)?;
+                    let e = saved.find(&at).map_err(anyhow::Error::msg)?;
+                    let frame = e.frame.context("that element has no frame to tap")?;
+                    (frame.center(), json!({ "ref": e.reference, "role": e.role, "frame": frame }))
+                } else {
+                    let screen = c.ui(BuildOptions::default(), false).await?;
+                    save_refs(&c.session.udid, &screen);
+                    let e = screen.find(&at).map_err(anyhow::Error::msg)?;
+                    let frame = e.frame.context("that element has no frame to tap")?;
+                    (frame.center(), serde_json::to_value(e)?)
+                };
+                let sent = c.tap(point).await?;
+                Ok(json!({ "tapped": [point.0, point.1], "element": element, "screen": sent.screen, "ms": sent.ms }))
             })
             .await?
         }
@@ -157,6 +205,11 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                 Ok(json!({ "from": [from.0, from.1], "to": [to.0, to.1], "screen": sent.screen, "ms": sent.ms }))
             })
             .await?
+        }
+        Command::Launch { target, bundle_id, relaunch } => {
+            let mut session = Session::open(target.udid.as_deref()).await?;
+            let pid = session.launch(&bundle_id, relaunch).await?;
+            json!({ "udid": session.udid, "launched": bundle_id, "pid": pid })
         }
         Command::Button { target, name } => {
             let button = Button::parse(&name)?;
@@ -209,6 +262,30 @@ async fn with_controller(
     closed?;
     v["udid"] = json!(udid);
     Ok(v)
+}
+
+/// Where the last `ui` reading's refs are kept between CLI runs. Only refs, roles and frames:
+/// labels and values can be personal data and stay out of files.
+fn refs_path(udid: &str) -> PathBuf {
+    iphone_use_core::paths::state_dir().join(format!("{udid}.refs.json"))
+}
+
+fn save_refs(udid: &str, screen: &Screen) {
+    let mut slim = screen.clone();
+    slim.apps.clear();
+    for e in &mut slim.elements {
+        e.label = None;
+        e.value = None;
+        e.identifier = None;
+    }
+    if let Ok(bytes) = serde_json::to_vec(&slim) {
+        let _ = std::fs::write(refs_path(udid), bytes);
+    }
+}
+
+fn load_refs(udid: &str) -> Result<Screen> {
+    let bytes = std::fs::read(refs_path(udid)).context("no earlier `ui` reading to take refs from; run `ui` first")?;
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 /// `x,y` in points.
