@@ -17,12 +17,12 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screen streams (displayservice) | #1, #2, #7, #11, #13, #27, #28 |
 | Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
-| Touch and HID input | #6, #7, #8, #17, #18, #27 |
+| Touch and HID input | #6, #7, #8, #17, #18, #27, #34 |
 | Display info | #9, #27 |
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23, #26, #27, #29, #33 |
+| Viewer | #15, #18, #23, #26, #27, #29, #33, #34 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
 
 ## Entries
@@ -640,3 +640,29 @@ points more than the top edge it gives.
 The viewer's headers are 46 points tall (`--head-h` in `app/src/style.css`) and the buttons sit in
 their middle, so the config has `y: 25`. Change both together, and measure again: the offset may
 change with Tauri or macOS.
+
+### 34. Touch indicators: the end has to start when the finger lifts
+
+The viewer's touch disc grows and fades when the finger lifts. It started visibly late. Measured
+on the test iPhone (iOS 27.2.1, USB) with `IPHONE_USE_INPUT_TRACE` (`hid` lines) against the
+viewer's own times on the same wall clock:
+
+- **Agent tap: ~270 ms late.** The daemon sent the `tap` event before `Controller::tap`, which
+  opens HID (~700 ms on the first input of a session), waits the gap after the last touch (up to
+  150 ms), then holds 50 ms. The viewer glided the cursor there (160 ms), then pressed for 160 ms:
+  the end started 320 ms after the event, 270 ms after the device's release. On a first tap it
+  started ~590 ms *before* the touch. Now the event goes out as the finger goes down (`on_contact`)
+  with `duration_ms` (the 50 ms hold), and the viewer draws the disc where the finger lands and
+  ends it `duration_ms` later, while the cursor glides there on its own: the end starts within
+  2 ms of the release, first tap included.
+- **Human click: ~95 ms late.** A click with no movement had its `up` wait for two things meant
+  for drags: the 20 ms replay delay (#18), and the four still reports before a release (#17,
+  ~65 ms) because the down's report was more than 50 ms old. A touch that never left 4 points
+  around where it went down starts no scroll, so it has no speed to cancel: it skips the still
+  reports, and the `up` lifts at once once the rest of the path stays at its last point
+  (`Resampler::settled`). From the `up` request to the release: ~0.3 ms (was 92 to 103 ms).
+- **Agent live touch `up`**: the viewer used to wait for a 120 ms glide to the up's point before
+  ending; it now ends at once and lets the cursor finish the glide.
+
+Swipes still play the cursor's 160 ms glide to the start point before the press, so their end is
+about that late; not changed here.

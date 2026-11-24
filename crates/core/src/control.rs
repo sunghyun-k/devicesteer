@@ -137,12 +137,14 @@ impl Controller {
         }
     }
 
-    pub async fn tap(&mut self, at: (f64, f64)) -> Result<Sent> {
+    /// Taps `at`, held for [`TAP_HOLD`]. `on_contact` runs as the finger goes down: opening HID
+    /// and the gap after the last touch can come first, together up to a second.
+    pub async fn tap(&mut self, at: (f64, f64), on_contact: impl FnOnce()) -> Result<Sent> {
         let (_, display) = self.ensure_input().await?;
         let began = std::time::Instant::now();
         self.input_since_read = true;
         let input = self.input.as_mut().expect("opened above");
-        input.tap(&display, at, TAP_HOLD).await?;
+        input.tap(&display, at, TAP_HOLD, on_contact).await?;
         Ok(Sent { screen: display.size(), ms: began.elapsed().as_millis() as u64 })
     }
 

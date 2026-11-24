@@ -529,7 +529,7 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                     let point = screen.tap_point(e).context("that element has no frame to tap")?;
                     (point, serde_json::to_value(e)?)
                 };
-                let sent = c.tap(point).await?;
+                let sent = c.tap(point, || {}).await?;
                 Ok(json!({ "tapped": [point.0, point.1], "element": element, "screen": sent.screen, "ms": sent.ms }))
             })
             .await?

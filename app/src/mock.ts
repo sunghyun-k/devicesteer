@@ -461,7 +461,7 @@ const mock = {
     control();
   },
   tap(x = 120 + Math.random() * 200, y = 200 + Math.random() * 500, label: string | null = LABELS[labelIndex++ % LABELS.length]) {
-    input("agent", "tap", [[x, y]], { label });
+    input("agent", "tap", [[x, y]], { label, duration_ms: 50 });
   },
   swipe(from: Point = [214, 700], to: Point = [214, 260], label: string | null = "Scroll down the list") {
     input("agent", "swipe", [from, to], { label, duration_ms: 400 });

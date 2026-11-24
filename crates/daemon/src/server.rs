@@ -21,7 +21,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use iphone_use_core::{
     Button, Controller, DeviceSettings, Display, DisplayPoller, Frame, FrameStream, MediaMode, Motion, RecordSummary,
-    Recorder, Resampler, Session, Setting, Toggle, TouchPhase,
+    Recorder, Resampler, Session, Setting, TAP_HOLD, Toggle, TouchPhase,
     ax::{BuildOptions, Screen},
 };
 use serde::Deserialize;
@@ -539,7 +539,7 @@ impl Daemon {
                         played = Err(e);
                         break;
                     }
-                    if now >= t.path.done_at() {
+                    if now >= t.path.done_at() || t.path.settled() {
                         break;
                     }
                     tokio::time::sleep(TOUCH_TICK).await;
@@ -679,8 +679,11 @@ impl Daemon {
                 let c = self.controller(dev).await?;
                 sync?;
                 let screen = c.display().await?.size();
-                self.input_event(req.source, "tap", &[p], screen, json!({ "label": label(a)? }));
-                let sent = c.tap(p).await?;
+                // Sent as the finger goes down, not before opening HID and the gap after the last
+                // touch: the viewer ends its indicator `duration_ms` after it comes, as the finger
+                // lifts.
+                let extra = json!({ "label": label(a)?, "duration_ms": TAP_HOLD.as_millis() as u64 });
+                let sent = c.tap(p, || self.input_event(req.source, "tap", &[p], screen, extra)).await?;
                 dev.last_input = Some(Instant::now());
                 let r = json!({ "tapped": [p.0, p.1], "element": element, "screen": sent.screen, "ms": sent.ms });
                 Ok(self.warn_voiceover(dev, r).await)

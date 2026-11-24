@@ -47,6 +47,10 @@ const STILL_SAMPLES: u32 = 4;
 /// How far those reports wobble, in report units: about one pixel on a phone. Reports at exactly
 /// the same point don't count as samples (PITFALLS #17).
 const STILL_WOBBLE: u16 = 51;
+/// How far (screen points) a live touch may stray from where it went down and still be a tap:
+/// within it the device starts no scroll, so there is no speed to cancel before the `up`
+/// (PITFALLS #17) and the still reports, 65 ms, are left out (PITFALLS #34).
+const TAP_SLOP: f64 = 4.0;
 
 /// A hardware button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +114,9 @@ struct Held {
     since: Instant,
     /// When the last report went out.
     reported: Instant,
+    /// Where it went down (screen points), and whether it has left [`TAP_SLOP`] around there.
+    origin: (f64, f64),
+    moved: bool,
 }
 
 /// An open HID connection, ready for touches.
@@ -227,17 +234,19 @@ impl Input {
     /// a contact (PITFALLS #8) because a person's two quick clicks are meant as a double tap. A
     /// `Move` with no finger down puts one down; an `Up` with none does nothing.
     pub async fn touch(&mut self, display: &Display, phase: TouchPhase, at: Option<(f64, f64)>) -> Result<()> {
+        let point = at;
         let at = at.map(|p| display.report_point(p));
         match (phase, self.held) {
             (TouchPhase::Down | TouchPhase::Move, held) => {
-                let at = at.ok_or_else(|| anyhow!("a touch down or move needs a point"))?;
+                let (Some(at), Some(point)) = (at, point) else { bail!("a touch down or move needs a point") };
                 // A finger that stays put sends nothing: the device keeps it down (a long press).
                 if held.is_some_and(|h| h.at == at) {
                     return Ok(());
                 }
                 self.report(TOUCHSCREEN_STATE_CONTACT, at.0, at.1).await?;
-                let since = held.map_or_else(Instant::now, |h| h.since);
-                self.held = Some(Held { at, since, reported: Instant::now() });
+                let (since, origin, moved) = held.map_or((Instant::now(), point, false), |h| (h.since, h.origin, h.moved));
+                let moved = moved || (point.0 - origin.0).hypot(point.1 - origin.1) > TAP_SLOP;
+                self.held = Some(Held { at, since, reported: Instant::now(), origin, moved });
                 Ok(())
             }
             (TouchPhase::Up, None) => Ok(()),
@@ -245,7 +254,7 @@ impl Input {
                 let at = at.unwrap_or(h.at);
                 if at != h.at {
                     self.report(TOUCHSCREEN_STATE_CONTACT, at.0, at.1).await?;
-                } else if h.reported.elapsed() >= RESTING {
+                } else if h.moved && h.reported.elapsed() >= RESTING {
                     // The device takes the speed of the last reports that moved, however long
                     // ago: a finger that rested and then lifted would fling the list. Show it
                     // still, with samples that move by a pixel (PITFALLS #17).
@@ -275,11 +284,13 @@ impl Input {
     }
 
     /// Finger down at `at` (screen points as the user sees them), held for `hold`, then lifted.
-    pub async fn tap(&mut self, display: &Display, at: (f64, f64), hold: Duration) -> Result<()> {
+    /// `on_contact` runs as the finger goes down, after any wait before it.
+    pub async fn tap(&mut self, display: &Display, at: (f64, f64), hold: Duration, on_contact: impl FnOnce()) -> Result<()> {
         self.lift().await?;
         let (x, y) = display.report_point(at);
         self.gap().await;
         self.report(TOUCHSCREEN_STATE_CONTACT, x, y).await?;
+        on_contact();
         tokio::time::sleep(hold).await;
         self.release(x, y).await
     }

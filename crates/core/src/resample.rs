@@ -123,6 +123,14 @@ impl Resampler {
         self.samples.back().map_or(0.0, |s| s.at) + self.delay
     }
 
+    /// Whether the rest of the path, from the last [`Self::sample`] on, stays at its last point:
+    /// playing it out would only hold the finger still, so an `up` can lift at once. A tap's
+    /// `up` would otherwise wait out the delay (PITFALLS #34).
+    pub fn settled(&self) -> bool {
+        let last = self.last();
+        self.samples.iter().all(|s| s.point == last)
+    }
+
     /// The last point the client sent.
     pub fn last(&self) -> (f64, f64) {
         self.samples
@@ -146,6 +154,24 @@ mod tests {
         assert_eq!(r.sample(44.0), (0.0, 24.0));
         assert_eq!(r.sample(60.0), (0.0, 32.0));
         assert_eq!(r.done_at(), 52.0);
+    }
+
+    #[test]
+    fn settled_once_the_rest_stays_put() {
+        // A tap: down and up at one point.
+        let mut r = Resampler::new(0.0, None, (5.0, 5.0), 20.0);
+        r.push(90.0, None, (5.0, 5.0));
+        r.sample(91.0);
+        assert!(r.settled());
+        // A drag still on its way to the last point.
+        let mut r = Resampler::new(0.0, None, (0.0, 0.0), 20.0);
+        r.push(16.0, None, (0.0, 16.0));
+        r.push(32.0, None, (0.0, 16.0));
+        r.sample(30.0);
+        assert!(!r.settled());
+        // Played past the last move: the rest is the finger resting.
+        r.sample(40.0);
+        assert!(r.settled());
     }
 
     #[test]

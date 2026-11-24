@@ -83,6 +83,7 @@ interface InputEvent {
   kind: "tap" | "swipe" | "button" | "touch";
   points: [number, number][];
   screen: [number, number];
+  /** For `swipe`: how long it takes; for `tap`: how long the finger stays down from now. */
   duration_ms?: number;
   /** For `touch`: one step of a live touch. */
   phase?: "down" | "move" | "up";
@@ -709,6 +710,8 @@ function showLabel(text: string | null | undefined, at: [number, number] | undef
 
 /** How long the end sequence takes. */
 const RELEASE_MS = 350;
+/** How long a tap holds the finger down when the event doesn't say (`TAP_HOLD` in the core). */
+const TAP_HOLD_MS = 50;
 
 function touchDot(at: [number, number]): HTMLDivElement {
   const d = document.createElement("div");
@@ -763,8 +766,11 @@ function onTouch(e: InputEvent): void {
 //
 // The agent's touches show as a mouse-style arrow that stays where the agent last touched, so the
 // person watching can tell where it is working between inputs. It glides from one touch to the
-// next and along swipes; a ring under the tip shows while the finger is down. Only agent input
-// moves it: the human's own pointer is visible already, and their touches keep the dot.
+// next and along swipes; a ring under the tip shows while the finger is down. A tap is the
+// exception: its disc is drawn where the finger lands while the cursor glides there, because the
+// daemon sends the tap as the finger goes down and lifts it `duration_ms` (50 ms) later, well
+// before a glide would arrive (PITFALLS #34). Only agent input moves the cursor: the human's own
+// pointer is visible already, and their touches keep the dot.
 
 const AGENT_COLOR = "#ff9f0a";
 const HUMAN_COLOR = "#0a84ff";
@@ -773,8 +779,6 @@ const HUMAN_COLOR = "#0a84ff";
 const GLIDE_MS = 160;
 /** Glide between the steps of a live agent touch, which come at the agent's pace. */
 const STEP_GLIDE_MS = 120;
-/** How long a tap shows as pressed. */
-const TAP_PRESS_MS = 160;
 
 const cursor = document.createElement("div");
 cursor.className = "agent-cursor";
@@ -791,7 +795,6 @@ overlay.append(cursor);
 /** Where the cursor rests, in screen points, so a re-layout can place it again. */
 let cursorAt: { p: Point; screen: [number, number] } | undefined;
 let cursorAnim: Animation | undefined;
-let cursorPressTimer: number | undefined;
 let cursorLabel: HTMLDivElement | undefined;
 /** For the report: how often the cursor moved and the last label it carried. */
 let cursorMoves = 0;
@@ -840,14 +843,23 @@ function moveCursor(path: Point[], screen: [number, number], ms: number, easing 
 
 /** Puts the finger down at the tip (the start sequence) or lifts it (the end sequence). */
 function setPressed(on: boolean): void {
-  window.clearTimeout(cursorPressTimer);
   cursor.classList.toggle("pressing", on);
 }
 
-/** A short press at the tip, for a tap. */
-function pressBriefly(): void {
-  setPressed(true);
-  cursorPressTimer = window.setTimeout(() => setPressed(false), TAP_PRESS_MS);
+/** Lifts the finger at the tip now, playing the end sequence even if the press never showed
+ * (an `up` that came before the glide to its `down` finished). */
+function liftCursor(): void {
+  if (!cursor.classList.contains("pressing")) {
+    setPressed(true);
+    void cursor.offsetWidth; // Start the transition from pressed, not from nothing.
+  }
+  setPressed(false);
+}
+
+/** A tap's disc where the finger lands, ended as the finger lifts, `ms` after it came down. */
+function tapDot(at: [number, number], ms: number | undefined): void {
+  const d = touchDot(at);
+  window.setTimeout(() => releaseDot(d), ms ?? TAP_HOLD_MS);
 }
 
 /** Puts the label next to the cursor, replacing the one before. It fades after a few seconds;
@@ -899,9 +911,8 @@ function onAgentInput(e: InputEvent): void {
   }
   if (e.label) labelCursor(e.label, p, screen);
   if (e.kind === "tap") {
-    void moveCursor([p], screen, GLIDE_MS).then(() => {
-      if (cursorAt?.p === p) pressBriefly();
-    });
+    tapDot(toOverlay(p, screen), e.duration_ms);
+    void moveCursor([p], screen, GLIDE_MS);
   } else if (e.kind === "swipe" && q) {
     void moveCursor([p], screen, GLIDE_MS).then(() => {
       if (cursorAt?.p !== p) return;
@@ -921,7 +932,9 @@ function onAgentInput(e: InputEvent): void {
       setPressed(true);
       void moveCursor([p], screen, STEP_GLIDE_MS, "linear");
     } else {
-      void moveCursor([p], screen, STEP_GLIDE_MS, "linear").then(() => setPressed(false));
+      // The daemon sends the up once the finger has lifted: end now, and let the cursor glide on.
+      liftCursor();
+      void moveCursor([p], screen, STEP_GLIDE_MS, "linear");
     }
   }
 }
@@ -942,8 +955,7 @@ function onInput(e: InputEvent): void {
   if (e.kind === "touch") {
     onTouch(e);
   } else if (e.kind === "tap" && e.points[0]) {
-    const d = touchDot(toOverlay(e.points[0], e.screen));
-    window.setTimeout(() => releaseDot(d), TAP_PRESS_MS);
+    tapDot(toOverlay(e.points[0], e.screen), e.duration_ms);
   } else if (e.kind === "swipe" && e.points.length === 2) {
     const [a, b] = [toOverlay(e.points[0], e.screen), toOverlay(e.points[1], e.screen)];
     const d = touchDot(b);
