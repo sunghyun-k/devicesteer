@@ -126,7 +126,7 @@ const overlay = $<HTMLDivElement>("#overlay");
 const stage = $<HTMLDivElement>("#stage");
 const viewerStatus = $<HTMLParagraphElement>("#viewer-status");
 const glow = $<HTMLDivElement>("#glow");
-const sessionDock = $<HTMLDivElement>("#session-dock");
+const sessionIdle = $<HTMLParagraphElement>("#session-idle");
 const sessionPanel = $<HTMLDivElement>("#session-panel");
 const sessionName = $<HTMLSpanElement>("#session-name");
 const sessionState = $<HTMLSpanElement>("#session-state");
@@ -286,9 +286,14 @@ function panelFor(s: AgentSession): { state: string; button: string; action: str
 /** The session's glow and panel stay up for as long as the session runs, not only while input
  * arrives, so the person watching always knows an agent holds the device. */
 function onControl(c: ControlEvent): void {
+  const was = control.session && control.session.owner !== "finished" ? control.session.id : null;
   control = c;
   const s = c.session && c.session.owner !== "finished" ? c.session : null;
-  sessionDock.hidden = !s;
+  // The cursor marks where this session's agent works; it goes with the session. Input sent
+  // without a session keeps it until the device changes.
+  if (was && s?.id !== was) hideCursor();
+  sessionPanel.hidden = !s;
+  sessionIdle.hidden = !!s;
   glow.hidden = !s;
   if (!s) return;
   const human = s.owner !== "agent";
@@ -370,12 +375,184 @@ function onTouch(e: InputEvent, color: string): void {
   dot.style.top = `${at[1]}px`;
 }
 
+// ---------- agent cursor ----------
+//
+// The agent's touches show as a mouse-style arrow that stays where the agent last touched, so the
+// person watching can tell where it is working between inputs. It glides from one touch to the
+// next and along swipes; a ring under the tip shows while the finger is down. Only agent input
+// moves it: the human's own pointer is visible already, and their touches keep the dot.
+
+const AGENT_COLOR = "#ff9f0a";
+const HUMAN_COLOR = "#0a84ff";
+/** How long the cursor takes to reach a new touch before pressing there. Short: the input event
+ * arrives as the daemon sends the touch, so a long glide would trail the device. */
+const GLIDE_MS = 160;
+/** Glide between the steps of a live agent touch, which come at the agent's pace. */
+const STEP_GLIDE_MS = 120;
+/** How long a tap shows as pressed. */
+const TAP_PRESS_MS = 160;
+
+const cursor = document.createElement("div");
+cursor.className = "agent-cursor";
+cursor.hidden = true;
+cursor.innerHTML =
+  '<div class="press"></div>' +
+  // The tip is at (0, 0) of the element: the path's tip is at (1.5, 1.5) and the SVG sits 1.5 px up
+  // and left. A macOS-style arrow: a tall triangle with a short tail out of its lower edge.
+  '<svg class="arrow" viewBox="0 0 20 27" width="20" height="27" aria-hidden="true">' +
+  '<path d="M1.5 1.5 V20.6 L6.1 16.3 L9.3 23.9 L12.6 22.5 L9.4 15.1 H15.6 Z"/></svg>';
+cursor.style.setProperty("--c", AGENT_COLOR);
+overlay.append(cursor);
+
+/** Where the cursor rests, in screen points, so a re-layout can place it again. */
+let cursorAt: { p: Point; screen: [number, number] } | undefined;
+let cursorAnim: Animation | undefined;
+let cursorPressTimer: number | undefined;
+let cursorLabel: HTMLDivElement | undefined;
+/** For the report: how often the cursor moved and the last label it carried. */
+let cursorMoves = 0;
+let cursorLastLabel: string | null = null;
+
+const translate = (o: Point) => `translate(${o[0]}px, ${o[1]}px)`;
+
+/** Where the cursor is drawn right now, mid-glide included. */
+function cursorNow(): Point | undefined {
+  if (cursor.hidden) return undefined;
+  const m = new DOMMatrixReadOnly(getComputedStyle(cursor).transform);
+  return [m.m41, m.m42];
+}
+
+/** Glides the cursor along `path` (screen points) over `ms`, or puts it there at once when it
+ * was hidden. Resolves when it arrives; a newer move cancels this one, which still resolves. */
+function moveCursor(path: Point[], screen: [number, number], ms: number, easing = "ease-out"): Promise<void> {
+  const end = path[path.length - 1];
+  if (!end || !screen[0]) return Promise.resolve();
+  cursorMoves++;
+  const from = cursorNow();
+  cursorAnim?.cancel();
+  cursorAnim = undefined;
+  cursorAt = { p: end, screen };
+  const target = toOverlay(end, screen);
+  if (cursor.hidden) {
+    cursor.hidden = false;
+    cursor.style.transform = translate(target);
+    cursor.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 150 });
+    return Promise.resolve();
+  }
+  const frames = [from ?? target, ...path.map((p) => toOverlay(p, screen))].map((o) => ({ transform: translate(o) }));
+  cursor.style.transform = translate(target);
+  if (ms <= 0) return Promise.resolve();
+  const anim = cursor.animate(frames, { duration: ms, easing });
+  cursorAnim = anim;
+  // A timer, not the animation's finish: WebKit holds animations while the window is hidden or
+  // covered, and the press must still end and the next input still follow.
+  return new Promise((done) =>
+    window.setTimeout(() => {
+      if (cursorAnim === anim) cursorAnim = undefined;
+      done();
+    }, ms),
+  );
+}
+
+function setPressed(on: boolean): void {
+  window.clearTimeout(cursorPressTimer);
+  cursor.classList.toggle("pressing", on);
+}
+
+/** A short press at the tip, for a tap or the ends of a swipe. */
+function pressBriefly(): void {
+  setPressed(true);
+  if (cursorAt) ripple(toOverlay(cursorAt.p, cursorAt.screen), AGENT_COLOR);
+  cursorPressTimer = window.setTimeout(() => setPressed(false), TAP_PRESS_MS);
+}
+
+/** Puts the label next to the cursor, replacing the one before. It fades after a few seconds;
+ * the cursor stays. */
+function labelCursor(text: string): void {
+  cursorLabel?.remove();
+  const b = document.createElement("div");
+  b.className = "label-bubble at-cursor";
+  b.textContent = text;
+  b.style.setProperty("--c", AGENT_COLOR);
+  cursor.append(b);
+  cursorLabel = b;
+  cursorLastLabel = text;
+  labelsShown++;
+  b.addEventListener("animationend", () => {
+    b.remove();
+    if (cursorLabel === b) cursorLabel = undefined;
+  });
+}
+
+function hideCursor(): void {
+  cursorAnim?.cancel();
+  cursorAnim = undefined;
+  setPressed(false);
+  cursorLabel?.remove();
+  cursorLabel = undefined;
+  cursorAt = undefined;
+  cursor.hidden = true;
+}
+
+function placeCursor(): void {
+  if (cursorAt && !cursorAnim) cursor.style.transform = translate(toOverlay(cursorAt.p, cursorAt.screen));
+}
+
+/** Shows one agent input on the cursor. */
+function onAgentInput(e: InputEvent): void {
+  const [p, q] = e.points;
+  const screen = e.screen;
+  if (!p || !screen[0]) {
+    // A button press, or a live touch the daemon lifted without a point: the finger is up.
+    if (e.kind === "touch") setPressed(false);
+    if (e.label) showLabel(e.label, undefined, AGENT_COLOR);
+    return;
+  }
+  if (e.label) labelCursor(e.label);
+  if (e.kind === "tap") {
+    void moveCursor([p], screen, GLIDE_MS).then(() => {
+      if (cursorAt?.p === p) pressBriefly();
+    });
+  } else if (e.kind === "swipe" && q) {
+    void moveCursor([p], screen, GLIDE_MS).then(() => {
+      if (cursorAt?.p !== p) return;
+      setPressed(true);
+      ripple(toOverlay(p, screen), AGENT_COLOR);
+      return moveCursor([q], screen, e.duration_ms ?? 300, "ease-in-out");
+    }).then(() => {
+      if (cursorAt?.p !== q) return; // Overtaken by a newer input.
+      setPressed(false);
+      ripple(toOverlay(q, screen), AGENT_COLOR);
+    });
+  } else if (e.kind === "touch") {
+    if (e.phase === "down") {
+      void moveCursor([p], screen, GLIDE_MS).then(() => {
+        if (cursorAt?.p !== p) return;
+        setPressed(true);
+        ripple(toOverlay(p, screen), AGENT_COLOR);
+      });
+    } else if (e.phase === "move") {
+      setPressed(true);
+      void moveCursor([p], screen, STEP_GLIDE_MS, "linear");
+    } else {
+      void moveCursor([p], screen, STEP_GLIDE_MS, "linear").then(() => {
+        setPressed(false);
+        ripple(toOverlay(p, screen), AGENT_COLOR);
+      });
+    }
+  }
+}
+
 function onInput(e: InputEvent): void {
   if (e.kind !== "touch" || e.phase !== "move") {
     stats.inputs[e.source] = (stats.inputs[e.source] ?? 0) + 1;
     stats.lastInput = `${e.source} ${e.kind}${e.phase ? ` ${e.phase}` : ""} ${JSON.stringify(e.points)}`;
   }
-  const color = e.source === "agent" ? "#ff9f0a" : "#0a84ff";
+  if (e.source === "agent") {
+    onAgentInput(e);
+    return;
+  }
+  const color = HUMAN_COLOR;
   if (e.label) {
     const p = e.points[0];
     showLabel(e.label, p && e.screen[0] ? toOverlay(p, e.screen) : undefined, color);
@@ -442,6 +619,7 @@ function layout(): void {
     el.style.width = `${r.width}px`;
     el.style.height = `${r.height}px`;
   }
+  placeCursor();
 }
 new ResizeObserver(layout).observe(stage);
 
@@ -725,13 +903,27 @@ function report(): void {
       touchErrors: stats.touchErrors,
       control,
       // What the session panel shows, so a check of the viewer doesn't need anyone to look.
-      panel: sessionDock.hidden
+      panel: sessionPanel.hidden
         ? null
         : { name: sessionName.textContent, state: sessionState.textContent, button: sessionPrimary.textContent },
       glow: glow.hidden ? null : glow.classList.contains("human") ? "human" : "agent",
       labelsShown,
-      ripplesOnScreen: overlay.childElementCount,
+      ripplesOnScreen: overlay.querySelectorAll(".ripple").length,
+      agentCursor: cursor.hidden
+        ? null
+        : {
+            at: cursorAt?.p ?? null,
+            drawnAt: cursorNow(),
+            pressing: cursor.classList.contains("pressing"),
+            gliding: !!cursorAnim,
+            label: cursorLabel?.textContent ?? null,
+            lastLabel: cursorLastLabel,
+            moves: cursorMoves,
+          },
       overlay: [overlay.clientWidth, overlay.clientHeight],
+      visibility: document.visibilityState,
+      timelineMs: document.timeline.currentTime,
+      session_slot: sessionIdle.hidden ? "panel" : "idle",
     },
   });
 }
@@ -776,6 +968,7 @@ $<HTMLButtonElement>("#back").addEventListener("click", async () => {
   config = undefined;
   settings = {};
   onControl({ session: null, human_touching: false, agent_stopped: false });
+  hideCursor();
   voWarning.hidden = true;
   settingsMessage("");
   viewer.hidden = true;
