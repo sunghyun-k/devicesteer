@@ -2,8 +2,10 @@
 //! subscription for one device, and serves the CLI and the viewer over a local socket.
 //!
 //! Requests are JSON `{"id", "cmd", "args", "source"}`; answers `{"id", "ok", "result"|"error"}`.
-//! A client that sends `subscribe` also gets events: `control` (who drives), `input` (every
-//! gesture with its points, so the viewer can draw it), `config` (decoder setup) and video frames.
+//! An agent's request may name its session (`"session": "<id>"`, see `control`). A client that
+//! sends `subscribe` also gets events: `control` (the agent session and who drives), `input`
+//! (every gesture with its points and label, so the viewer can draw it), `config` (decoder setup)
+//! and video frames.
 
 use std::{
     path::PathBuf,
@@ -54,6 +56,9 @@ const TOUCH_TICK: Duration = Duration::from_micros(8333);
 const TOUCH_MIN_DELAY_MS: f64 = 20.0;
 /// How long agent requests wait for a human's touch to end before input is refused.
 const AGENT_WAITS_FOR_TOUCH: Duration = Duration::from_secs(3);
+/// The longest `label` an input takes: it is shown next to the touch in the viewer, so it is a
+/// few words, not a sentence.
+const MAX_LABEL: usize = 60;
 
 /// Commands that put input on the device.
 const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch", "settings_set"];
@@ -125,6 +130,9 @@ struct Request {
     args: Value,
     #[serde(default)]
     source: Source,
+    /// The agent session it belongs to (`session start`), if any.
+    #[serde(default)]
+    session: Option<String>,
     /// The client connection it came on (set by the daemon, not the client).
     #[serde(skip)]
     conn: u64,
@@ -142,6 +150,16 @@ fn point(v: &Value) -> Result<(f64, f64)> {
         Some([x, y]) => Ok((x.as_f64().context("x is not a number")?, y.as_f64().context("y is not a number")?)),
         _ => bail!("a point is [x, y] in screen points"),
     }
+}
+
+/// An input's optional `label`: a few words saying what it does, shown next to it in the viewer.
+fn label(a: &Value) -> Result<Option<String>> {
+    let Some(l) = a.get("label").filter(|v| !v.is_null()) else { return Ok(None) };
+    let l = l.as_str().context("label is a string")?.split_whitespace().collect::<Vec<_>>().join(" ");
+    if l.chars().count() > MAX_LABEL {
+        bail!("the label is longer than {MAX_LABEL} characters; say what the input does in 3 to 6 words");
+    }
+    Ok(Some(l).filter(|l| !l.is_empty()))
 }
 
 impl Daemon {
@@ -292,19 +310,25 @@ impl Daemon {
         Ok(json!({ "keyframe": "restarted", "ms": began.elapsed().as_millis() as u64 }))
     }
 
-    fn check_agent(&self, source: Source) -> Result<()> {
-        if source == Source::Agent
-            && let Some(why) = self.control.lock().unwrap().refuse_agent()
-        {
-            bail!("{why}");
+    /// Checks an agent's request against its session (see `control`); Ok carries a note for the
+    /// result. Human requests always pass.
+    fn check_agent(&self, req: &Request) -> Result<Option<&'static str>> {
+        if req.source != Source::Agent {
+            return Ok(None);
         }
-        Ok(())
+        let input = INPUT_COMMANDS.contains(&req.cmd.as_str());
+        let mut control = self.control.lock().unwrap();
+        let expired = control.session().map(|s| s.id.clone());
+        let r = control.check_agent(req.session.as_deref(), input);
+        let ended = expired.is_some() && control.session().is_none();
+        drop(control);
+        if ended {
+            self.emit_control();
+        }
+        r.map_err(|e| anyhow!(e))
     }
 
     fn input_event(&self, source: Source, kind: &str, points: &[(f64, f64)], screen: (f64, f64), extra: Value) {
-        if source == Source::Agent {
-            self.control.lock().unwrap().agent_input();
-        }
         let mut ev = json!({
             "event": "input",
             "source": source,
@@ -316,9 +340,6 @@ impl Daemon {
             o.extend(e.clone());
         }
         self.emit(ev);
-        if source == Source::Agent && self.control.lock().unwrap().active_changed() {
-            self.emit_control();
-        }
     }
 
     /// Lifts the live touch's finger, if one is down and `which` picks it. The `input` event
@@ -358,6 +379,7 @@ impl Daemon {
         let phase: TouchPhase = serde_json::from_value(a.get("phase").cloned().unwrap_or_default())
             .map_err(|_| anyhow!("touch needs a phase: down, move or up"))?;
         let at = a.get("point").map(point).transpose()?;
+        let touch_label = label(a)?;
         let mine = dev.touch.as_ref().map(|t| t.conn == req.conn);
         match (phase, mine) {
             // Another client's finger is down. A human's touch lifts it, as a second hand on the
@@ -395,7 +417,7 @@ impl Daemon {
                 None => (0.0, 0.0),
             };
             dev.last_input = Some(Instant::now());
-            self.input_event(req.source, "touch", &[p], screen, json!({ "phase": phase }));
+            self.input_event(req.source, "touch", &[p], screen, json!({ "phase": phase, "label": touch_label }));
             return Ok(json!({ "phase": phase, "point": [p.0, p.1], "screen": screen }));
         }
         let sync = self.sync_video(dev).await;
@@ -455,7 +477,7 @@ impl Daemon {
             self.control.lock().unwrap().human_touching = dev.touch.is_some();
         }
         dev.last_input = Some(Instant::now());
-        self.input_event(req.source, "touch", &[p], sent.screen, json!({ "phase": phase }));
+        self.input_event(req.source, "touch", &[p], sent.screen, json!({ "phase": phase, "label": touch_label }));
         Ok(json!({ "phase": phase, "point": [p.0, p.1], "screen": sent.screen, "ms": sent.ms }))
     }
 
@@ -506,11 +528,14 @@ impl Daemon {
             self.wait_for_human_touch().await;
         }
         let mut dev = self.device.lock().await;
-        if req.source == Source::Agent && INPUT_COMMANDS.contains(&req.cmd.as_str()) {
-            // The human may have touched again while this waited for the lock.
-            self.check_agent(req.source)?;
+        // After the lock: the human may have touched or taken over while this waited for it.
+        let note = self.check_agent(req)?;
+        let mut r = self.device_op_locked(&mut dev, req).await;
+        if let (Ok(v), Some(note)) = (&mut r, note)
+            && v.is_object()
+        {
+            v["note"] = json!(note);
         }
-        let r = self.device_op_locked(&mut dev, req).await;
         // A tap or swipe lifts a live touch's finger first, and a media restart closes HID with
         // it; forget such a touch so its next `move` says the finger is gone.
         if dev.touch.is_some() && !dev.controller.as_ref().is_some_and(Controller::touching) {
@@ -531,7 +556,6 @@ impl Daemon {
         let a = &req.args;
         match req.cmd.as_str() {
             "tap" => {
-                self.check_agent(req.source)?;
                 let at = if let Some(p) = a.get("point") {
                     (point(p)?, Value::Null)
                 } else if let Some(target) = a.get("target").and_then(|v| v.as_str()) {
@@ -551,14 +575,13 @@ impl Daemon {
                 let c = self.controller(dev).await?;
                 sync?;
                 let screen = c.display().await?.size();
-                self.input_event(req.source, "tap", &[p], screen, json!({}));
+                self.input_event(req.source, "tap", &[p], screen, json!({ "label": label(a)? }));
                 let sent = c.tap(p).await?;
                 dev.last_input = Some(Instant::now());
                 let r = json!({ "tapped": [p.0, p.1], "element": element, "screen": sent.screen, "ms": sent.ms });
                 Ok(self.warn_voiceover(dev, r).await)
             }
             "swipe" => {
-                self.check_agent(req.source)?;
                 let from = point(a.get("from").context("swipe needs from")?)?;
                 let to = point(a.get("to").context("swipe needs to")?)?;
                 let ms = a.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(300);
@@ -567,26 +590,24 @@ impl Daemon {
                 let c = self.controller(dev).await?;
                 sync?;
                 let screen = c.display().await?.size();
-                self.input_event(req.source, "swipe", &[from, to], screen, json!({ "duration_ms": ms }));
+                self.input_event(req.source, "swipe", &[from, to], screen, json!({ "duration_ms": ms, "label": label(a)? }));
                 let sent = c.drag(from, to, Duration::from_millis(ms), motion).await?;
                 dev.last_input = Some(Instant::now());
                 let r = json!({ "from": [from.0, from.1], "to": [to.0, to.1], "screen": sent.screen, "ms": sent.ms });
                 Ok(self.warn_voiceover(dev, r).await)
             }
             "button" => {
-                self.check_agent(req.source)?;
                 let b = Button::parse(a.get("name").and_then(|v| v.as_str()).context("button needs a name")?)?;
                 let sync = self.sync_video(dev).await;
                 let c = self.controller(dev).await?;
                 sync?;
                 let screen = c.display().await?.size();
-                self.input_event(req.source, "button", &[], screen, json!({ "button": b }));
+                self.input_event(req.source, "button", &[], screen, json!({ "button": b, "label": label(a)? }));
                 c.button(b).await?;
                 dev.last_input = Some(Instant::now());
                 Ok(self.warn_voiceover(dev, json!({ "pressed": b })).await)
             }
             "touch" => {
-                self.check_agent(req.source)?;
                 self.touch(dev, req).await
             }
             "ui" => {
@@ -600,7 +621,6 @@ impl Daemon {
                 Ok(v)
             }
             "launch" => {
-                self.check_agent(req.source)?;
                 let bundle = a.get("bundle_id").and_then(|v| v.as_str()).context("launch needs bundle_id")?;
                 let relaunch = a.get("relaunch").and_then(|v| v.as_bool()).unwrap_or(false);
                 let c = self.controller(dev).await?;
@@ -613,7 +633,6 @@ impl Daemon {
                 Ok(self.settings_event(dev, &s))
             }
             "settings_set" => {
-                self.check_agent(req.source)?;
                 let name = a.get("name").and_then(|v| v.as_str()).context("settings_set needs a name")?;
                 let values: Vec<String> = a
                     .get("value")
@@ -754,14 +773,14 @@ impl Daemon {
         result
     }
 
-    /// Periodic work: the agent-active indicator, stale video, idle media and idle exit.
+    /// Periodic work: session expiry, stale video, idle media and idle exit.
     async fn housekeeping(self: Arc<Self>, shutdown: mpsc::Sender<()>) {
         let mut tick = tokio::time::interval(Duration::from_millis(250));
         let mut n = 0u64;
         loop {
             tick.tick().await;
             n += 1;
-            if self.control.lock().unwrap().active_changed() {
+            if self.control.lock().unwrap().expire() {
                 self.emit_control();
             }
             if let Ok(mut dev) = self.device.try_lock() {
@@ -793,6 +812,37 @@ impl Daemon {
                 return;
             }
         }
+    }
+
+    /// `session` with `action`: start (`name`), finish (`force`), handoff (`reason`), resume,
+    /// status. The session id comes in the request's `session`.
+    async fn session_cmd(&self, req: &Request) -> Result<Value> {
+        let a = &req.args;
+        let action = a.get("action").and_then(Value::as_str).unwrap_or("status");
+        let id = req.session.as_deref();
+        let need_id = || id.context("say which session with --session (or IPHONE_USE_SESSION); `session start` prints its id");
+        let text = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let r = {
+            let mut c = self.control.lock().unwrap();
+            match action {
+                "start" => c.start(&text("name")),
+                "finish" => c.finish(id, a.get("force").and_then(Value::as_bool).unwrap_or(false)),
+                "handoff" => c.handoff(need_id()?, &text("reason")),
+                "resume" => c.resume(need_id()?),
+                "status" => c.status(id),
+                other => Err(format!("unknown session action `{other}`: start, finish, handoff, resume or status")),
+            }
+        };
+        let r = r.map_err(|e| anyhow!(e))?;
+        if action != "status" {
+            if action == "handoff" {
+                // The human may want to touch right away; an agent's finger left down would fight them.
+                let mut dev = self.device.lock().await;
+                self.lift_touch(&mut dev, |t| t.source == Source::Agent, "the agent handed off").await;
+            }
+            self.emit_control();
+        }
+        Ok(r)
     }
 
     async fn serve_client<S>(self: Arc<Self>, stream: S, shutdown: mpsc::Sender<()>)
@@ -876,27 +926,26 @@ impl Daemon {
                         Ok(json!({ "subscribed": true }))
                     }
                 }
-                "control" => {
-                    match serde_json::from_value::<ControlAction>(req.args.get("action").cloned().unwrap_or_default()) {
-                        Ok(action) => {
-                            self.control.lock().unwrap().apply(action);
-                            // Whoever lost the screen lifts their finger: the human on handing
-                            // back, the agent when the human takes over or stops it.
-                            let losing = match action {
-                                ControlAction::Release => Some(Source::Human),
-                                ControlAction::TakeOver | ControlAction::StopAgent => Some(Source::Agent),
-                                ControlAction::ResumeAgent => None,
-                            };
-                            if let Some(losing) = losing {
-                                let mut dev = self.device.lock().await;
-                                self.lift_touch(&mut dev, |t| t.source == losing, "control changed").await;
+                "control" => match serde_json::from_value::<ControlAction>(req.args.get("action").cloned().unwrap_or_default()) {
+                    Ok(action) => {
+                        let applied = self.control.lock().unwrap().apply(action);
+                        match applied {
+                            Ok(losing) => {
+                                // Whoever lost the screen lifts their finger: the human on handing
+                                // back, the agent when the human takes over or stops it.
+                                if let Some(losing) = losing {
+                                    let mut dev = self.device.lock().await;
+                                    self.lift_touch(&mut dev, |t| t.source == losing, "control changed").await;
+                                }
+                                self.emit_control();
+                                Ok(self.control.lock().unwrap().event())
                             }
-                            self.emit_control();
-                            Ok(self.control.lock().unwrap().event())
+                            Err(e) => Err(anyhow!(e)),
                         }
-                        Err(_) => Err(anyhow!("control action is one of take_over, release, stop_agent, resume_agent")),
                     }
-                }
+                    Err(_) => Err(anyhow!("control action is one of take_over, hand_back, done, stop")),
+                },
+                "session" => self.session_cmd(&req).await,
                 "shutdown" => {
                     let _ = shutdown.send(()).await;
                     Ok(json!({ "stopping": true }))

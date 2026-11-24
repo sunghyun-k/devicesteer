@@ -1,6 +1,7 @@
 //! `iphone-use`: command-line access to a connected iPhone or iPad.
 //!
-//! Output is JSON on stdout. Errors go to stderr as `{"error": "..."}` with exit code 1.
+//! Output is JSON on stdout (except `skill`, which prints the agent guide as Markdown). Errors go
+//! to stderr as `{"error": "..."}` with exit code 1.
 
 use std::{path::PathBuf, time::Duration};
 
@@ -32,12 +33,24 @@ struct Target {
     /// media session per command, and the viewer doesn't see the input).
     #[arg(long, global = true)]
     no_daemon: bool,
+    /// The agent session the command belongs to (printed by `session start`).
+    #[arg(long, global = true, env = "IPHONE_USE_SESSION")]
+    session: Option<String>,
 }
 
 impl Target {
     async fn client(&self) -> Result<Client> {
-        Client::connect(self.udid.as_deref(), Source::Agent).await
+        Ok(Client::connect(self.udid.as_deref(), Source::Agent).await?.with_session(self.session.clone()))
     }
+}
+
+/// What an input does, in 3 to 6 words, shown next to it in the viewer.
+#[derive(clap::Args)]
+struct Label {
+    /// What this input does, in 3 to 6 words ("open the Wi-Fi settings"). The viewer shows it next
+    /// to the touch, so the person watching knows what the agent is doing.
+    #[arg(long)]
+    label: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -82,6 +95,8 @@ enum Command {
     Tap {
         #[command(flatten)]
         target: Target,
+        #[command(flatten)]
+        label: Label,
         /// `x,y`, `@eN`, or a label.
         at: String,
     },
@@ -89,6 +104,8 @@ enum Command {
     Swipe {
         #[command(flatten)]
         target: Target,
+        #[command(flatten)]
+        label: Label,
         from: String,
         to: String,
         /// How long the drag takes, in milliseconds.
@@ -112,6 +129,8 @@ enum Command {
     Button {
         #[command(flatten)]
         target: Target,
+        #[command(flatten)]
+        label: Label,
         name: String,
     },
     /// Record the screen to an MP4 (the device's HEVC stream, not re-encoded).
@@ -149,6 +168,16 @@ enum Command {
         #[command(subcommand)]
         action: Option<SettingsAction>,
     },
+    /// An agent session: one per goal and device. The viewer shows it, and the person watching
+    /// can take over or stop it. `start` prints the id the other commands take with --session.
+    Session {
+        #[command(flatten)]
+        target: Target,
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+    /// Print the guide for agents that matches this version of iphone-use (Markdown).
+    Skill,
     /// Screen-sharing media streams on the device.
     Media {
         #[command(flatten)]
@@ -164,6 +193,30 @@ enum DaemonAction {
     Status,
     /// Stop the daemon (it stops its media streams first).
     Stop,
+}
+
+#[derive(Subcommand)]
+enum SessionAction {
+    /// Start a session for one goal, named after it ("turn on dark mode"). Refused while another
+    /// session uses the device.
+    Start { name: String },
+    /// Hand the device to the user, saying what they should do ("enter the passcode"). Input is
+    /// refused until they press Done in the viewer or you run `session resume`.
+    Handoff {
+        #[arg(long)]
+        reason: String,
+    },
+    /// Take the device back after a handoff, or after the user handed it back.
+    Resume,
+    /// End the session. With --force, end whichever session uses the device (for the user, when
+    /// its agent is gone).
+    Finish {
+        #[arg(long)]
+        force: bool,
+    },
+    /// The session's state: owner (agent, delegated_to_user, user, finished), handoff reason,
+    /// time left before it expires. Without --session, the session using the device.
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -214,6 +267,10 @@ enum MediaAction {
 
 fn main() {
     let cli = Cli::parse();
+    if let Command::Skill = cli.command {
+        print!("{}", skill_guide());
+        return;
+    }
     // The daemon runs on a runtime of its own (see `iphone_use_daemon::run_blocking`).
     if let Command::Daemon { target, action: None } = &cli.command {
         tracing_subscriber::fmt()
@@ -245,6 +302,26 @@ fn main() {
 
 async fn run(command: Command) -> Result<serde_json::Value> {
     Ok(match command {
+        Command::Skill => unreachable!("handled in main"),
+        Command::Session { target, action } => {
+            let client = target.client().await?;
+            let args = match action {
+                SessionAction::Start { name } => json!({ "action": "start", "name": name }),
+                SessionAction::Handoff { reason } => json!({ "action": "handoff", "reason": reason }),
+                SessionAction::Resume => json!({ "action": "resume" }),
+                SessionAction::Finish { force } => json!({ "action": "finish", "force": force }),
+                SessionAction::Status => json!({ "action": "status" }),
+            };
+            let started = args["action"] == "start";
+            let mut v = client.request("session", args).await?;
+            if started && let Some(id) = v["id"].as_str() {
+                v = json!({
+                    "session": v.clone(),
+                    "next": format!("pass --session {id} with every command of this goal (or export IPHONE_USE_SESSION={id}), and run `iphone-use session finish --session {id}` when the goal is done"),
+                });
+            }
+            v
+        }
         Command::Devices => json!({ "devices": list_devices().await? }),
         Command::Services { target } => {
             let session = Session::open(target.udid.as_deref()).await?;
@@ -320,20 +397,21 @@ async fn run(command: Command) -> Result<serde_json::Value> {
         Command::Ui { target, all, full } if !target.no_daemon => {
             target.client().await?.request("ui", json!({ "all": all, "full": full })).await?
         }
-        Command::Tap { target, at } if !target.no_daemon => {
-            let args = match parse_point(&at) {
+        Command::Tap { target, at, label } if !target.no_daemon => {
+            let mut args = match parse_point(&at) {
                 Ok(p) => json!({ "point": [p.0, p.1] }),
                 Err(_) => json!({ "target": at }),
             };
+            args["label"] = json!(label.label);
             target.client().await?.request("tap", args).await?
         }
-        Command::Swipe { target, from, to, duration, place } if !target.no_daemon => {
+        Command::Swipe { target, from, to, duration, place, label } if !target.no_daemon => {
             let (from, to) = (parse_point(&from)?, parse_point(&to)?);
-            let args = json!({ "from": [from.0, from.1], "to": [to.0, to.1], "duration_ms": duration, "place": place });
+            let args = json!({ "from": [from.0, from.1], "to": [to.0, to.1], "duration_ms": duration, "place": place, "label": label.label });
             target.client().await?.request("swipe", args).await?
         }
-        Command::Button { target, name } if !target.no_daemon => {
-            target.client().await?.request("button", json!({ "name": name })).await?
+        Command::Button { target, name, label } if !target.no_daemon => {
+            target.client().await?.request("button", json!({ "name": name, "label": label.label })).await?
         }
         Command::Launch { target, bundle_id, relaunch } if !target.no_daemon => {
             let args = json!({ "bundle_id": bundle_id, "relaunch": relaunch });
@@ -381,7 +459,7 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             })
             .await?
         }
-        Command::Tap { target, at } => {
+        Command::Tap { target, at, .. } => {
             with_controller(&target, async |c| {
                 let (point, element) = if let Ok(p) = parse_point(&at) {
                     (p, json!(null))
@@ -402,7 +480,7 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             })
             .await?
         }
-        Command::Swipe { target, from, to, duration, place } => {
+        Command::Swipe { target, from, to, duration, place, .. } => {
             let (from, to) = (parse_point(&from)?, parse_point(&to)?);
             let motion = if place { Motion::Place } else { Motion::Flick };
             with_controller(&target, async |c| {
@@ -416,7 +494,7 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             let pid = session.launch(&bundle_id, relaunch).await?;
             json!({ "udid": session.udid, "launched": bundle_id, "pid": pid })
         }
-        Command::Button { target, name } => {
+        Command::Button { target, name, .. } => {
             let button = Button::parse(&name)?;
             with_controller(&target, async |c| {
                 c.button(button).await?;
@@ -456,6 +534,15 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             }
         },
     })
+}
+
+/// The agent guide, with the version it belongs to.
+fn skill_guide() -> String {
+    let v = env!("CARGO_PKG_VERSION");
+    format!(
+        "[iphone-use:skill] iphone-use usage guide v{v}\n\n{}\n[iphone-use:skill] end of guide v{v}\n",
+        include_str!("skill.md").trim_end()
+    )
 }
 
 /// Opens a controller for one command, runs `f`, and always closes it (stopping only our streams).

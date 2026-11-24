@@ -25,6 +25,8 @@ type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
 pub struct Client {
     pub udid: String,
     source: Source,
+    /// The agent session the requests belong to (`session start`), sent with each one.
+    session: Option<String>,
     next_id: AtomicU64,
     pending: Pending,
     out: mpsc::Sender<Message>,
@@ -125,6 +127,7 @@ impl Client {
         Ok(Self {
             udid,
             source,
+            session: None,
             next_id: AtomicU64::new(1),
             pending,
             out: out_tx,
@@ -139,7 +142,7 @@ impl Client {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, tx);
-        let msg = json!({ "id": id, "cmd": cmd, "args": args, "source": self.source });
+        let msg = json!({ "id": id, "cmd": cmd, "args": args, "source": self.source, "session": self.session });
         self.out
             .send(Message::Json(msg))
             .await
@@ -150,6 +153,12 @@ impl Client {
         } else {
             bail!("{}", reply.get("error").and_then(Value::as_str).unwrap_or("the daemon returned an error"))
         }
+    }
+
+    /// Sends the following requests as part of agent session `id`.
+    pub fn with_session(mut self, id: Option<String>) -> Self {
+        self.session = id.filter(|s| !s.is_empty());
+        self
     }
 
     /// The events (and frames, after `subscribe` with frames) the daemon pushes. Once only.
