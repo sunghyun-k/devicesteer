@@ -22,7 +22,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23 |
+| Viewer | #15, #18, #23, #26 |
 
 ## Entries
 
@@ -485,3 +485,15 @@ switches VoiceOver. Costs: a subscription silenced by a VoiceOver switch elsewhe
 take ~5 s instead of ~2 s; a restart makes it take 6 to 11 s. `axauditd` is the Accessibility Audit
 daemon that Xcode's Accessibility Inspector talks to; restarting it changed nothing visible on the
 device (VoiceOver and the other accessibility settings are not its).
+
+### 26. WebKit draws a whole VideoFrame, padding included, whatever source rectangle it is given
+
+The device codes the screen into a picture padded to the encoder's block size (a 1284x2778 screen
+in a 1296x2816 picture, PITFALLS #11), and the decoded `VideoFrame` keeps the padding: its coded
+size, visible rect and display size are all 1296x2816. `drawImage(frame, sx, sy, sw, sh, dx, dy,
+dw, dh)` with the screen as the source rectangle should copy only the screen, but WebKit (the
+macOS web view) drew the whole picture scaled into the destination: the viewer showed black bands
+11 px wide at the right and 37 px tall at the bottom of a 1284x2778 canvas, the padding squeezed
+in. The viewer now draws the whole frame scaled up so the screen fills the canvas
+(`drawImage(frame, dx, dy, dw, dh)` with the destination larger than the canvas) and lets the
+canvas clip the padding off. It reports the frame's geometry as `frame` in `viewer.log`.

@@ -221,6 +221,8 @@ const stats = {
   // Round trip of a human touch step: sent from the page until the daemon wrote the report.
   touchMs: [] as number[],
   touchErrors: 0,
+  /** The first decoded frame's geometry after each config, and the part of it drawn. */
+  frame: undefined as { coded: number[]; visible: number[]; display: number[]; drawn: number[] } | undefined,
 };
 const received = new Map<number, number>();
 /** Frames that arrive while the decoder is being set up, from the last keyframe on: the device
@@ -247,6 +249,7 @@ async function configure(cfg: Config): Promise<void> {
   config = cfg;
   canvas.width = cfg.display_px[0];
   canvas.height = cfg.display_px[1];
+  stats.frame = undefined;
   layout();
   // A viewer joining a running stream gets the last config and then, once the stream restarts
   // for a keyframe (PITFALLS #13), a second one right before that keyframe. Same parameter sets:
@@ -291,8 +294,15 @@ async function configure(cfg: Config): Promise<void> {
         stats.decodeMs.push(performance.now() - t);
         received.delete(frame.timestamp);
       }
-      // The screen is the top-left part of the coded picture; the rest is padding.
-      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+      // The screen is the top-left part of the coded picture; the rest is the encoder's padding
+      // to its block size, black. WebKit ignores the source rectangle when it draws a VideoFrame
+      // and squeezes the whole picture, padding included, into the destination: a black band
+      // at the right and bottom (PITFALLS #26). So the whole frame is drawn scaled up so that
+      // the screen fills the canvas, and the canvas clips the padding off.
+      const [sx, sy, sw, sh] = screenRect(frame);
+      const kx = canvas.width / sw;
+      const ky = canvas.height / sh;
+      ctx.drawImage(frame, -sx * kx, -sy * ky, frame.displayWidth * kx, frame.displayHeight * ky);
       frame.close();
       if (stage.dataset.state !== "live") stageState("live");
       stats.decoded++;
@@ -310,6 +320,30 @@ async function configure(cfg: Config): Promise<void> {
   const queued = pending;
   pending = [];
   for (const f of queued) onFrame(f.header, f.data, false);
+}
+
+/** Where the screen (`display_px`, from the coded picture's top-left corner) is in a decoded
+ * frame, in the frame's display size, which `drawImage` draws and which covers its visible rect
+ * (the decoder may keep the padding in it, as WebKit's does, or scale the display size). */
+function screenRect(frame: VideoFrame): [number, number, number, number] {
+  const v = frame.visibleRect;
+  if (!v || !v.width || !v.height) return [0, 0, canvas.width, canvas.height];
+  const kx = frame.displayWidth / v.width;
+  const ky = frame.displayHeight / v.height;
+  const x0 = Math.max(0, v.x);
+  const y0 = Math.max(0, v.y);
+  const x1 = Math.min(canvas.width, v.x + v.width);
+  const y1 = Math.min(canvas.height, v.y + v.height);
+  const rect: [number, number, number, number] = [(x0 - v.x) * kx, (y0 - v.y) * ky, (x1 - x0) * kx, (y1 - y0) * ky];
+  if (!stats.frame) {
+    stats.frame = {
+      coded: [frame.codedWidth, frame.codedHeight],
+      visible: [v.x, v.y, v.width, v.height],
+      display: [frame.displayWidth, frame.displayHeight],
+      drawn: rect.map((n) => Math.round(n * 100) / 100),
+    };
+  }
+  return rect;
 }
 
 function onFrame(header: { keyframe: boolean; pts_us: number }, data: Uint8Array, fresh = true): void {
@@ -995,6 +1029,10 @@ function report(): void {
             moves: cursorMoves,
           },
       overlay: [overlay.clientWidth, overlay.clientHeight],
+      // The canvas holds just the screen: its aspect should match `screen`'s.
+      canvas: [canvas.width, canvas.height],
+      screen: config?.screen ?? null,
+      frame: stats.frame ?? null,
       visibility: document.visibilityState,
       timelineMs: document.timeline.currentTime,
       session_slot: sessionIdle.hidden ? "panel" : "idle",

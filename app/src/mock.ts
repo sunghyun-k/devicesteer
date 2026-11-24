@@ -90,7 +90,13 @@ function roundRect(g: OffscreenCanvasRenderingContext2D, x: number, y: number, w
   g.fill();
 }
 
-/** Stands in for WebCodecs: every "decoded" frame is a picture of the placeholder screen. */
+/** The coded picture: the screen in its top-left corner, padded with black to the encoder's
+ * block size, as the device sends it. */
+const CODED: Point = [Math.ceil(PX[0] / 16) * 16, Math.ceil(PX[1] / 64) * 64];
+const coded = new OffscreenCanvas(CODED[0], CODED[1]);
+
+/** Stands in for WebCodecs: every "decoded" frame is a padded picture of the placeholder screen,
+ * with the padding inside its visible rect. */
 class FakeDecoder {
   state: "unconfigured" | "configured" | "closed" = "unconfigured";
   constructor(private init: VideoDecoderInit) {}
@@ -101,7 +107,11 @@ class FakeDecoder {
     this.state = "configured";
   }
   decode(chunk: EncodedVideoChunk) {
-    const frame = new VideoFrame(screen, { timestamp: chunk.timestamp });
+    const g = coded.getContext("2d")!;
+    g.fillStyle = "#000";
+    g.fillRect(0, 0, CODED[0], CODED[1]);
+    g.drawImage(screen, 0, 0);
+    const frame = new VideoFrame(coded, { timestamp: chunk.timestamp });
     queueMicrotask(() => this.init.output(frame));
   }
   close() {
@@ -143,7 +153,7 @@ function settingsEvent(): void {
 
 function startStream(): void {
   drawScreen();
-  event({ event: "config", codec: "hvc1.mock", description: "", coded: [PX[0], PX[1] + 6], display_px: PX, screen: SCREEN });
+  event({ event: "config", codec: "hvc1.mock", description: "", coded: CODED, display_px: PX, screen: SCREEN });
   window.setTimeout(() => {
     frame(true);
     state.frameTimer = window.setInterval(() => frame(false), 1000 / 30);
