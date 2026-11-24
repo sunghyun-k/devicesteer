@@ -478,7 +478,8 @@ impl MediaSession {
     }
 
     /// Asks the device for a new keyframe (RTCP PLI + FIR on the video socket). `media_ssrc` is
-    /// the SSRC of the video's RTP packets.
+    /// the SSRC of the video's RTP packets. The test device ignored these (PITFALLS #13); callers
+    /// fall back to restarting the stream.
     pub async fn request_keyframe(&mut self, media_ssrc: u32) -> Result<()> {
         let Some((udp, ours)) = self.video_rtcp.clone() else {
             bail!("no video stream runs in this media session");

@@ -37,6 +37,8 @@ pub struct Controller {
     mode: MediaMode,
     /// The last reading, for `@eN` refs.
     pub last_screen: Option<Screen>,
+    /// Input went out since the last reading.
+    input_since_read: bool,
 }
 
 /// Longest wait for one accessibility reading.
@@ -45,7 +47,7 @@ const AX_TIMEOUT: Duration = Duration::from_secs(15);
 impl Controller {
     /// Wraps an open session. `mode` decides whether the media session also carries video.
     pub fn new(session: Session, mode: MediaMode) -> Self {
-        Self { session, display: None, media: None, input: None, ax: None, mode, last_screen: None }
+        Self { session, display: None, media: None, input: None, ax: None, mode, last_screen: None, input_since_read: true }
     }
 
     /// The display in use, asked once and then reused (call [`Self::refresh_display`] after a turn).
@@ -95,7 +97,7 @@ impl Controller {
         self.ensure_media().await?;
         let display = self.display().await?;
         if self.input.is_none() {
-            let input = Input::open(self.session.adapter(), self.session.rsd(), &display).await?;
+            let input = Input::open(self.session.adapter().clone(), self.session.rsd().clone(), display.clone()).await?;
             self.input = Some(input);
         }
         Ok((self.input.as_mut().expect("opened above"), display))
@@ -108,22 +110,27 @@ impl Controller {
     }
 
     pub async fn tap(&mut self, at: (f64, f64)) -> Result<Sent> {
-        let (input, display) = self.ensure_input().await?;
+        let (_, display) = self.ensure_input().await?;
         let began = std::time::Instant::now();
+        self.input_since_read = true;
+        let input = self.input.as_mut().expect("opened above");
         input.tap(&display, at, TAP_HOLD).await?;
         Ok(Sent { screen: display.size(), ms: began.elapsed().as_millis() as u64 })
     }
 
     pub async fn drag(&mut self, from: (f64, f64), to: (f64, f64), duration: Duration, motion: Motion) -> Result<Sent> {
-        let (input, display) = self.ensure_input().await?;
+        let (_, display) = self.ensure_input().await?;
         let began = std::time::Instant::now();
+        self.input_since_read = true;
+        let input = self.input.as_mut().expect("opened above");
         input.drag(&display, from, to, duration, motion).await?;
         Ok(Sent { screen: display.size(), ms: began.elapsed().as_millis() as u64 })
     }
 
     pub async fn button(&mut self, button: Button) -> Result<()> {
-        let (input, _) = self.ensure_input().await?;
-        input.button(button).await
+        self.ensure_input().await?;
+        self.input_since_read = true;
+        self.input.as_mut().expect("opened above").button(button).await
     }
 
     /// Reads the screen's accessibility tree. `full` waits for the second pass (identifiers).
@@ -131,7 +138,8 @@ impl Controller {
         if self.ax.is_none() {
             self.ax = Some(AxClient::open(self.session.adapter(), self.session.rsd()).await?);
         }
-        let read = self.ax.as_mut().expect("opened above").read(AX_TIMEOUT, full).await;
+        let changed = std::mem::take(&mut self.input_since_read);
+        let read = self.ax.as_mut().expect("opened above").read(AX_TIMEOUT, full, changed).await;
         let dump = match read {
             Ok(d) => d,
             Err(e) => {
@@ -145,8 +153,45 @@ impl Controller {
         Ok(screen)
     }
 
+    /// Launches an app by bundle id. Returns its pid.
+    pub async fn launch(&mut self, bundle_id: &str, relaunch: bool) -> Result<u64> {
+        self.input_since_read = true;
+        self.session.launch(bundle_id, relaunch).await
+    }
+
     pub fn media(&self) -> Option<&MediaSession> {
         self.media.as_ref()
+    }
+
+    pub fn media_mut(&mut self) -> Option<&mut MediaSession> {
+        self.media.as_mut()
+    }
+
+    pub fn mode(&self) -> MediaMode {
+        self.mode
+    }
+
+    /// Switches between input-only and video. A running media session (and the HID connection,
+    /// which needs one) is stopped; the next input or `ensure_media` starts the new kind.
+    pub async fn set_mode(&mut self, mode: MediaMode) -> Result<()> {
+        if self.mode == mode {
+            return Ok(());
+        }
+        self.mode = mode;
+        self.drop_input().await;
+        match self.media.take() {
+            Some(mut m) => m.stop().await,
+            None => Ok(()),
+        }
+    }
+
+    /// Stops and restarts the media session (and HID). The device then sends a fresh keyframe.
+    pub async fn restart_media(&mut self) -> Result<&mut MediaSession> {
+        self.drop_input().await;
+        if let Some(mut m) = self.media.take() {
+            let _ = m.stop().await;
+        }
+        self.ensure_media().await
     }
 
     pub async fn media_status(&mut self) -> Result<Option<MediaStatus>> {

@@ -30,7 +30,7 @@ pub use display::{Display, Rotation};
 pub use input::{Button, Input, Motion, TAP_HOLD};
 pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, StreamStatus, server_status};
 pub use record::{Frame, FrameStream, RecordSummary, Recorder};
-pub use session::{ServiceInfo, Session};
+pub use session::{ServiceInfo, Session, resolve_udid};
 pub use video::ParameterSets;
 
 /// How long one connection step (usbmuxd, lockdown, proxy, RSD) may take before we give up.

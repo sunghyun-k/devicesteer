@@ -156,6 +156,11 @@ impl Session {
     }
 }
 
+/// The UDID `udid` names, or the only connected device's when it is `None`.
+pub async fn resolve_udid(udid: Option<&str>) -> Result<String> {
+    Ok(pick_device(mux_devices().await?, udid)?.udid)
+}
+
 fn pick_device(all: Vec<UsbmuxdDevice>, udid: Option<&str>) -> Result<UsbmuxdDevice> {
     let usable = |d: &UsbmuxdDevice| transport_of(&d.connection_type).is_some();
     let mut candidates: Vec<UsbmuxdDevice> = match udid {

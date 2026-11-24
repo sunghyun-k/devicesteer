@@ -9,8 +9,11 @@ mod record;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use iphone_use_core::{
-    Button,
-    ax::{BuildOptions, Screen}, Controller, MediaMode, Motion, Session, list_devices};
+    Button, Controller, MediaMode, Motion, Session,
+    ax::{BuildOptions, Screen},
+    list_devices,
+};
+use iphone_use_daemon::{Client, Source};
 use serde_json::json;
 
 #[derive(Parser)]
@@ -25,6 +28,16 @@ struct Target {
     /// Device to use. Required when more than one device is connected.
     #[arg(long, global = true)]
     udid: Option<String>,
+    /// Talk to the device directly instead of through its daemon (slower: a new tunnel and
+    /// media session per command, and the viewer doesn't see the input).
+    #[arg(long, global = true)]
+    no_daemon: bool,
+}
+
+impl Target {
+    async fn client(&self) -> Result<Client> {
+        Client::connect(self.udid.as_deref(), Source::Agent).await
+    }
 }
 
 #[derive(Subcommand)]
@@ -108,6 +121,25 @@ enum Command {
         #[command(subcommand)]
         action: RecordAction,
     },
+    /// The per-device daemon the other commands go through. Without an action it runs in the
+    /// foreground (commands start it on demand, so this is rarely needed).
+    Daemon {
+        #[command(flatten)]
+        target: Target,
+        #[command(subcommand)]
+        action: Option<DaemonAction>,
+    },
+    /// Print the daemon's events as JSON lines: control (who drives), input (gestures with their
+    /// points), config and, with --frames, one line per video frame.
+    Events {
+        #[command(flatten)]
+        target: Target,
+        #[arg(long)]
+        frames: bool,
+        /// Stop after this many seconds.
+        #[arg(long)]
+        seconds: Option<f64>,
+    },
     /// Screen-sharing media streams on the device.
     Media {
         #[command(flatten)]
@@ -115,6 +147,14 @@ enum Command {
         #[command(subcommand)]
         action: MediaAction,
     },
+}
+
+#[derive(Subcommand)]
+enum DaemonAction {
+    /// The daemon's state: connection, media streams, control, recording, clients.
+    Status,
+    /// Stop the daemon (it stops its media streams first).
+    Stop,
 }
 
 #[derive(Subcommand)]
@@ -149,10 +189,29 @@ enum MediaAction {
     },
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let cli = Cli::parse();
-    match run(cli.command).await {
+    // The daemon runs on a runtime of its own (see `iphone_use_daemon::run_blocking`).
+    if let Command::Daemon { target, action: None } = &cli.command {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_env("IPHONE_USE_LOG")
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .with_writer(std::io::stderr)
+            .init();
+        let r = tokio::runtime::Runtime::new()
+            .map_err(anyhow::Error::from)
+            .and_then(|rt| rt.block_on(iphone_use_core::resolve_udid(target.udid.as_deref())))
+            .and_then(|udid| iphone_use_daemon::run_blocking(&udid));
+        if let Err(e) = r {
+            eprintln!("{}", json!({ "error": format!("{e:#}") }));
+            std::process::exit(1);
+        }
+        return;
+    }
+    let rt = tokio::runtime::Runtime::new().expect("a tokio runtime");
+    match rt.block_on(run(cli.command)) {
         Ok(value) => println!("{}", serde_json::to_string_pretty(&value).unwrap()),
         Err(e) => {
             eprintln!("{}", json!({ "error": format!("{e:#}") }));
@@ -191,6 +250,78 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             let mut session = Session::open(target.udid.as_deref()).await?;
             let d = session.display().await?;
             json!({ "udid": session.udid, "display": d, "screen": d.size() })
+        }
+        Command::Daemon { target, action } => match action {
+            Some(DaemonAction::Status) => target.client().await?.request("status", json!({})).await?,
+            Some(DaemonAction::Stop) => target.client().await?.request("shutdown", json!({})).await?,
+            None => unreachable!("handled in main"),
+        },
+        Command::Events { target, frames, seconds } => {
+            let mut client = target.client().await?;
+            let mut events = client.take_events().context("events already taken")?;
+            let began = std::time::Instant::now();
+            let sub = client.request("subscribe", json!({ "frames": frames })).await?;
+            println!("{}", json!({ "subscribed": sub, "ms": began.elapsed().as_millis() as u64 }));
+            let deadline = seconds.map(|s| began + Duration::from_secs_f64(s));
+            let (mut n, mut bytes) = (0u64, 0u64);
+            loop {
+                let left = deadline.map(|d| d.saturating_duration_since(std::time::Instant::now()));
+                let next = match left {
+                    Some(l) => match tokio::time::timeout(l, events.recv()).await {
+                        Ok(m) => m,
+                        Err(_) => break,
+                    },
+                    None => events.recv().await,
+                };
+                let Some(m) = next else { break };
+                let at = began.elapsed().as_millis() as u64;
+                match m {
+                    iphone_use_daemon::wire::Message::Json(mut v) => {
+                        v["t_ms"] = json!(at);
+                        if let Some(d) = v.get_mut("description") {
+                            *d = json!("<hvcC>");
+                        }
+                        println!("{v}");
+                    }
+                    iphone_use_daemon::wire::Message::Frame { mut header, data } => {
+                        n += 1;
+                        bytes += data.len() as u64;
+                        header["bytes"] = json!(data.len());
+                        header["t_ms"] = json!(at);
+                        println!("{header}");
+                    }
+                }
+            }
+            json!({ "frames": n, "bytes": bytes, "seconds": began.elapsed().as_secs_f64() })
+        }
+        Command::Ui { target, all, full } if !target.no_daemon => {
+            target.client().await?.request("ui", json!({ "all": all, "full": full })).await?
+        }
+        Command::Tap { target, at } if !target.no_daemon => {
+            let args = match parse_point(&at) {
+                Ok(p) => json!({ "point": [p.0, p.1] }),
+                Err(_) => json!({ "target": at }),
+            };
+            target.client().await?.request("tap", args).await?
+        }
+        Command::Swipe { target, from, to, duration, place } if !target.no_daemon => {
+            let (from, to) = (parse_point(&from)?, parse_point(&to)?);
+            let args = json!({ "from": [from.0, from.1], "to": [to.0, to.1], "duration_ms": duration, "place": place });
+            target.client().await?.request("swipe", args).await?
+        }
+        Command::Button { target, name } if !target.no_daemon => {
+            target.client().await?.request("button", json!({ "name": name })).await?
+        }
+        Command::Launch { target, bundle_id, relaunch } if !target.no_daemon => {
+            let args = json!({ "bundle_id": bundle_id, "relaunch": relaunch });
+            target.client().await?.request("launch", args).await?
+        }
+        Command::Record { target, action: RecordAction::Start { output } } if !target.no_daemon => {
+            let path = std::path::absolute(&output)?;
+            target.client().await?.request("record_start", json!({ "path": path })).await?
+        }
+        Command::Record { target, action: RecordAction::Stop } if !target.no_daemon => {
+            target.client().await?.request("record_stop", json!({})).await?
         }
         Command::Ui { target, all, full } => {
             with_controller(&target, async |c| {

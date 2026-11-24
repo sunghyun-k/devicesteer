@@ -27,8 +27,11 @@ const PUSH: &str = "processDataFromRemoteDevice:";
 /// The device never answers a request sooner than this; a dump that comes earlier answers an
 /// older request or was sent unasked.
 const ANSWER_AT_LEAST: Duration = Duration::from_millis(700);
-/// Every request restarts the device's quiet period, so ask again only after this long.
-const REASK_AFTER: Duration = Duration::from_millis(6500);
+/// Every request restarts the device's quiet period, so ask again only after this long. Answers
+/// came 1.2 to 1.6 s after the request they answered (PITFALLS #12).
+const REASK_AFTER: Duration = Duration::from_millis(2500);
+/// After input, a second request this long after the first (PITFALLS #12).
+const SECOND_ASK: Duration = Duration::from_millis(800);
 
 #[derive(Default)]
 struct State {
@@ -87,6 +90,7 @@ impl AxClient {
             loop {
                 tokio::select! {
                     ask = ask_rx.recv() => {
+                        tracing::debug!("ax: request");
                         if ask.is_none() || subscribe(&mut dtx).await.is_err() {
                             break;
                         }
@@ -104,6 +108,7 @@ impl AxClient {
                         let parsed = tokio::task::spawn_blocking(move || Payload::parse(&bytes)).await;
                         match parsed {
                             Ok(Ok(Payload::Dump(dump))) => {
+                                tracing::debug!("ax: dump {:?}, {} elements, {} apps", dump.kind, dump.elements.len(), dump.applications.len());
                                 if accept(&st, dump, arrived) {
                                     ticks += 1;
                                     let _ = changed_tx.send(ticks);
@@ -136,11 +141,18 @@ impl AxClient {
     /// A fresh reading: the first dump that answers a request made at or after now (or the one
     /// still due from [`Self::open`]). With `full`, also waits up to `full_wait` for the second
     /// pass (identifiers) and merges it.
-    pub async fn read(&mut self, timeout: Duration, full: bool) -> Result<Arc<Dump>> {
+    ///
+    /// `changed`: input went to the device since the last reading, so the screen probably changed.
+    pub async fn read(&mut self, timeout: Duration, full: bool, changed: bool) -> Result<Arc<Dump>> {
         // An answer to the request `open` sent is as fresh as a new one, and a new request would
         // only restart the device's quiet period.
         if self.asked_at.elapsed() > ANSWER_AT_LEAST {
             self.request()?;
+            if changed {
+                // After the screen changed, the device ignores the first request (PITFALLS #12).
+                tokio::time::sleep(SECOND_ASK).await;
+                self.request()?;
+            }
         }
         let deadline = Instant::now() + timeout;
         let seq = loop {

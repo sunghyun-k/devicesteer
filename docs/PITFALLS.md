@@ -14,12 +14,13 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 
 | Topic | Entries |
 |---|---|
-| Screen streams (displayservice) | #1, #2, #7, #11 |
+| Screen streams (displayservice) | #1, #2, #7, #11, #13 |
 | Connection and tunnel | #3, #4 |
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8 |
 | Display info | #9 |
-| Accessibility tree | #10 |
+| Accessibility tree | #10, #12 |
+| Daemon | #14 |
 
 ## Entries
 
@@ -172,4 +173,41 @@ Measured on the test iPhone (iOS 27.2.1, USB):
   recording's video (by name, correctly, but the wrong session), and the file ended after a second.
   The marker now records the owning pid, and only sessions of dead processes are swept (Windows
   can't check yet and sweeps none).
-- Whether the device honors RTCP PLI/FIR keyframe requests is not verified yet.
+- Keyframe requests: see #13.
+
+### 12. After input, the first accessibility request goes unanswered
+
+With the subscription kept open (the daemon), a request sent after the screen changed (a tap
+that opened an app, then a home press) got no dump at all; the next request, sent 6.5 s later
+under the old re-ask rule, was answered in 1.25 s. Every time, on the test iPhone (iOS 27.2.1).
+Back-to-back `ui` calls on an unchanged screen were answered on the first request (1.6 s).
+
+So after input (`Controller` tracks it), `AxClient::read` sends a second request 0.8 s after the
+first, and re-asks every 2.5 s instead of 6.5 s (answers came 1.2 to 1.6 s after the request they
+answered). A label tap right after navigating dropped from 7.8 s to 2.1 to 2.5 s; a 0.3 s second
+request was faster when it worked (1.6 s) but sometimes was ignored too (4.1 s). With no input
+since the last reading there is one request, since a second would restart the quiet period.
+
+### 13. The video ignores keyframe requests
+
+RTCP PLI + FIR (idevice's `build_keyframe_request`, compound with RR and SDES), sent from our video
+socket to the device's RTP port 50001 and to 50002, produced no keyframe within 0.8 s. The
+daemon then restarts the media session, which brings a keyframe with the first frame
+(~1.1 s for a viewer joining a running stream). Restarting also re-opens HID, so an input that
+races the restart waits for it. Untested: an RTCP receiver report stream (`build_liveness`) or
+Device Hub's per-frame ACK / RCTL feedback (`build_frame_ack`, `build_rctl`) first; idevice notes
+the encoder relies on RCTL for reference management during heavy motion.
+
+### 14. The daemon runs on one thread
+
+The futures over the tunnel (idevice's `RsdService::connect_rsd`, the HID and media clients) hold
+references across awaits, and rustc can't prove such futures `Send` for every lifetime
+("implementation of `Send` is not general enough"); the error moved each time one call was
+fixed. The daemon runs on a current-thread runtime with a `LocalSet` and spawns client tasks with
+`spawn_local`. Device work is serialized anyway; frame forwarding and the tunnel's TCP stack share
+that thread (~1 to 6 Mbit/s of video).
+
+Measured through the daemon on the test iPhone (USB): first command after start ~7.9 s (daemon
+start, tunnel, first accessibility dump); then `ui` 1.6 s, home button 0.1 to 0.7 s, coordinate
+tap ~0.05 s on the device side, label tap after navigation 2.1 to 2.5 s; a viewer's first frame
+0.31 s after subscribing.

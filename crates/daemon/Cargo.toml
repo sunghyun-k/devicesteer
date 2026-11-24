@@ -1,0 +1,16 @@
+[package]
+name = "iphone-use-daemon"
+description = "Per-device resident process for iphone-use, and the client the CLI and the viewer use"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+iphone-use-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "io-util", "process", "signal"] }
+tracing.workspace = true
+base64 = "0.22"

@@ -121,8 +121,10 @@ async fn devices_ready(hid: &mut UniversalHidServiceClient<Box<dyn ReadWrite>>) 
 
 impl Input {
     /// Opens the touch connection and waits until the device can take touches on `display`.
-    pub async fn open(adapter: &AdapterHandle, rsd: &RsdHandshake, display: &Display) -> Result<Self> {
-        let (mut adapter, mut rsd) = (adapter.clone(), rsd.clone());
+    ///
+    /// Takes the tunnel handles by value: a future holding references to them across awaits is
+    /// not `Send` for every lifetime, and the daemon spawns these futures.
+    pub async fn open(mut adapter: AdapterHandle, mut rsd: RsdHandshake, display: Display) -> Result<Self> {
         let mut hid = step(
             "HID service connection",
             UniversalHidServiceClient::connect_rsd(&mut adapter, &mut rsd),
