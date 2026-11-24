@@ -18,7 +18,10 @@ mod devices;
 mod display;
 mod input;
 mod media;
+mod mp4;
 pub mod paths;
+mod record;
+mod video;
 mod session;
 
 pub use control::{Controller, Sent};
@@ -26,7 +29,9 @@ pub use devices::{DeviceInfo, Transport, list_devices};
 pub use display::{Display, Rotation};
 pub use input::{Button, Input, Motion, TAP_HOLD};
 pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, StreamStatus, server_status};
+pub use record::{Frame, FrameStream, RecordSummary, Recorder};
 pub use session::{ServiceInfo, Session};
+pub use video::ParameterSets;
 
 /// How long one connection step (usbmuxd, lockdown, proxy, RSD) may take before we give up.
 pub(crate) const STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(12);

@@ -4,6 +4,8 @@
 
 use std::{path::PathBuf, time::Duration};
 
+mod record;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use iphone_use_core::{
@@ -99,12 +101,37 @@ enum Command {
         target: Target,
         name: String,
     },
+    /// Record the screen to an MP4 (the device's HEVC stream, not re-encoded).
+    Record {
+        #[command(flatten)]
+        target: Target,
+        #[command(subcommand)]
+        action: RecordAction,
+    },
     /// Screen-sharing media streams on the device.
     Media {
         #[command(flatten)]
         target: Target,
         #[command(subcommand)]
         action: MediaAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum RecordAction {
+    /// Start recording in the background; `record stop` ends it.
+    Start {
+        #[arg(short, long, default_value = "recording.mp4")]
+        output: PathBuf,
+    },
+    /// Stop the background recording and print its summary.
+    Stop,
+    /// Record in the foreground until `seconds` pass, Ctrl-C, or `record stop`.
+    Run {
+        #[arg(short, long, default_value = "recording.mp4")]
+        output: PathBuf,
+        #[arg(long)]
+        seconds: Option<f64>,
     },
 }
 
@@ -219,6 +246,11 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             })
             .await?
         }
+        Command::Record { target, action } => match action {
+            RecordAction::Run { output, seconds } => record::run(target.udid.as_deref(), &output, seconds).await?,
+            RecordAction::Start { output } => record::start(target.udid.as_deref(), &output).await?,
+            RecordAction::Stop => record::stop(target.udid.as_deref()).await?,
+        },
         Command::Media { target, action } => match action {
             MediaAction::Status => {
                 let session = Session::open(target.udid.as_deref()).await?;

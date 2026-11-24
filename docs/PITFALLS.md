@@ -14,7 +14,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 
 | Topic | Entries |
 |---|---|
-| Screen streams (displayservice) | #1, #2, #7 |
+| Screen streams (displayservice) | #1, #2, #7, #11 |
 | Connection and tunnel | #3, #4 |
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8 |
@@ -149,3 +149,27 @@ panel) is what the video stream's `VideoStreamForDisplayID` takes.
   and reading such values needs `ui --full`.
 - Labels are localized (the test device is Korean). Labels compared in code would have to be
   per-language; `tap <label>` takes whatever the screen shows.
+
+### 11. The screen video stream
+
+Measured on the test iPhone (iOS 27.2.1, USB):
+
+- HEVC over plaintext RTP, payload type 100, RTP clock 24 kHz (as iphone-cli measured). The
+  parameter sets come in band with **one keyframe at the start of the stream**; the device sends
+  no other keyframe unasked. `MediaSession::start` waits for the first packet before it returns,
+  so anyone who subscribes after that has missed the keyframe and can decode nothing. The session
+  therefore keeps one receiver made before the streams start (`subscribe` hands it to the first
+  caller; the channel holds 4096 packets so the keyframe survives the wait).
+- First frame ~0.32 to 0.38 s after asking for the stream. Frames come only when the screen
+  changes, up to 50 to 60 per second while scrolling; a "still" screen still gave ~20 per second
+  while the screen-sharing indicator (a pill at the top left) animated.
+- The coded picture is 1296x2816 for a 1284x2778 panel, with no conformance window in the SPS:
+  the screen sits at the top left and the rest is black padding (12 px right, 38 px bottom).
+  Players show the padding; the viewer has to crop to the panel's pixel size from
+  `getdisplayinfo`.
+- **Another process's session is not a leftover.** The first version swept every session in the
+  marker file before starting its own; a `swipe` run during a recording then stopped the
+  recording's video (by name, correctly, but the wrong session), and the file ended after a second.
+  The marker now records the owning pid, and only sessions of dead processes are swept (Windows
+  can't check yet and sweeps none).
+- Whether the device honors RTCP PLI/FIR keyframe requests is not verified yet.

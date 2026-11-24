@@ -41,7 +41,7 @@ impl Rotation {
     }
 
     /// Where a point of the turned screen, as shares of its width and height, lies on the panel.
-    fn turn(self, (u, v): (f64, f64)) -> (f64, f64) {
+    pub(crate) fn turn_share(self, (u, v): (f64, f64)) -> (f64, f64) {
         match self {
             Self::R0 => (u, v),
             Self::R90 => (v, 1.0 - u),
@@ -80,7 +80,7 @@ impl Display {
     /// sees it. Out-of-range points are clamped: the device drops them silently (PITFALLS #6).
     pub fn report_point(&self, (x, y): (f64, f64)) -> (u16, u16) {
         let (w, h) = self.size();
-        let (u, v) = self.rotation.turn((x / w, y / h));
+        let (u, v) = self.rotation.turn_share((x / w, y / h));
         let unit = |s: f64| (s * 65535.0).round().clamp(0.0, 65535.0) as u16;
         (unit(u), unit(v))
     }

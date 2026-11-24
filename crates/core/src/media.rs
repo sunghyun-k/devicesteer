@@ -219,31 +219,69 @@ fn call_info() -> CallInfoBlob {
     }
 }
 
-// Session ids whose streams may still run on a device, one per line. A process killed before it
-// stopped its streams leaves them running for their RTCP timeout (an hour), with the device
-// encoding into nowhere; the next session stops them.
+// Session ids whose streams may still run on a device, one per line as `<id> <pid>`. A process
+// killed before it stopped its streams leaves them running for their RTCP timeout (an hour), with
+// the device encoding into nowhere; the next session stops them. Only sessions whose process is
+// gone count as leftovers: a recording in another process is alive, and stopping its streams
+// ends it (PITFALLS #11).
 
-fn marked(marker: &Path) -> Vec<String> {
+fn marked(marker: &Path) -> Vec<(String, Option<u32>)> {
     std::fs::read_to_string(marker)
-        .map(|s| s.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect())
+        .map(|s| {
+            s.lines()
+                .filter_map(|l| {
+                    let mut parts = l.split_whitespace();
+                    let id = parts.next()?.to_string();
+                    Some((id, parts.next().and_then(|p| p.parse().ok())))
+                })
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-fn mark(marker: &Path, id: &str) {
-    let mut ids = marked(marker);
-    if !ids.iter().any(|m| m == id) {
-        ids.push(id.to_string());
+fn write_marked(marker: &Path, entries: &[(String, Option<u32>)]) {
+    if entries.is_empty() {
+        let _ = std::fs::remove_file(marker);
+        return;
     }
-    let _ = std::fs::write(marker, ids.join("\n") + "\n");
+    let text: String = entries
+        .iter()
+        .map(|(id, pid)| match pid {
+            Some(p) => format!("{id} {p}\n"),
+            None => format!("{id}\n"),
+        })
+        .collect();
+    let _ = std::fs::write(marker, text);
+}
+
+fn mark(marker: &Path, id: &str) {
+    let mut entries = marked(marker);
+    if !entries.iter().any(|(m, _)| m == id) {
+        entries.push((id.to_string(), Some(std::process::id())));
+    }
+    write_marked(marker, &entries);
 }
 
 fn unmark(marker: &Path, id: &str) {
-    let ids: Vec<String> = marked(marker).into_iter().filter(|m| m != id).collect();
-    let _ = if ids.is_empty() {
-        std::fs::remove_file(marker)
-    } else {
-        std::fs::write(marker, ids.join("\n") + "\n")
-    };
+    let entries: Vec<_> = marked(marker).into_iter().filter(|(m, _)| m != id).collect();
+    write_marked(marker, &entries);
+}
+
+/// Whether process `pid` still runs. Unknown counts as running, so its streams are left alone.
+fn process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let Ok(pid) = libc::pid_t::try_from(pid) else { return true };
+        // Signal 0 checks existence; EPERM means it exists under another user.
+        // SAFETY: kill with signal 0 sends nothing.
+        let r = unsafe { libc::kill(pid, 0) };
+        r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
+    }
 }
 
 /// What a session asks the device to stream.
@@ -299,8 +337,15 @@ pub struct MediaSession {
     streams: Vec<(StreamKind, Arc<Counters>)>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
     packets: broadcast::Sender<MediaPacket>,
+    /// A receiver made before the streams started, so the first consumer also gets the stream's
+    /// first packets (the only keyframe the device sends unasked, PITFALLS #11).
+    early: Option<broadcast::Receiver<MediaPacket>>,
     /// Whether video runs (asked for, or forced by an audio refusal).
     pub video: bool,
+    /// The video socket, to send RTCP back on, and the SSRC our offer named.
+    video_rtcp: Option<(Arc<UdpSocketHandle>, u32)>,
+    /// Incremented per keyframe request (RTCP FIR sequence number).
+    fir_seq: u8,
     /// The display the video shows.
     pub display_id: i64,
     stopped: bool,
@@ -334,7 +379,9 @@ impl MediaSession {
 
         let id = uuid::Uuid::new_v4();
         mark(&marker, &id.to_string());
-        let (packets, _) = broadcast::channel(1024);
+        // Big enough to hold the packets that arrive while `start` waits for the first one: a
+        // keyframe is a few hundred packets.
+        let (packets, early) = broadcast::channel(4096);
         let mut session = Self {
             ctl,
             id,
@@ -342,7 +389,10 @@ impl MediaSession {
             streams: Vec::new(),
             tasks: Vec::new(),
             packets,
+            early: (mode == MediaMode::Video).then_some(early),
             video: mode == MediaMode::Video,
+            video_rtcp: None,
+            fir_seq: 0,
             display_id,
             stopped: false,
         };
@@ -367,7 +417,9 @@ impl MediaSession {
             &host, udp.local_port(), &peer, AUDIO_SENDER_PORT, offer, CLIENT_SUPPORTED_FEATURES, self.id,
         );
         match self.ctl.invoke(FEATURE_START, params, None).await {
-            Ok(_) => self.read(StreamKind::Audio, udp),
+            Ok(_) => {
+                self.read(StreamKind::Audio, udp);
+            }
             Err(e) if error_code(&e) == Some(ERROR_MEDIA_IN_USE) => {
                 tracing::debug!("media: audio refused (9022), video sets up the session");
                 self.video = true;
@@ -388,7 +440,8 @@ impl MediaSession {
                 .invoke(FEATURE_START, params, None)
                 .await
                 .context("starting the video stream failed")?;
-            self.read(StreamKind::Video, udp);
+            let udp = self.read(StreamKind::Video, udp);
+            self.video_rtcp = Some((udp, ssrc));
         }
 
         let began = Instant::now();
@@ -404,7 +457,9 @@ impl MediaSession {
         Ok(())
     }
 
-    fn read(&mut self, kind: StreamKind, udp: UdpSocketHandle) {
+    fn read(&mut self, kind: StreamKind, udp: UdpSocketHandle) -> Arc<UdpSocketHandle> {
+        let udp = Arc::new(udp);
+        let socket = udp.clone();
         let counters = Arc::new(Counters::default());
         let (c, tx) = (counters.clone(), self.packets.clone());
         self.tasks.push(tokio::spawn(async move {
@@ -419,6 +474,20 @@ impl MediaSession {
             }
         }));
         self.streams.push((kind, counters));
+        socket
+    }
+
+    /// Asks the device for a new keyframe (RTCP PLI + FIR on the video socket). `media_ssrc` is
+    /// the SSRC of the video's RTP packets.
+    pub async fn request_keyframe(&mut self, media_ssrc: u32) -> Result<()> {
+        let Some((udp, ours)) = self.video_rtcp.clone() else {
+            bail!("no video stream runs in this media session");
+        };
+        self.fir_seq = self.fir_seq.wrapping_add(1);
+        let packet = idevice::core_device::build_keyframe_request(ours, "iphone-use", media_ssrc, &[], self.fir_seq);
+        udp.send_to(VIDEO_SENDER_PORT, packet)
+            .await
+            .context("sending a keyframe request failed (tunnel closed)")
     }
 
     /// Whether every stream has delivered a packet.
@@ -432,9 +501,10 @@ impl MediaSession {
         (last > 0).then(|| now_ms().saturating_sub(last))
     }
 
-    /// Media packets as they arrive.
-    pub fn subscribe(&self) -> broadcast::Receiver<MediaPacket> {
-        self.packets.subscribe()
+    /// Media packets as they arrive. The first call also gets the packets from the start of the
+    /// streams; later calls only new ones (ask for a keyframe then).
+    pub fn subscribe(&mut self) -> broadcast::Receiver<MediaPacket> {
+        self.early.take().unwrap_or_else(|| self.packets.subscribe())
     }
 
     pub fn session_id(&self) -> String {
@@ -481,7 +551,11 @@ impl MediaSession {
 /// Stops the streams of sessions an earlier process left running. Failures are logged, not
 /// fatal: they belong to another session, and the new one can still start.
 async fn sweep_leftovers(ctl: &mut MediaControl, marker: &Path) {
-    for id in marked(marker) {
+    let me = std::process::id();
+    for (id, pid) in marked(marker) {
+        if pid.is_some_and(|p| p == me || process_alive(p)) {
+            continue;
+        }
         match tokio::time::timeout(STOP_WITHIN, ctl.stop_session(&id)).await {
             Ok(Ok(())) => unmark(marker, &id),
             other => tracing::warn!("media: leftover session {id} not stopped: {other:?}"),
@@ -552,7 +626,9 @@ mod tests {
         mark(&marker, "a");
         mark(&marker, "b");
         mark(&marker, "a");
-        assert_eq!(marked(&marker), vec!["a", "b"]);
+        let me = Some(std::process::id());
+        assert_eq!(marked(&marker), vec![("a".to_string(), me), ("b".to_string(), me)]);
+        assert!(process_alive(std::process::id()));
         unmark(&marker, "a");
         unmark(&marker, "b");
         assert!(!marker.exists());
