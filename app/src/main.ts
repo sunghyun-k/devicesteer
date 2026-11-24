@@ -39,6 +39,21 @@ interface InputEvent {
   lifted?: string;
 }
 
+/** Mirrors `iphone_use_core::DeviceSettings`, plus the location the daemon simulated. `null`:
+ * unknown or unsupported (named in `unsupported`). A `settings` event can carry only some keys. */
+interface Settings {
+  appearance: "light" | "dark" | null;
+  text_size: string | null;
+  liquid_glass: number | null;
+  reduce_motion: boolean | null;
+  increase_contrast: boolean | null;
+  show_borders: boolean | null;
+  reduce_transparency: boolean | null;
+  voiceover: boolean | null;
+  location: [number, number] | null;
+  unsupported: string[];
+}
+
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
 // ---------- device picker ----------
@@ -344,6 +359,9 @@ function onMessage(buf: Uint8Array): void {
       case "input":
         onInput(ev as InputEvent);
         break;
+      case "settings":
+        showSettings(ev as Partial<Settings>);
+        break;
     }
   } else if (kind === 1) {
     const hl = view.getUint32(5);
@@ -479,6 +497,128 @@ stopAgentBtn.addEventListener("click", () =>
   void send("control", { action: control.agent_stopped ? "resume_agent" : "stop_agent" }),
 );
 
+// ---------- device settings ----------
+
+const settingsPanel = $<HTMLElement>("#settings");
+const settingsToggle = $<HTMLButtonElement>("#settings-toggle");
+const settingsStatus = $<HTMLParagraphElement>("#settings-status");
+const voWarning = $<HTMLParagraphElement>("#vo-warning");
+const liquidGlass = $<HTMLInputElement>("#liquid-glass");
+const textSize = $<HTMLInputElement>("#text-size");
+const latitude = $<HTMLInputElement>("#latitude");
+const longitude = $<HTMLInputElement>("#longitude");
+
+/** Text sizes from smallest to largest, as the CLI names them (`iphone_use_core::TEXT_SIZES`). */
+const TEXT_SIZES = ["xs", "s", "m", "l", "xl", "xxl", "xxxl", "ax1", "ax2", "ax3", "ax4", "ax5"];
+/** On/off items: the field in `Settings` and the name `settings_set` takes. */
+const TOGGLES: [keyof Settings, string][] = [
+  ["reduce_motion", "reduce-motion"],
+  ["increase_contrast", "increase-contrast"],
+  ["show_borders", "show-borders"],
+  ["reduce_transparency", "reduce-transparency"],
+  ["voiceover", "voiceover"],
+];
+
+let settings: Partial<Settings> = {};
+
+function item(name: string): HTMLElement {
+  return settingsPanel.querySelector<HTMLElement>(`[data-item="${name}"]`)!;
+}
+
+/** Shows the settings, merged into what is known (an event may carry one key). */
+function showSettings(s: Partial<Settings>): void {
+  settings = { ...settings, ...s };
+  const cur = settings;
+  voWarning.hidden = cur.voiceover !== true;
+  for (const radio of settingsPanel.querySelectorAll<HTMLInputElement>('input[name="appearance"]')) {
+    radio.checked = radio.value === cur.appearance;
+  }
+  if (cur.liquid_glass != null) liquidGlass.value = String(cur.liquid_glass);
+  $<HTMLOutputElement>("#liquid-glass-value").value = cur.liquid_glass != null ? cur.liquid_glass.toFixed(2) : "–";
+  const size = cur.text_size ? TEXT_SIZES.indexOf(cur.text_size) : -1;
+  if (size >= 0) textSize.value = String(size);
+  $<HTMLOutputElement>("#text-size-value").value = cur.text_size ?? "–";
+  for (const [key] of TOGGLES) {
+    item(key).querySelector<HTMLInputElement>("input")!.checked = cur[key] === true;
+  }
+  $<HTMLOutputElement>("#location-value").value = cur.location
+    ? `${cur.location[0].toFixed(4)}, ${cur.location[1].toFixed(4)}`
+    : "not simulated";
+  if (cur.location && document.activeElement !== latitude && document.activeElement !== longitude) {
+    latitude.value = String(cur.location[0]);
+    longitude.value = String(cur.location[1]);
+  }
+  for (const el of settingsPanel.querySelectorAll<HTMLElement>("[data-item]")) {
+    const off = cur.unsupported?.includes(el.dataset.item!) ?? false;
+    el.classList.toggle("unsupported", off);
+    for (const input of el.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button")) input.disabled = off;
+  }
+}
+
+function settingsMessage(text: string, error = false): void {
+  settingsStatus.textContent = text;
+  settingsStatus.classList.toggle("error", error);
+}
+
+async function readSettings(): Promise<void> {
+  settingsMessage("Reading…");
+  try {
+    showSettings(await invoke<Settings>("send", { cmd: "settings", args: {} }));
+    settingsMessage("");
+  } catch (e) {
+    settingsMessage(String(e), true);
+  }
+}
+
+/** Changes one item; on failure the controls go back to the last known values. */
+async function setSetting(name: string, value: (string | number)[]): Promise<void> {
+  settingsPanel.setAttribute("aria-busy", "true");
+  settingsMessage("Applying…");
+  try {
+    const r = await invoke<{ settings: Settings }>("send", { cmd: "settings_set", args: { name, value: value.map(String) } });
+    showSettings(r.settings);
+    settingsMessage("");
+  } catch (e) {
+    showSettings({});
+    settingsMessage(String(e), true);
+  } finally {
+    settingsPanel.removeAttribute("aria-busy");
+  }
+}
+
+settingsToggle.addEventListener("click", () => {
+  const open = settingsPanel.hidden;
+  settingsPanel.hidden = !open;
+  settingsToggle.setAttribute("aria-expanded", String(open));
+  layout();
+  if (open) void readSettings();
+});
+for (const radio of settingsPanel.querySelectorAll<HTMLInputElement>('input[name="appearance"]')) {
+  radio.addEventListener("change", () => void setSetting("appearance", [radio.value]));
+}
+liquidGlass.addEventListener("input", () => {
+  $<HTMLOutputElement>("#liquid-glass-value").value = Number(liquidGlass.value).toFixed(2);
+});
+liquidGlass.addEventListener("change", () => void setSetting("liquid-glass", [liquidGlass.value]));
+textSize.addEventListener("input", () => {
+  $<HTMLOutputElement>("#text-size-value").value = TEXT_SIZES[Number(textSize.value)];
+});
+textSize.addEventListener("change", () => void setSetting("text-size", [TEXT_SIZES[Number(textSize.value)]]));
+for (const [key, name] of TOGGLES) {
+  const box = item(key).querySelector<HTMLInputElement>("input")!;
+  box.addEventListener("change", () => void setSetting(name, [box.checked ? "on" : "off"]));
+}
+$<HTMLButtonElement>("#location-set").addEventListener("click", () => {
+  const [lat, lon] = [latitude.value, longitude.value].map((v) => (v.trim() ? Number(v) : NaN));
+  if (!(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 180)) {
+    settingsMessage("Enter a latitude (-90 to 90) and a longitude (-180 to 180) in degrees.", true);
+    return;
+  }
+  void setSetting("location", ["set", lat, lon]);
+});
+$<HTMLButtonElement>("#location-clear").addEventListener("click", () => void setSetting("location", ["clear"]));
+$<HTMLButtonElement>("#vo-off").addEventListener("click", () => void setSetting("voiceover", ["off"]));
+
 let statsTimer: number | undefined;
 /** Which visit to the viewer the channel's messages belong to. */
 let viewerGen = 0;
@@ -546,6 +686,8 @@ async function openViewer(d: DeviceInfo): Promise<void> {
     viewerStatus.textContent = String(e);
     return;
   }
+  // VoiceOver changes what taps do, so its warning shows whether or not the panel is open.
+  void readSettings();
   statsTimer = window.setInterval(() => {
     showStats();
     if (Math.round(performance.now() / 1000) % 2 === 0) report();
@@ -565,6 +707,9 @@ $<HTMLButtonElement>("#back").addEventListener("click", async () => {
   received.clear();
   waitingForKey = true;
   config = undefined;
+  settings = {};
+  voWarning.hidden = true;
+  settingsMessage("");
   viewer.hidden = true;
   picker.hidden = false;
 });

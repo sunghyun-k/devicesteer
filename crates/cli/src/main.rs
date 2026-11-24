@@ -9,7 +9,7 @@ mod record;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use iphone_use_core::{
-    Button, Controller, MediaMode, Motion, Session,
+    Button, Controller, MediaMode, Motion, Session, Setting,
     ax::{BuildOptions, Screen},
     list_devices,
 };
@@ -140,6 +140,15 @@ enum Command {
         #[arg(long)]
         seconds: Option<f64>,
     },
+    /// Device Hub's settings: appearance, text size, Liquid Glass, accessibility switches,
+    /// VoiceOver and the simulated location. Without an action, prints the current values; items
+    /// the device can't read are null and listed in `unsupported`.
+    Settings {
+        #[command(flatten)]
+        target: Target,
+        #[command(subcommand)]
+        action: Option<SettingsAction>,
+    },
     /// Screen-sharing media streams on the device.
     Media {
         #[command(flatten)]
@@ -172,6 +181,20 @@ enum RecordAction {
         output: PathBuf,
         #[arg(long)]
         seconds: Option<f64>,
+    },
+}
+
+#[derive(Subcommand)]
+enum SettingsAction {
+    /// Change one item and print the values after it: `appearance dark|light`,
+    /// `text-size xs|s|m|l|xl|xxl|xxxl|ax1..ax5`, `liquid-glass <0..1>`,
+    /// `reduce-motion|increase-contrast|show-borders|reduce-transparency|voiceover on|off`,
+    /// `location set <latitude> <longitude>`, `location clear`. A simulated location stays until
+    /// cleared.
+    Set {
+        name: String,
+        #[arg(required = true, num_args = 1.., allow_hyphen_values = true)]
+        value: Vec<String>,
     },
 }
 
@@ -322,6 +345,30 @@ async fn run(command: Command) -> Result<serde_json::Value> {
         }
         Command::Record { target, action: RecordAction::Stop } if !target.no_daemon => {
             target.client().await?.request("record_stop", json!({})).await?
+        }
+        Command::Settings { target, action } if !target.no_daemon => match action {
+            None => target.client().await?.request("settings", json!({})).await?,
+            Some(SettingsAction::Set { name, value }) => {
+                Setting::parse(&name, &value)?;
+                target.client().await?.request("settings_set", json!({ "name": name, "value": value })).await?
+            }
+        },
+        Command::Settings { target, action } => {
+            let mut session = Session::open(target.udid.as_deref()).await?;
+            let set = match action {
+                Some(SettingsAction::Set { name, value }) => {
+                    let setting = Setting::parse(&name, &value)?;
+                    session.apply_setting(&setting).await?;
+                    Some(setting.name())
+                }
+                None => None,
+            };
+            // The same shapes as through the daemon, which also knows the location it set.
+            let settings = session.settings().await?;
+            match set {
+                Some(set) => json!({ "set": set, "settings": settings }),
+                None => serde_json::to_value(settings)?,
+            }
         }
         Command::Ui { target, all, full } => {
             with_controller(&target, async |c| {

@@ -6,7 +6,8 @@ Operate a **real iPhone or iPad** connected over USB or Wi-Fi, from macOS or Win
 > rebuilds it as a Rust core with a CLI and a Tauri viewer, talking to the device through
 > [idevice](https://github.com/jkcoxson/idevice) instead of Xcode's CoreDevice. Today it can read
 > the screen's accessibility tree, tap, swipe and press buttons, launch apps, record the screen,
-> and show the live screen in a viewer where a human can watch or take over from an agent.
+> change Device Hub's settings (appearance, text size, accessibility switches, VoiceOver, simulated
+> location), and show the live screen in a viewer where a human can watch or take over from an agent.
 
 ## Requirements
 
@@ -27,6 +28,9 @@ cargo build
 ./target/debug/iphone-use button     --udid <UDID> home
 ./target/debug/iphone-use launch     --udid <UDID> com.apple.calculator
 ./target/debug/iphone-use record start --udid <UDID> -o screen.mp4   # then: record stop
+./target/debug/iphone-use settings   --udid <UDID>            # appearance, text size, switches, ...
+./target/debug/iphone-use settings set --udid <UDID> appearance dark   # or text-size ax1, voiceover off,
+                                                              # location set 37.3349 -122.0090, ...
 ```
 
 Output is JSON. Device commands go through a per-device daemon that the first command starts

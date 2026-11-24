@@ -21,6 +21,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Display info | #9 |
 | Accessibility tree | #10, #12, #19, #20, #21, #22 |
 | Daemon | #14, #23 |
+| Device settings | #24 |
 | Viewer | #15, #18, #23 |
 
 ## Entries
@@ -416,3 +417,38 @@ Checked after the fix: Back and back again four times, the same with another fra
 keeping the stream running (each return dropped ~17 frames before the restart's keyframe), and a
 viewer process started and killed three times; the first frame came every time and `viewers`
 went back to 0.
+
+### 24. Device settings (configuration and location services)
+
+Measured on the test iPhone (iOS 27.2.1, USB) with `settings` / `settings set`
+(`crates/core/src/settings.rs`):
+
+- **A call sometimes gets a bodyless reply and nothing after it.** The answer to a get came as an
+  empty `Reply` message on the reply stream, and idevice's `recv` skips bodyless messages and
+  waits for the next one, which never came: a `settings set` in the daemon hung for minutes,
+  holding the device lock. About 1 call in 80 through the daemon (a read right after a set, a
+  read while a viewer attached; two in a row once); not seen on a fresh tunnel per command, but
+  not ruled out there. Each call now has a 1.5 s limit and up to three tries on new connections
+  (calls answer in 10 to 50 ms); the final error is not worded as a connection failure, since
+  the tunnel is fine and the daemon would drop its session on those words.
+- **Setting VoiceOver answers only after it has started or stopped:** 3.1 to 3.5 s, both ways
+  (8 s limit). Turning it on shows a gesture tutorial, and closing that a notification permission
+  prompt from VoiceOver (declined on the test device). Turning it off over CoreDevice works while
+  it is on.
+- **Accessibility text sizes (`ax1` .. `ax5`) are refused** (CoreDevice error 21063, "Enable
+  Larger Accessibility Sizes on the device before setting an accessibility text size") while the
+  device's Larger Accessibility Sizes switch is off. `xs` .. `xxxl` work. The error shown is the
+  device's `NSLocalizedDescription`.
+- **`showBorders` is Button Shapes** (Accessibility > Display & Text Size), not a layout-debug
+  overlay. Increase Contrast and Reduce Transparency showed up on the same page.
+- **Liquid Glass opacity is a Float:** 0.8 reads back as 0.800000011920929; output is rounded to
+  two places. idevice has no getter for it, nor for Increase Contrast or VoiceOver; those go out as
+  raw actions (`getliquidglassconfiguration`, `getdeviceincreasecontrast`, `get`/`setvoiceover`
+  with key `voiceOverConfiguration`) on the same service.
+- **The simulated location has no getter.** `setsimulatedlocation` / `clearsimulatedlocation`
+  (feature `com.apple.coredevice.feature.simulatelocation` on
+  `com.apple.coredevice.locationservice`) moved Maps to the given point and back. The daemon
+  reports the location it set; a restarted daemon reports `null` while the device may still be
+  simulating one, so `location clear` is always safe to send.
+- All other items changed on the device and read back as set, through the CLI and the viewer's
+  panel: dark appearance and larger text showed on the home screen at once.

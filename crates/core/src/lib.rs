@@ -25,6 +25,7 @@ mod record;
 mod resample;
 mod video;
 mod session;
+mod settings;
 pub mod trace;
 
 pub use control::{Controller, Sent};
@@ -35,6 +36,7 @@ pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, S
 pub use record::{Frame, FrameStream, RecordSummary, Recorder};
 pub use resample::Resampler;
 pub use session::{ServiceInfo, Session, resolve_udid};
+pub use settings::{DeviceSettings, Setting, TEXT_SIZES, Toggle};
 pub use video::ParameterSets;
 
 /// How long one connection step (usbmuxd, lockdown, proxy, RSD) may take before we give up.

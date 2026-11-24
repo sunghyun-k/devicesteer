@@ -17,7 +17,8 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use iphone_use_core::{
-    Button, Controller, Frame, FrameStream, MediaMode, Motion, RecordSummary, Recorder, Resampler, Session, TouchPhase,
+    Button, Controller, DeviceSettings, Frame, FrameStream, MediaMode, Motion, RecordSummary, Recorder, Resampler,
+    Session, Setting, Toggle, TouchPhase,
     ax::{BuildOptions, Screen},
 };
 use serde::Deserialize;
@@ -55,7 +56,12 @@ const TOUCH_MIN_DELAY_MS: f64 = 20.0;
 const AGENT_WAITS_FOR_TOUCH: Duration = Duration::from_secs(3);
 
 /// Commands that put input on the device.
-const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch"];
+const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch", "settings_set"];
+/// How long a reading of the VoiceOver switch is trusted before an input reads it again.
+const VOICEOVER_CHECK: Duration = Duration::from_secs(5);
+/// Added to the result of input sent while VoiceOver is on.
+const VOICEOVER_WARNING: &str = "VoiceOver is on: a tap selects an element and a double tap activates it, so \
+    taps and swipes don't do what they would. Turn it off with `settings set voiceover off`";
 
 struct Recording {
     path: PathBuf,
@@ -84,6 +90,10 @@ struct Device {
     recording: Option<Recording>,
     last_input: Option<Instant>,
     touch: Option<Touch>,
+    /// The location this daemon simulated (the device has no way to read it back).
+    location: Option<(f64, f64)>,
+    /// The VoiceOver switch as last read, and when.
+    voiceover: Option<(bool, Instant)>,
 }
 
 pub struct Daemon {
@@ -544,7 +554,8 @@ impl Daemon {
                 self.input_event(req.source, "tap", &[p], screen, json!({}));
                 let sent = c.tap(p).await?;
                 dev.last_input = Some(Instant::now());
-                Ok(json!({ "tapped": [p.0, p.1], "element": element, "screen": sent.screen, "ms": sent.ms }))
+                let r = json!({ "tapped": [p.0, p.1], "element": element, "screen": sent.screen, "ms": sent.ms });
+                Ok(self.warn_voiceover(dev, r).await)
             }
             "swipe" => {
                 self.check_agent(req.source)?;
@@ -559,7 +570,8 @@ impl Daemon {
                 self.input_event(req.source, "swipe", &[from, to], screen, json!({ "duration_ms": ms }));
                 let sent = c.drag(from, to, Duration::from_millis(ms), motion).await?;
                 dev.last_input = Some(Instant::now());
-                Ok(json!({ "from": [from.0, from.1], "to": [to.0, to.1], "screen": sent.screen, "ms": sent.ms }))
+                let r = json!({ "from": [from.0, from.1], "to": [to.0, to.1], "screen": sent.screen, "ms": sent.ms });
+                Ok(self.warn_voiceover(dev, r).await)
             }
             "button" => {
                 self.check_agent(req.source)?;
@@ -571,7 +583,7 @@ impl Daemon {
                 self.input_event(req.source, "button", &[], screen, json!({ "button": b }));
                 c.button(b).await?;
                 dev.last_input = Some(Instant::now());
-                Ok(json!({ "pressed": b }))
+                Ok(self.warn_voiceover(dev, json!({ "pressed": b })).await)
             }
             "touch" => {
                 self.check_agent(req.source)?;
@@ -594,6 +606,41 @@ impl Daemon {
                 let c = self.controller(dev).await?;
                 let pid = c.launch(bundle, relaunch).await?;
                 Ok(json!({ "launched": bundle, "pid": pid }))
+            }
+            "settings" => {
+                let c = self.controller(dev).await?;
+                let s = c.session.settings().await?;
+                Ok(self.settings_event(dev, &s))
+            }
+            "settings_set" => {
+                self.check_agent(req.source)?;
+                let name = a.get("name").and_then(|v| v.as_str()).context("settings_set needs a name")?;
+                let values: Vec<String> = a
+                    .get("value")
+                    .and_then(|v| v.as_array())
+                    .context("settings_set needs a value list")?
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    })
+                    .collect();
+                let setting = Setting::parse(name, &values)?;
+                let c = self.controller(dev).await?;
+                c.session.apply_setting(&setting).await?;
+                match setting {
+                    Setting::Location(lat, lon) => dev.location = Some((lat, lon)),
+                    Setting::ClearLocation => dev.location = None,
+                    _ => {}
+                }
+                let c = self.controller(dev).await?;
+                let s = c.session.settings().await?;
+                let settings = self.settings_event(dev, &s);
+                let mut r = json!({ "set": setting.name(), "settings": settings });
+                if s.voiceover == Some(true) {
+                    r["warning"] = json!(VOICEOVER_WARNING);
+                }
+                Ok(r)
             }
             "display" => {
                 let c = self.controller(dev).await?;
@@ -662,6 +709,49 @@ impl Daemon {
             }
             other => bail!("unknown command `{other}`"),
         }
+    }
+
+    /// Settings as the clients see them (with the location this daemon set), sent to subscribers
+    /// as a `settings` event too, so a viewer follows changes the agent makes.
+    fn settings_event(&self, dev: &mut Device, s: &DeviceSettings) -> Value {
+        if let Some(on) = s.voiceover {
+            dev.voiceover = Some((on, Instant::now()));
+        }
+        let mut v = serde_json::to_value(s).unwrap_or_default();
+        v["location"] = json!(dev.location.map(|(lat, lon)| [lat, lon]));
+        let mut ev = v.clone();
+        ev["event"] = json!("settings");
+        self.emit(ev);
+        v
+    }
+
+    /// Adds a warning to an input's result while VoiceOver is on: taps then select instead of
+    /// activating, and an agent that doesn't know would read the screen as unchanged. The switch
+    /// is read again when the last reading is older than [`VOICEOVER_CHECK`]; a failed read
+    /// leaves the result alone.
+    async fn warn_voiceover(&self, dev: &mut Device, mut result: Value) -> Value {
+        let fresh = dev.voiceover.filter(|(_, at)| at.elapsed() < VOICEOVER_CHECK).map(|(on, _)| on);
+        let on = match fresh {
+            Some(on) => on,
+            None => {
+                let Some(c) = dev.controller.as_mut() else { return result };
+                match c.session.setting_toggle(Toggle::VoiceOver).await {
+                    Ok(Some(on)) => {
+                        let changed = dev.voiceover.map(|(was, _)| was) != Some(on);
+                        dev.voiceover = Some((on, Instant::now()));
+                        if changed {
+                            self.emit(json!({ "event": "settings", "voiceover": on }));
+                        }
+                        on
+                    }
+                    _ => return result,
+                }
+            }
+        };
+        if on {
+            result["warning"] = json!(VOICEOVER_WARNING);
+        }
+        result
     }
 
     /// Periodic work: the agent-active indicator, stale video, idle media and idle exit.

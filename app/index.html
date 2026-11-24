@@ -24,10 +24,56 @@
         <button id="home" type="button">Home</button>
         <button id="take-over" type="button">Take over</button>
         <button id="stop-agent" type="button">Stop agent</button>
+        <button id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings">Settings</button>
       </header>
-      <div id="stage">
-        <canvas id="screen"></canvas>
-        <div id="overlay"></div>
+      <p id="vo-warning" role="alert" hidden>
+        VoiceOver is on. Taps select instead of activating, so agent input won't do what it expects.
+        <button id="vo-off" type="button">Turn off VoiceOver</button>
+      </p>
+      <div id="body">
+        <div id="stage">
+          <canvas id="screen"></canvas>
+          <div id="overlay"></div>
+        </div>
+        <aside id="settings" hidden aria-label="Device settings">
+          <h2>Device settings</h2>
+          <div class="field" data-item="appearance">
+            <span class="label">Appearance</span>
+            <div class="segmented" role="radiogroup" aria-label="Appearance">
+              <label><input type="radio" name="appearance" value="light" /><span>Light</span></label>
+              <label><input type="radio" name="appearance" value="dark" /><span>Dark</span></label>
+            </div>
+          </div>
+          <div class="field" data-item="liquid_glass">
+            <label class="label" for="liquid-glass">Liquid Glass <output id="liquid-glass-value"></output></label>
+            <input id="liquid-glass" type="range" min="0" max="1" step="0.05" />
+            <div class="ends"><span>Clear</span><span>Tinted</span></div>
+          </div>
+          <div class="field" data-item="text_size">
+            <label class="label" for="text-size">Text Size <output id="text-size-value"></output></label>
+            <input id="text-size" type="range" min="0" max="11" step="1" />
+            <div class="ends"><span>xs</span><span>ax5</span></div>
+          </div>
+          <div class="toggles">
+            <label class="toggle" data-item="reduce_motion"><span>Reduce Motion</span><input type="checkbox" role="switch" /></label>
+            <label class="toggle" data-item="increase_contrast"><span>Increase Contrast</span><input type="checkbox" role="switch" /></label>
+            <label class="toggle" data-item="show_borders"><span>Button Shapes</span><input type="checkbox" role="switch" /></label>
+            <label class="toggle" data-item="reduce_transparency"><span>Reduce Transparency</span><input type="checkbox" role="switch" /></label>
+            <label class="toggle" data-item="voiceover"><span>VoiceOver</span><input type="checkbox" role="switch" /></label>
+          </div>
+          <div class="field" data-item="location">
+            <span class="label">Location <output id="location-value"></output></span>
+            <div class="coords">
+              <input id="latitude" type="text" inputmode="decimal" placeholder="Latitude" aria-label="Latitude" />
+              <input id="longitude" type="text" inputmode="decimal" placeholder="Longitude" aria-label="Longitude" />
+            </div>
+            <div class="buttons">
+              <button id="location-set" type="button">Simulate</button>
+              <button id="location-clear" type="button">Clear</button>
+            </div>
+          </div>
+          <p id="settings-status" role="status"></p>
+        </aside>
       </div>
       <p id="viewer-status" role="status"></p>
     </section>

@@ -35,8 +35,9 @@ h1 { font-size: 20px; margin: 8px 0; }
 .bar .spacer { flex: 1; }
 #device-name { font-weight: 600; }
 #agent-badge { background: #ff9f0a; color: #000; border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+#body { flex: 1; min-height: 0; display: flex; gap: 12px; margin: 0 12px; }
 #stage {
-  position: relative; flex: 1; min-height: 0; margin: 0 12px;
+  position: relative; flex: 1; min-height: 0; min-width: 0;
   display: flex; align-items: center; justify-content: center;
   border-radius: 12px; outline: 3px solid transparent; transition: outline-color 0.2s;
 }
@@ -51,3 +52,41 @@ h1 { font-size: 20px; margin: 8px 0; }
 .dot { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: var(--c); opacity: 0.8; }
 @keyframes ripple { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 #viewer-status { color: var(--muted); font-size: 12px; margin: 6px 12px 10px; min-height: 1.2em; font-variant-numeric: tabular-nums; }
+
+#vo-warning {
+  margin: 0 12px 8px; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  background: #ff3b30; color: #fff; display: flex; align-items: center; gap: 12px;
+}
+#vo-warning[hidden] { display: none; }
+#vo-warning button { margin-left: auto; }
+#settings-toggle[aria-expanded="true"] { font-weight: 600; }
+
+#settings {
+  width: 260px; flex: none; overflow-y: auto; background: var(--card); border-radius: 12px;
+  padding: 12px 14px; font-size: 13px; display: flex; flex-direction: column; gap: 14px;
+}
+#settings[hidden] { display: none; }
+#settings h2 { font-size: 15px; margin: 0; }
+#settings .field { display: flex; flex-direction: column; gap: 6px; }
+#settings .label { font-weight: 600; display: flex; justify-content: space-between; }
+#settings output { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+#settings input[type="range"] { width: 100%; margin: 0; }
+#settings .ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.segmented { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid var(--muted); }
+.segmented label { flex: 1; text-align: center; cursor: pointer; }
+.segmented label { position: relative; }
+/* Hidden but still a radio button to the keyboard and to accessibility clients. */
+.segmented input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.segmented input:focus-visible + span { outline: 2px solid #0a84ff; outline-offset: -2px; }
+.segmented span { display: block; padding: 4px 0; }
+.segmented input:checked + span { background: var(--fg); color: var(--bg); }
+.toggles { display: flex; flex-direction: column; gap: 8px; }
+.toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.toggle input { width: 16px; height: 16px; margin: 0; }
+.coords, .buttons { display: flex; gap: 6px; }
+.coords input { width: 50%; min-width: 0; box-sizing: border-box; }
+.buttons button { flex: 1; }
+#settings .unsupported { opacity: 0.45; }
+#settings .unsupported .label::after, #settings .toggle.unsupported span::after { content: " (unsupported)"; font-weight: 400; }
+#settings-status { color: var(--muted); margin: 0; min-height: 1.2em; }
+#settings-status.error { color: var(--error); }
