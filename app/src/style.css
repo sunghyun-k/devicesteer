@@ -280,6 +280,24 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .menu button .icon { width: 18px; height: 18px; color: var(--fg-icon); }
 .menu button:hover:not(:disabled) { background: var(--hover); }
 .menu button:disabled { opacity: 0.4; cursor: default; }
+/* Checkable rows: the check shows only when on; a key equivalent sits at the trailing edge. */
+.menu button[role="menuitemcheckbox"] .check { visibility: hidden; }
+.menu button[aria-checked="true"] .check { visibility: visible; color: var(--accent); }
+.menu button span { flex: 1; }
+.menu kbd { font: inherit; font-size: 12px; color: var(--fg-3); }
+
+/* The keyboard button while keys go to the device. */
+#keyboard[data-forwarding="true"] { color: var(--accent); }
+#keyboard[data-forwarding="true"] .icon { color: var(--accent); }
+#center:not(.live) #keyboard-group { display: none; }
+
+/* The type-text field: a slim card under the header, like a find bar. */
+#type-text {
+  display: flex; align-items: center; gap: 8px; max-width: 520px; width: calc(100% - 40px); margin: 12px auto 0;
+  padding: 6px 6px 6px 12px; border-radius: var(--r-lg); flex: none;
+}
+#type-text[hidden] { display: none; }
+#type-text input { flex: 1; min-width: 0; height: 28px; border: 0; background: transparent; color: var(--fg); font-size: var(--fs-md); outline: none; }
 
 /* Notices over the stage, as inline alerts: a slim filled strip with the icon in line, the
    text, an action. Red-tinted for a warning or a failure; no card, no shadow. */

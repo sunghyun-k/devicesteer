@@ -55,6 +55,10 @@ const DEVICES: MockDevice[] = [
 const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];
 
 const state = {
+  /** Our hardware keyboard, and what the viewer sent: key steps and typed text, for scripts. */
+  hardwareKeyboard: false,
+  keyLog: [] as [string, boolean][],
+  typed: [] as string[],
   devices: params.get("devices") ?? "normal",
   attach: params.get("attach") ?? "ok",
   watch: params.get("watch") ?? "ok",
@@ -423,6 +427,20 @@ async function send(cmd: string, a: Record<string, unknown>): Promise<unknown> {
     }
     case "button":
       return {};
+    case "keyboard":
+      state.keyLog.push([String(a.code), Boolean(a.down)]);
+      return { down: a.down };
+    case "keyboard_connect":
+    case "keyboard_disconnect":
+      await sleep(300);
+      state.hardwareKeyboard = cmd === "keyboard_connect";
+      return { event: "keyboard", hardware: state.hardwareKeyboard, attached: state.hardwareKeyboard };
+    case "keyboard_status":
+      return { event: "keyboard", hardware: state.hardwareKeyboard, attached: state.hardwareKeyboard };
+    case "type":
+      await sleep(600);
+      state.typed.push(String(a.text));
+      return { method: "stream", chars: String(a.text).length, verified: true };
     case "record_start":
       await sleep(200);
       return mock.recordStart(String(a.path));
@@ -451,6 +469,13 @@ const LABELS = ["Open Settings", "Tap Wi-Fi", "Scroll to Privacy & Security", "S
 let labelIndex = 0;
 
 const mock = {
+  /** Key steps (`[code, down]`) and texts the viewer sent; reading empties them. */
+  takeKeys() {
+    return state.keyLog.splice(0);
+  },
+  takeTyped() {
+    return state.typed.splice(0);
+  },
   /** `owner` null ends the session. */
   session(owner: Owner | null = "agent", name = "Check the Wi-Fi settings", reason: string | null = null) {
     if (!owner) state.session = null;

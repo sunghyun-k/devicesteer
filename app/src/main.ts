@@ -997,6 +997,9 @@ function onMessage(buf: Uint8Array): void {
       case "recording":
         onRecording(ev as RecordingEvent);
         break;
+      case "keyboard":
+        onKeyboard(ev as KeyboardState);
+        break;
     }
   } else if (kind === 1) {
     const hl = view.getUint32(5);
@@ -1205,6 +1208,207 @@ document.addEventListener("visibilitychange", () => {
 
 for (const b of document.querySelectorAll<HTMLButtonElement>("#device-bar [data-button]"))
   b.addEventListener("click", () => void send("button", { name: b.dataset.button }).catch(() => {}));
+
+// ---------- the Mac keyboard ----------
+//
+// With "Type from Mac Keyboard" on, keys pressed while the pointer is over the screen (or the
+// screen has focus) go to the device as HID key downs and ups, by DOM `code`: the physical key,
+// so the device's layout and input source decide what it types (PITFALLS #35). Never while a
+// field of the viewer has focus, and never the viewer's own shortcuts. Text composed with a Mac
+// input method (Hangul) goes through "Type Text…", the `type` command, instead.
+
+type KeyboardState = { hardware: boolean; attached: boolean };
+
+const kbButton = $<HTMLButtonElement>("#keyboard");
+const kbMenu = $<HTMLDivElement>("#keyboard-menu");
+const kbForward = $<HTMLButtonElement>("#kb-forward");
+const kbHardware = $<HTMLButtonElement>("#kb-hardware");
+const kbSoftware = $<HTMLButtonElement>("#kb-software");
+const typeForm = $<HTMLFormElement>("#type-text");
+const typeInput = $<HTMLInputElement>("#type-text-input");
+const typeSend = $<HTMLButtonElement>("#type-text-send");
+menu(kbButton, kbMenu);
+
+let forwarding = prefs.get("keyboard-forwarding") === "1";
+let hardwareKeyboard = false;
+let overScreen = false;
+/** Keys sent down, by code, so every one is let go again. */
+const keysDown = new Set<string>();
+/** Key steps go out one at a time and in order: an up that overtook its down would leave the key held. */
+let keyChain: Promise<unknown> = Promise.resolve();
+
+function keyStep(code: string, down: boolean): void {
+  keyChain = keyChain
+    .then(() => invoke("send", { cmd: "keyboard", args: { code, down } }))
+    .catch((e) => {
+      stats.lastError = String(e);
+    });
+}
+
+function releaseKeys(): void {
+  for (const code of keysDown) keyStep(code, false);
+  keysDown.clear();
+}
+
+function showKeyboardState(): void {
+  kbButton.dataset.forwarding = String(forwarding);
+  kbButton.title = forwarding
+    ? "Keyboard: keys go to the device while the pointer is over the screen (⌘K to stop)"
+    : "Keyboard";
+  kbForward.setAttribute("aria-checked", String(forwarding));
+  kbHardware.setAttribute("aria-checked", String(hardwareKeyboard));
+  kbSoftware.disabled = !hardwareKeyboard;
+}
+
+function setForwarding(on: boolean): void {
+  forwarding = on;
+  prefs.set("keyboard-forwarding", on ? "1" : "0");
+  if (!on) releaseKeys();
+  showKeyboardState();
+}
+
+function onKeyboard(k: Partial<KeyboardState>): void {
+  hardwareKeyboard = !!k.hardware;
+  showKeyboardState();
+}
+
+/** A field of the viewer has the keys. */
+function editing(): boolean {
+  const a = document.activeElement;
+  return (
+    a instanceof HTMLInputElement ||
+    a instanceof HTMLTextAreaElement ||
+    a instanceof HTMLSelectElement ||
+    (a instanceof HTMLElement && a.isContentEditable)
+  );
+}
+
+/** ⌘ shortcuts that stay with the viewer and the Mac: zoom (⌘0, ⌘9, ⌘+, ⌘−), the keyboard
+ * menu's (⌘K, ⌥⌘K), and quit, close, hide, minimize, settings. Every other ⌘ combination goes to
+ * the device (⌘A, ⌘C, ⌘V, ⌘Z…). */
+function viewerShortcut(e: KeyboardEvent): boolean {
+  if (!e.metaKey) return false;
+  return ["Equal", "Minus", "Digit0", "Digit9", "KeyK", "KeyQ", "KeyW", "KeyH", "KeyM", "Comma", "NumpadAdd", "NumpadSubtract"].includes(e.code);
+}
+
+function keysGo(): boolean {
+  return (
+    forwarding &&
+    stage.dataset.state === "live" &&
+    !editing() &&
+    (overScreen || document.activeElement === canvas) &&
+    kbMenu.hidden &&
+    $<HTMLDivElement>("#more-menu").hidden
+  );
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.metaKey && e.code === "KeyK" && stage.dataset.state === "live") {
+    e.preventDefault();
+    if (e.altKey) toggleSoftwareKeyboard();
+    else setForwarding(!forwarding);
+    return;
+  }
+  if (!keysGo() || viewerShortcut(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  // Caps Lock reports its state, not the key: a keydown when it locks, a keyup when it unlocks.
+  // Either is one press on the device (on a Korean layout it switches the input source).
+  if (e.code === "CapsLock") {
+    keyStep(e.code, true);
+    keyStep(e.code, false);
+    return;
+  }
+  keysDown.add(e.code);
+  keyStep(e.code, true);
+  // With ⌘ held, macOS sends no keyup for the other keys: let go of this one at once.
+  if (e.metaKey && !e.code.startsWith("Meta")) {
+    keysDown.delete(e.code);
+    keyStep(e.code, false);
+  }
+});
+
+window.addEventListener("keyup", (e) => {
+  if (e.code === "CapsLock" && keysGo()) {
+    e.preventDefault();
+    keyStep(e.code, true);
+    keyStep(e.code, false);
+    return;
+  }
+  if (!keysDown.has(e.code)) return;
+  e.preventDefault();
+  keysDown.delete(e.code);
+  keyStep(e.code, false);
+  // Letting go of ⌘ lets go of whatever macOS didn't report.
+  if (e.code.startsWith("Meta")) releaseKeys();
+});
+
+window.addEventListener("blur", releaseKeys);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) releaseKeys();
+});
+const screenBox = $<HTMLDivElement>("#screen-box");
+screenBox.addEventListener("pointerenter", () => (overScreen = true));
+screenBox.addEventListener("pointerleave", () => (overScreen = false));
+// Clicking the screen gives it the keys, so typing goes on after the pointer leaves it.
+canvas.tabIndex = 0;
+canvas.addEventListener("pointerdown", () => {
+  if (editing()) (document.activeElement as HTMLElement).blur();
+  canvas.focus({ preventScroll: true });
+});
+
+kbForward.addEventListener("click", () => setForwarding(!forwarding));
+kbHardware.addEventListener("click", () => {
+  const cmd = hardwareKeyboard ? "keyboard_disconnect" : "keyboard_connect";
+  releaseKeys();
+  void send(cmd)
+    .then((r) => onKeyboard(r as KeyboardState))
+    .catch(() => {});
+});
+
+function toggleSoftwareKeyboard(): void {
+  if (!hardwareKeyboard) {
+    showNote("The on-screen keyboard shows by itself while no hardware keyboard is connected.", { icon: "i-keyboard" });
+    return;
+  }
+  // The Eject key: with a hardware keyboard attached, iOS shows or hides the on-screen keyboard
+  // (PITFALLS #39).
+  void send("button", { name: "eject" }).catch(() => {});
+}
+kbSoftware.addEventListener("click", toggleSoftwareKeyboard);
+
+function openTypeText(on: boolean): void {
+  typeForm.hidden = !on;
+  if (on) typeInput.focus();
+}
+$<HTMLButtonElement>("#kb-text").addEventListener("click", () => openTypeText(true));
+$<HTMLButtonElement>("#type-text-close").addEventListener("click", () => openTypeText(false));
+typeInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.isComposing) {
+    e.preventDefault();
+    openTypeText(false);
+  }
+});
+typeForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = typeInput.value;
+  if (!text || typeSend.disabled) return;
+  typeSend.disabled = true;
+  typeInput.disabled = true;
+  void send("type", { text })
+    .then((r) => {
+      const t = r as { verified?: boolean | null; notes?: string[] };
+      typeInput.value = "";
+      if (t.verified === false) showNote(t.notes?.[0] ?? "The field doesn't show the text as typed; check the screen.", { error: true });
+    })
+    .catch(() => {})
+    .finally(() => {
+      typeSend.disabled = false;
+      typeInput.disabled = false;
+      typeInput.focus();
+    });
+});
+showKeyboardState();
 
 // ---------- notes: where a file went, or what failed ----------
 
@@ -1928,6 +2132,9 @@ async function attach(d: DeviceInfo): Promise<void> {
   attachedUdid = d.udid;
   // VoiceOver changes what taps do, so its warning shows whether or not the inspector is open.
   void readSettings();
+  void invoke("send", { cmd: "keyboard_status", args: {} })
+    .then((k) => onKeyboard(k as KeyboardState))
+    .catch(() => {});
   statsTimer = window.setInterval(() => {
     showInfo();
     if (Math.round(performance.now() / 1000) % 2 === 0) report();

@@ -46,6 +46,9 @@
       <symbol id="i-vol-down" viewBox="0 0 20 20"><path d="M3 8v4h3l4 3.5v-11L6 8Z" /><path d="M13 10h4.5" /></symbol>
       <symbol id="i-vol-up" viewBox="0 0 20 20"><path d="M3 8v4h3l4 3.5v-11L6 8Z" /><path d="M13 10h4.5M15.25 7.75v4.5" /></symbol>
       <symbol id="i-check" viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 6.8" /></symbol>
+      <symbol id="i-keyboard" viewBox="0 0 20 20"><rect x="2.25" y="5" width="15.5" height="10" rx="2" /><path d="M5.2 8h.1M8.07 8h.1M10.93 8h.1M13.8 8h.1M5.2 10h.1M8.07 10h.1M10.93 10h.1M13.8 10h.1M6.5 12.4h7" /></symbol>
+      <symbol id="i-keyboard-down" viewBox="0 0 20 20"><rect x="2.25" y="3" width="15.5" height="9" rx="2" /><path d="M5.2 6h.1M8.07 6h.1M10.93 6h.1M13.8 6h.1M6.5 9.2h7M7.5 14.5 10 17l2.5-2.5" /></symbol>
+      <symbol id="i-text-cursor" viewBox="0 0 20 20"><path d="M7.5 4h5M7.5 16h5M10 4v12M3.5 7.5v5M16.5 7.5v5" /></symbol>
       <symbol id="i-plug" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="12" rx="2.2" /><path d="M10 14v4M7.5 18h5" /></symbol>
     </svg>
 
@@ -109,6 +112,21 @@
               <button id="zoom-actual" class="icon-btn" type="button" aria-label="Actual size" title="Actual size: one point per pixel (⌘0)"><svg class="icon"><use href="#i-zoom-actual" /></svg></button>
               <button id="zoom-in" class="icon-btn" type="button" aria-label="Zoom in" title="Zoom in (⌘+)"><svg class="icon"><use href="#i-zoom-in" /></svg></button>
             </div>
+            <!-- The Mac keyboard: a button whose state is whether keys go to the device, with a
+                 menu like Device Hub's (main.ts "keyboard"). -->
+            <div class="tool-group" id="keyboard-group">
+              <div class="menu-anchor">
+                <button id="keyboard" class="icon-btn" type="button" aria-label="Keyboard" title="Keyboard" aria-haspopup="menu" aria-expanded="false" aria-controls="keyboard-menu" data-forwarding="false">
+                  <svg class="icon"><use href="#i-keyboard" /></svg>
+                </button>
+                <div id="keyboard-menu" class="menu" role="menu" hidden>
+                  <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="While the pointer is over the screen, keys go to the device"><svg class="icon check"><use href="#i-check" /></svg><span>Type from Mac Keyboard</span><kbd>⌘K</kbd></button>
+                  <button id="kb-hardware" role="menuitemcheckbox" aria-checked="false" type="button" title="The device takes the keys for a hardware keyboard: the on-screen keyboard hides, and the keys follow the device's input source (Control-Space switches it)"><svg class="icon check"><use href="#i-check" /></svg><span>Connect Hardware Keyboard</span></button>
+                  <button id="kb-software" role="menuitem" type="button" title="Show or hide the on-screen keyboard while a hardware keyboard is connected"><svg class="icon"><use href="#i-keyboard-down" /></svg><span>Toggle Software Keyboard</span><kbd>⌥⌘K</kbd></button>
+                  <button id="kb-text" role="menuitem" type="button" title="Type text composed on the Mac (Hangul and other input methods) into the field that has focus"><svg class="icon"><use href="#i-text-cursor" /></svg><span>Type Text…</span></button>
+                </div>
+              </div>
+            </div>
             <div class="tool-group">
               <div class="menu-anchor">
                 <button id="more" class="icon-btn" type="button" aria-label="More" title="More" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">
@@ -138,6 +156,14 @@
             </button>
           </div>
         </div>
+
+        <!-- Text composed on the Mac, typed into the device's focused field by the same path as
+             `iphone-use type`. Keys typed here never go to the device one by one. -->
+        <form id="type-text" class="surface" hidden>
+          <input id="type-text-input" type="text" placeholder="Text to type on the device" autocomplete="off" spellcheck="false" aria-label="Text to type on the device" />
+          <button id="type-text-send" class="btn small primary" type="submit">Type</button>
+          <button id="type-text-close" class="icon-btn small" type="button" aria-label="Close" title="Close"><svg class="icon"><use href="#i-close" /></svg></button>
+        </form>
 
         <div id="stage" data-state="none" data-zoom="fit">
           <!-- Before the screen shows: what is selected and how to see it. -->
