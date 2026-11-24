@@ -19,7 +19,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8, #17, #18 |
 | Display info | #9 |
-| Accessibility tree | #10, #12, #19, #20, #21, #22 |
+| Accessibility tree | #10, #12, #19, #20, #21, #22, #25 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
 | Viewer | #15, #18, #23 |
@@ -314,6 +314,8 @@ the last answer's latency plus 1 s, and the wait for the second pass grows the s
 page a cold `ui` now takes 6 to 8 s and a repeated one ~3.5 s; ordinary screens are unchanged
 (1.2 to 2 s).
 
+Re-asks now go out on a new connection (#25); this page still reads in 3.5 to 3.7 s.
+
 Not this: a running stopwatch (a label changing every frame) answered in 1.3 s, so "the screen is
 animating" is not what delays an answer. Safari's start page timed out once while a Wi-Fi password
 prompt was up on the device and read normally (1.6 s) after it was dismissed; not reproduced.
@@ -452,3 +454,34 @@ Measured on the test iPhone (iOS 27.2.1, USB) with `settings` / `settings set`
   simulating one, so `location clear` is always safe to send.
 - All other items changed on the device and read back as set, through the CLI and the viewer's
   panel: dark appearance and larger text showed on the home screen at once.
+
+### 25. The accessibility service goes silent: one subscription, or the whole daemon
+
+Test iPhone, iOS 27.2.1, USB, home screen. `ui` failed every time ("no accessibility dump within
+15 s"), through the daemon and with `--no-daemon`, and a build of the last commit where it had
+worked failed the same way, so the device was the cause, not the code.
+
+- **The whole service.** A new connection to `remoteAXService` got no message at all: not the
+  greeting a working service sends within milliseconds (`_notifyOfPublishedCapabilities:`, then a
+  `hostAPIVersion` call), no reply to calls that expect one (`deviceApiVersion`,
+  `deviceCapabilities`), no dump. Turning VoiceOver on did not help. Killing `axauditd`
+  (`/System/Library/PrivateFrameworks/AccessibilityAudit.framework/Support/axauditd`, through
+  CoreDevice's `sendsignaltoprocess`) fixed it: launchd started a new one on the next connection,
+  which answered at once. How it got stuck is not known: VoiceOver had been switched several
+  times that day while the daemon held a subscription, but a dozen switches in a row did not stick
+  it again.
+- **One subscription.** Switching VoiceOver on or off (from `settings set` or the device) silences
+  every subscription that is open at that moment, for good, while its connection stays open: no
+  dump, no error, re-asks unanswered. A new connection answers at once. Seen six times in six
+  switches with the daemon holding a subscription.
+- **Right after a restart** the new `axauditd` greets a connection at once but leaves the first
+  request unanswered for 2.5 to 8 s; a request on a newer connection then answers. Re-asking on
+  the same connection did not get an answer within 15 s.
+
+So `AxClient` sends each re-ask on a new connection (a request costs the same there), and a
+connection that has heard nothing 3 s after it opened counts as a stuck service (`AxUnresponsive`):
+`Controller` kills `axauditd` once and reads again. The daemon also drops its subscription when it
+switches VoiceOver. Costs: a subscription silenced by a VoiceOver switch elsewhere makes one `ui`
+take ~5 s instead of ~2 s; a restart makes it take 6 to 11 s. `axauditd` is the Accessibility Audit
+daemon that Xcode's Accessibility Inspector talks to; restarting it changed nothing visible on the
+device (VoiceOver and the other accessibility settings are not its).

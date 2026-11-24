@@ -32,7 +32,8 @@ const ANSWER_AT_LEAST: Duration = Duration::from_millis(700);
 const REASK_AFTER: Duration = Duration::from_millis(2500);
 /// Some screens answer only 3 to 4.2 s after a request, and re-asking every 2.5 s restarted their
 /// quiet period forever (PITFALLS #19). So each further re-ask waits twice as long as the last,
-/// and the first one waits at least this much longer than the last answer took.
+/// and the first one waits at least this much longer than the last answer took. Re-asks go out on
+/// a new connection (PITFALLS #25).
 const REASK_GROWTH: f64 = 2.0;
 const REASK_MARGIN: Duration = Duration::from_millis(1000);
 /// After input, a second request this long after the first (PITFALLS #12).
@@ -46,24 +47,53 @@ struct State {
     full_seq: u64,
     full: Option<Arc<Dump>>,
     unparsed: u64,
+    /// Any message came on this connection. A working service greets a new connection at once
+    /// (`_notifyOfPublishedCapabilities:`, `hostAPIVersion`); a stuck one sends nothing
+    /// (PITFALLS #25).
+    heard: bool,
     closed: bool,
 }
 
-/// One subscription to the accessibility tree.
-pub struct AxClient {
+/// The device's accessibility daemon took a new connection and sent nothing back at all, not
+/// even its greeting (PITFALLS #25). [`crate::Controller`] restarts it.
+#[derive(Debug)]
+pub struct AxUnresponsive;
+
+impl std::fmt::Display for AxUnresponsive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Not worded as a connection failure: the tunnel is fine, and the daemon would drop it.
+        f.write_str("the device's accessibility service (axauditd) answers nothing")
+    }
+}
+
+impl std::error::Error for AxUnresponsive {}
+
+/// A working service greets a new connection within milliseconds (PITFALLS #25).
+const GREETING_WITHIN: Duration = Duration::from_secs(3);
+
+/// One DTX connection to the service, with the task that reads it.
+struct Conn {
     ask: mpsc::UnboundedSender<()>,
     state: Arc<Mutex<State>>,
     changed: watch::Receiver<u64>,
     task: tokio::task::JoinHandle<()>,
-    asked_at: Instant,
-    /// How long the last answer took after the request before it (PITFALLS #19).
-    latency: Duration,
+    opened_at: Instant,
 }
 
-impl Drop for AxClient {
+impl Drop for Conn {
     fn drop(&mut self) {
         self.task.abort();
     }
+}
+
+/// One subscription to the accessibility tree.
+pub struct AxClient {
+    adapter: AdapterHandle,
+    port: u16,
+    conn: Conn,
+    asked_at: Instant,
+    /// How long the last answer took after the request before it (PITFALLS #19).
+    latency: Duration,
 }
 
 async fn subscribe(dtx: &mut RemoteServerClient<Box<dyn ReadWrite>>) -> Result<()> {
@@ -72,21 +102,14 @@ async fn subscribe(dtx: &mut RemoteServerClient<Box<dyn ReadWrite>>) -> Result<(
         .map_err(|e| anyhow!("{SUBSCRIBE} failed (connection error: {e:?})"))
 }
 
-impl AxClient {
+impl Conn {
     /// Connects and sends the first request.
-    pub async fn open(adapter: &AdapterHandle, rsd: &RsdHandshake) -> Result<Self> {
-        let port = rsd
-            .services
-            .get(SERVICE)
-            .ok_or_else(|| {
-                anyhow!("the device does not advertise {SERVICE}; the Developer Disk Image is probably not mounted")
-            })?
-            .port;
+    async fn open(adapter: &AdapterHandle, port: u16) -> Result<Self> {
         let mut adapter = adapter.clone();
         let stream = crate::step("accessibility service connection", adapter.connect(port)).await?;
         let mut dtx = RemoteServerClient::new(stream);
         subscribe(&mut dtx).await?;
-        let asked_at = Instant::now();
+        let opened_at = Instant::now();
 
         let state = Arc::new(Mutex::new(State::default()));
         let (ask_tx, mut ask_rx) = mpsc::unbounded_channel::<()>();
@@ -104,6 +127,7 @@ impl AxClient {
                     }
                     msg = dtx.read_message(0) => {
                         let Ok(msg) = msg else { break };
+                        st.lock().unwrap().heard = true;
                         if !matches!(&msg.data, Some(plist::Value::String(s)) if s == PUSH) {
                             continue;
                         }
@@ -134,11 +158,38 @@ impl AxClient {
             st.lock().unwrap().closed = true;
             let _ = changed_tx.send(ticks + 1);
         });
-        Ok(Self { ask: ask_tx, state, changed: changed_rx, task, asked_at, latency: Duration::ZERO })
+        Ok(Self { ask: ask_tx, state, changed: changed_rx, task, opened_at })
+    }
+}
+
+impl AxClient {
+    /// Connects and sends the first request.
+    pub async fn open(adapter: &AdapterHandle, rsd: &RsdHandshake) -> Result<Self> {
+        let port = rsd
+            .services
+            .get(SERVICE)
+            .ok_or_else(|| {
+                anyhow!("the device does not advertise {SERVICE}; the Developer Disk Image is probably not mounted")
+            })?
+            .port;
+        let conn = Conn::open(adapter, port).await?;
+        let asked_at = conn.opened_at;
+        Ok(Self { adapter: adapter.clone(), port, conn, asked_at, latency: Duration::ZERO })
+    }
+
+    /// Asks again on a new connection. A subscription can go silent for good while its
+    /// connection stays open (VoiceOver switched on or off, PITFALLS #25), and a request on a new
+    /// connection costs the same as one on the old.
+    async fn reconnect(&mut self) -> Result<()> {
+        tracing::debug!("ax: request on a new connection");
+        self.conn = Conn::open(&self.adapter, self.port).await?;
+        self.asked_at = self.conn.opened_at;
+        Ok(())
     }
 
     fn request(&mut self) -> Result<()> {
-        self.ask
+        self.conn
+            .ask
             .send(())
             .map_err(|_| anyhow!("accessibility connection closed"))?;
         self.asked_at = Instant::now();
@@ -165,8 +216,8 @@ impl AxClient {
         let mut reask = REASK_AFTER.max(self.latency + REASK_MARGIN);
         let seq = loop {
             let earliest = self.asked_at + ANSWER_AT_LEAST;
-            {
-                let s = self.state.lock().unwrap();
+            let greeting_due = {
+                let s = self.conn.state.lock().unwrap();
                 if s.closed {
                     bail!("accessibility connection closed");
                 }
@@ -174,10 +225,14 @@ impl AxClient {
                     self.latency = at.saturating_duration_since(self.asked_at);
                     break s.seq;
                 }
-            }
+                (!s.heard).then_some(self.conn.opened_at + GREETING_WITHIN)
+            };
             let now = Instant::now();
+            if greeting_due.is_some_and(|due| now >= due) {
+                return Err(AxUnresponsive.into());
+            }
             if now >= deadline {
-                let unparsed = self.state.lock().unwrap().unparsed;
+                let unparsed = self.conn.state.lock().unwrap().unparsed;
                 bail!(
                     "no accessibility dump within {} s{}. The screen may be animating or locked; \
                      check it with `screenshot` and retry",
@@ -186,23 +241,28 @@ impl AxClient {
                 );
             }
             if now >= self.asked_at + reask {
-                self.request()?;
+                self.reconnect().await?;
                 reask = reask.mul_f64(REASK_GROWTH);
+                continue;
             }
-            let wait = deadline.min(self.asked_at + reask).saturating_duration_since(now);
-            let _ = tokio::time::timeout(wait.max(Duration::from_millis(10)), self.changed.changed()).await;
+            let mut until = deadline.min(self.asked_at + reask);
+            if let Some(due) = greeting_due {
+                until = until.min(due);
+            }
+            let wait = until.saturating_duration_since(now);
+            let _ = tokio::time::timeout(wait.max(Duration::from_millis(10)), self.conn.changed.changed()).await;
         };
         if full && let Some(d) = self.second_pass(seq).await {
             return Ok(d);
         }
-        let s = self.state.lock().unwrap();
+        let s = self.conn.state.lock().unwrap();
         Ok(s.initial.clone().expect("a dump arrived above"))
     }
 
     /// The newest reading with its second pass (identifiers) merged in, if that pass comes.
     /// Sends no request.
     pub async fn complete(&mut self) -> Option<Arc<Dump>> {
-        let seq = self.state.lock().unwrap().seq;
+        let seq = self.conn.state.lock().unwrap().seq;
         self.second_pass(seq).await
     }
 
@@ -211,7 +271,7 @@ impl AxClient {
         let until = Instant::now() + Duration::from_millis(2500).max(self.latency + REASK_MARGIN);
         loop {
             {
-                let s = self.state.lock().unwrap();
+                let s = self.conn.state.lock().unwrap();
                 if s.full_seq == seq && let Some(d) = s.full.clone() {
                     return Some(d);
                 }
@@ -220,7 +280,7 @@ impl AxClient {
                 }
             }
             let left = until.saturating_duration_since(Instant::now());
-            if left.is_zero() || tokio::time::timeout(left, self.changed.changed()).await.is_err() {
+            if left.is_zero() || tokio::time::timeout(left, self.conn.changed.changed()).await.is_err() {
                 return None;
             }
         }

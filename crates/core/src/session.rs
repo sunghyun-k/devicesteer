@@ -147,6 +147,15 @@ impl Session {
         Ok(u64::from(r.pid))
     }
 
+    /// Sends `SIGKILL` to a device process. Only for system daemons that launchd starts again on
+    /// demand (PITFALLS #25); never for apps the owner is using.
+    pub async fn kill(&mut self, pid: i64) -> Result<()> {
+        let mut client: AppServiceClient<_> = self.connect().await?;
+        let pid = u32::try_from(pid).map_err(|_| anyhow::anyhow!("no such process: {pid}"))?;
+        step("process signal", client.send_signal(pid, 9)).await?;
+        Ok(())
+    }
+
     /// Running processes as (pid, executable path on the device).
     pub async fn processes(&mut self) -> Result<Vec<(i64, String)>> {
         let mut client: AppServiceClient<_> = self.connect().await?;

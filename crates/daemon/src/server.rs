@@ -647,6 +647,9 @@ impl Daemon {
                 let setting = Setting::parse(name, &values)?;
                 let c = self.controller(dev).await?;
                 c.session.apply_setting(&setting).await?;
+                if matches!(setting, Setting::Toggle(Toggle::VoiceOver, _)) {
+                    c.forget_accessibility();
+                }
                 match setting {
                     Setting::Location(lat, lon) => dev.location = Some((lat, lon)),
                     Setting::ClearLocation => dev.location = None,

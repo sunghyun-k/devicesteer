@@ -9,5 +9,6 @@ mod dump;
 mod service;
 mod tree;
 
-pub use service::AxClient;
+pub(crate) use dump::Dump;
+pub use service::{AxClient, AxUnresponsive};
 pub use tree::{AppInfo, BuildOptions, Element, Rect, Screen};

@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::{
     Session,
     apps::{AppDirectory, ProcName},
-    ax::{AxClient, BuildOptions, Screen},
+    ax::{AxClient, AxUnresponsive, BuildOptions, Dump, Screen},
     display::Display,
     input::{Button, Input, Motion, TAP_HOLD, TouchPhase},
     media::{MediaMode, MediaSession, MediaStatus},
@@ -49,6 +49,10 @@ pub struct Controller {
 
 /// Longest wait for one accessibility reading.
 const AX_TIMEOUT: Duration = Duration::from_secs(15);
+/// The device's accessibility daemon, restarted when it stops answering (PITFALLS #25).
+const AXAUDITD: &str = "/AccessibilityAudit.framework/Support/axauditd";
+/// Restarted, it took a few seconds before a new connection was answered (PITFALLS #25).
+const AXAUDITD_RESTART_TRIES: u32 = 4;
 
 impl Controller {
     /// Wraps an open session. `mode` decides whether the media session also carries video.
@@ -173,18 +177,10 @@ impl Controller {
 
     /// Reads the screen's accessibility tree. `full` waits for the second pass (identifiers).
     pub async fn ui(&mut self, opts: BuildOptions, full: bool) -> Result<Screen> {
-        if self.ax.is_none() {
-            self.ax = Some(AxClient::open(self.session.adapter(), self.session.rsd()).await?);
-        }
         let changed = std::mem::take(&mut self.input_since_read);
-        let read = self.ax.as_mut().expect("opened above").read(AX_TIMEOUT, full, changed).await;
-        let mut dump = match read {
-            Ok(d) => d,
-            Err(e) => {
-                // A closed or stuck subscription is reopened on the next call.
-                self.ax = None;
-                return Err(e);
-            }
+        let mut dump = match self.read_ax(AX_TIMEOUT, full, changed).await {
+            Err(e) if e.is::<AxUnresponsive>() => self.restart_axauditd(full).await?,
+            r => r?,
         };
         let pids: Vec<i64> = dump.elements.keys().map(|k| k.pid).collect();
         self.learn_processes(&pids).await;
@@ -206,6 +202,48 @@ impl Controller {
         .await?;
         self.last_screen = Some(screen.clone());
         Ok(screen)
+    }
+
+    async fn read_ax(&mut self, timeout: Duration, full: bool, changed: bool) -> Result<std::sync::Arc<Dump>> {
+        if self.ax.is_none() {
+            self.ax = Some(AxClient::open(self.session.adapter(), self.session.rsd()).await?);
+        }
+        let read = self.ax.as_mut().expect("opened above").read(timeout, full, changed).await;
+        if read.is_err() {
+            // A closed or stuck subscription is reopened on the next call.
+            self.ax = None;
+        }
+        read
+    }
+
+    /// The accessibility daemon took connections and answered none, also on a fresh tunnel, until
+    /// it was killed; launchd starts it again on the next connection (PITFALLS #25).
+    async fn restart_axauditd(&mut self, full: bool) -> Result<std::sync::Arc<Dump>> {
+        let unresponsive = || anyhow::Error::new(AxUnresponsive);
+        let pid = self
+            .session
+            .processes()
+            .await?
+            .into_iter()
+            .find(|(_, exe)| exe.ends_with(AXAUDITD))
+            .map(|(pid, _)| pid)
+            .ok_or_else(unresponsive)?;
+        tracing::warn!("accessibility: axauditd (pid {pid}) does not answer; restarting it");
+        self.session.kill(pid).await?;
+        let mut last = unresponsive();
+        for _ in 0..AXAUDITD_RESTART_TRIES {
+            match self.read_ax(AX_TIMEOUT, full, false).await {
+                Err(e) if e.is::<AxUnresponsive>() => last = e,
+                r => return r,
+            }
+        }
+        Err(last.context("axauditd was restarted and still answers nothing; restart the device and retry"))
+    }
+
+    /// Drops the accessibility subscription: switching VoiceOver silences it for good while its
+    /// connection stays open (PITFALLS #25).
+    pub fn forget_accessibility(&mut self) {
+        self.ax = None;
     }
 
     fn describe(&self, pid: i64) -> ProcName {
