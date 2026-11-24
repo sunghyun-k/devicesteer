@@ -98,6 +98,8 @@ pub struct AgentSession {
     owner_since: Instant,
     /// The human gave the device back since the agent's last input: the screen may have changed.
     returned: bool,
+    /// The idle limit when it ended: after that the owner is `finished`, which has none.
+    limit_at_end: Option<Duration>,
 }
 
 impl AgentSession {
@@ -152,7 +154,7 @@ impl AgentSession {
                 "session {id} '{name}' expired after {} min without a command. The user may have used the device \
                  since: read the screen again (`ui`), then start a new session with `iphone-use session start \
                  \"<goal>\"`",
-                self.idle_limit().as_secs() / 60
+                self.limit_at_end.unwrap_or(AGENT_IDLE).as_secs() / 60
             ),
             _ => format!(
                 "session {id} '{name}' has finished. Start a new session for new work: `iphone-use session start \
@@ -213,6 +215,7 @@ impl ControlState {
     fn end(&mut self, why: Ended) -> Option<AgentSession> {
         let mut s = self.session.take()?;
         s.ended = Some(why);
+        s.limit_at_end = Some(s.idle_limit());
         s.set_owner(Owner::Finished);
         if self.recent.len() == RECENT {
             self.recent.pop_front();
@@ -260,6 +263,7 @@ impl ControlState {
             last_command: now,
             owner_since: now,
             returned: false,
+            limit_at_end: None,
         };
         self.stopped = false;
         let v = s.to_json();
@@ -557,7 +561,7 @@ mod tests {
         s.owner_since -= AGENT_IDLE + Duration::from_secs(1);
         assert!(c.expire());
         assert!(c.session().is_none());
-        assert!(c.check_agent(Some(&id), true).unwrap_err().contains("expired"));
+        assert!(c.check_agent(Some(&id), true).unwrap_err().contains("expired after 10 min"));
         assert_eq!(c.status(Some(&id)).unwrap()["session"]["ended"], "expired");
     }
 
