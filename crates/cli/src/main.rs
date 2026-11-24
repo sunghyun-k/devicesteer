@@ -215,8 +215,8 @@ enum SetupAction {
     /// Show the Developer Mode switch in Settings > Privacy & Security, then wait (up to --wait)
     /// while the user turns it on, the device restarts and they confirm with the passcode.
     DeveloperMode,
-    /// Mount the personalized Developer Disk Image (Apple signs it for this device). Needed again
-    /// after every restart. No action on the device.
+    /// Mount the personalized Developer Disk Image (Apple signs it for this device). A restart
+    /// can unmount it. No action on the device.
     DiskImage,
 }
 

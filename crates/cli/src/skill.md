@@ -25,7 +25,7 @@ A device listed with `setup` isn't ready yet; see the next section.
 ## Set up a new device
 
 A device needs three steps before the other commands work: it trusts this computer, Developer Mode
-is on, and the Developer Disk Image is mounted (again after every restart). No Xcode is needed.
+is on, and the Developer Disk Image is mounted (a restart can unmount it). No Xcode is needed.
 
 ```sh
 iphone-use setup status --udid <UDID>          # reads only: which steps are done, and `next`

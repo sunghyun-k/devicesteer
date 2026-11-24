@@ -125,7 +125,7 @@ impl Session {
         if !self.rsd.services.contains_key(name.as_ref()) {
             bail!(
                 "the device does not advertise {name}. If it is a developer service, the Developer \
-                 Disk Image is probably not mounted (it goes away at every restart): run \
+                 Disk Image is probably not mounted (a restart can unmount it): run \
                  `iphone-use setup`, then retry"
             );
         }

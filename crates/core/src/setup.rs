@@ -298,7 +298,7 @@ fn describe(udid: &str, transports: Vec<Transport>, p: &Probe) -> SetupStatus {
             SetupStep::DeveloperMode => (p.developer_mode == Some(true), Some("Developer Mode is off".into())),
             SetupStep::DiskImage => (
                 p.disk_image == Some(true),
-                Some("the Developer Disk Image is not mounted (it goes away at every restart)".into()),
+                Some("the Developer Disk Image is not mounted (a restart can unmount it)".into()),
             ),
         };
         let state = if earlier_open {

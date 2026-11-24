@@ -6,7 +6,7 @@
 |---|---|---|---|
 | Trust this computer | `trust` | lockdown `Pair` over USB; the device asks "Trust This Computer?"; the pair record goes to usbmuxd | the user taps Trust and enters the passcode |
 | Developer Mode | `developer_mode` | AMFI shows the switch in Settings > Privacy & Security; setup waits while the device restarts | the user turns it on, taps Restart, then Turn On and the passcode |
-| Developer tools | `disk_image` | the personalized Developer Disk Image (DDI) is signed for the device by Apple's TSS server, uploaded and mounted | nobody; needed again after every restart |
+| Developer tools | `disk_image` | the personalized Developer Disk Image (DDI) is signed for the device by Apple's TSS server, uploaded and mounted | nobody; may be needed again after a restart (PITFALLS #32) |
 
 Code: `crates/core/src/setup.rs`. CLI: `iphone-use setup [status|trust|developer-mode|disk-image]`.
 `devices` lists a device that isn't ready with `setup: <first step left>`. Observations behind the
@@ -27,7 +27,8 @@ All three go through lockdown, not the tunnel, so they work before the developer
 ## Where the Developer Disk Image comes from
 
 Apple ships the iOS 17+ personalized DDI only inside Xcode; there is no separate download from
-Apple. `setup disk-image` looks, in order:
+Apple. **This repository contains no Apple files**: the image is read from Xcode's copy or
+downloaded on the user's computer, never committed or bundled. `setup disk-image` looks, in order:
 
 1. `--ddi <folder>` or `IPHONE_USE_DDI`: a folder with `BuildManifest.plist` and the files it
    names (or `Image.dmg` and `Image.dmg.trustcache`).

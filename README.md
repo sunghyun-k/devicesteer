@@ -11,7 +11,11 @@ Operate a **real iPhone or iPad** connected over USB or Wi-Fi, from macOS or Win
 
 ## Requirements
 
-- A device paired with this computer ("Trust This Computer") with Developer Mode on.
+- An iPhone or iPad on iOS 17 or later. `iphone-use setup` makes a new one ready without Xcode:
+  it pairs ("Trust This Computer"), shows the Developer Mode switch, and mounts the Developer Disk
+  Image (from Xcode's copy when there is one, else Apple's files downloaded from a pinned commit of
+  [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) and checked by SHA-256).
+  This repository contains no Apple files. See [docs/SETUP.md](docs/SETUP.md).
 - macOS: nothing extra (usbmuxd ships with the OS). Windows: Apple Devices or iTunes, for usbmuxd.
 - Rust 1.88+; Node.js 20+ for the viewer app.
 
@@ -20,6 +24,7 @@ Operate a **real iPhone or iPad** connected over USB or Wi-Fi, from macOS or Win
 ```sh
 cargo build
 ./target/debug/iphone-use devices
+./target/debug/iphone-use setup      --udid <UDID>            # trust, Developer Mode, disk image
 ./target/debug/iphone-use session start --udid <UDID> "turn on dark mode"   # prints a session id
 export IPHONE_USE_SESSION=<id>                                # or --session <id> on each command
 ./target/debug/iphone-use services   --udid <UDID>

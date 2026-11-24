@@ -23,7 +23,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Daemon | #14, #23 |
 | Device settings | #24 |
 | Viewer | #15, #18, #23, #26, #27, #29 |
-| Device setup (pairing, Developer Mode, DDI) | #30, #31 |
+| Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
 
 ## Entries
 
@@ -605,4 +605,28 @@ before iOS 17).
 
 The image mounter also refuses personalized images while Developer Mode is off, so the disk image
 is checked only after Developer Mode reads on.
+
+### 32. The disk image Xcode 27 mounted can't be unmounted through the image mounter
+
+iPhone, iOS 27.2.1, USB, the image from #31 (backing image in cryptexd's MobileAsset store):
+`mobile_image_mounter` `UnmountImage` for `/System/Developer` failed with MobileStorage error -2,
+"Failed to unload launchd jobs", and the image stayed mounted. Same with iphone-use's daemon
+stopped (no tunnel of ours open); macOS's own `CoreDeviceService` and `remotepairingd` were running,
+as they do whenever a device is connected. Nothing on the device changed.
+
+**A restart didn't take it away either.** The owner restarted the same iPhone and unlocked it; the
+device was back in usbmuxd about 20 s after it left, and the first `setup status` already found
+the image mounted, with the same backing image in cryptexd's MobileAsset store. macOS's
+`CoreDeviceService` logged nothing in that window, so the device itself mounted it again at boot:
+once a DDI arrived as a MobileAsset (here through Xcode 27), it stays across restarts. Older
+setups (an image uploaded through the mounter, as `setup disk-image` does) are documented to go
+away at every restart; this was not observed here.
+
+After the restart iphone-use's daemon (left running) reported `connected: false`, and the next
+`ui` reconnected it (2.8 s); `ui`, `tap` and a video `media probe` worked.
+
+So: the code never unmounts, and the upload-and-mount path of `setup disk-image` can only be tried
+on a device without the MobileAsset image (one Xcode 27 never prepared, or after erasing it). Up to
+the TSS signature it was checked on this device without changing it (Xcode's copy and the
+download both got a ticket).
 
