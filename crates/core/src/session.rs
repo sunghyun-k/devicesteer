@@ -5,6 +5,7 @@ use idevice::{
     IdeviceService, RsdService,
     core_device::{AppServiceClient, ImageFormat, ScreenCaptureServiceClient},
     core_device_proxy::CoreDeviceProxy,
+    installation_proxy::InstallationProxyClient,
     heartbeat::HeartbeatClient,
     provider::IdeviceProvider,
     rsd::RsdHandshake,
@@ -144,6 +145,47 @@ impl Session {
         )
         .await?;
         Ok(u64::from(r.pid))
+    }
+
+    /// Running processes as (pid, executable path on the device).
+    pub async fn processes(&mut self) -> Result<Vec<(i64, String)>> {
+        let mut client: AppServiceClient<_> = self.connect().await?;
+        let list = step("process list", client.list_processes()).await?;
+        Ok(list
+            .into_iter()
+            .filter_map(|p| Some((i64::from(p.pid), p.executable_url?.relative)))
+            .collect())
+    }
+
+    /// Every installed app, system ones included: (bundle path, display name, bundle id).
+    ///
+    /// Through installation_proxy's `Browse` with only these attributes: CoreDevice's
+    /// `listapps` did not answer within 12 s on the test iPhone, whatever the options.
+    pub async fn installed_apps(&mut self) -> Result<Vec<(String, String, String)>> {
+        let mut client: InstallationProxyClient = self.connect().await?;
+        let options = plist::Value::Dictionary(plist::Dictionary::from_iter([
+            ("ApplicationType".to_string(), plist::Value::String("Any".into())),
+            (
+                "ReturnAttributes".to_string(),
+                plist::Value::Array(
+                    ["CFBundleIdentifier", "CFBundleDisplayName", "CFBundleName", "Path"]
+                        .map(|a| plist::Value::String(a.into()))
+                        .to_vec(),
+                ),
+            ),
+        ]));
+        let list = step("app list", client.browse(Some(options))).await?;
+        Ok(list
+            .into_iter()
+            .filter_map(|v| {
+                let d = v.into_dictionary()?;
+                let get = |k: &str| d.get(k).and_then(|v| v.as_string()).map(str::to_string);
+                let id = get("CFBundleIdentifier")?;
+                let path = get("Path")?;
+                let name = get("CFBundleDisplayName").or_else(|| get("CFBundleName")).unwrap_or_else(|| id.clone());
+                Some((path, name, id))
+            })
+            .collect())
     }
 
     /// Captures the active display as PNG.

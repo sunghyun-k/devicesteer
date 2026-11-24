@@ -531,8 +531,8 @@ impl Daemon {
                     }
                     let screen = c.last_screen.as_ref().expect("read above");
                     let e = screen.find(target).map_err(|e| anyhow!(e))?;
-                    let frame = e.frame.context("that element has no frame to tap")?;
-                    (frame.center(), serde_json::to_value(e)?)
+                    let point = screen.tap_point(e).context("that element has no frame to tap")?;
+                    (point, serde_json::to_value(e)?)
                 } else {
                     bail!("tap needs a point [x, y] or a target (@eN or a label)");
                 };

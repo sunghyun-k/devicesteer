@@ -2,13 +2,14 @@
 //! carries the live screen), and the HID connection. The CLI uses it for one command; the daemon
 //! keeps it open.
 
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 use serde::Serialize;
 
 use crate::{
     Session,
+    apps::{AppDirectory, ProcName},
     ax::{AxClient, BuildOptions, Screen},
     display::Display,
     input::{Button, Input, Motion, TAP_HOLD, TouchPhase},
@@ -39,6 +40,11 @@ pub struct Controller {
     pub last_screen: Option<Screen>,
     /// Input went out since the last reading.
     input_since_read: bool,
+    /// Executable path by pid, to name the processes `ui` shows.
+    processes: HashMap<i64, String>,
+    apps: AppDirectory,
+    /// The app list was fetched again for a bundle it lacked; once per controller is enough.
+    apps_refreshed: bool,
 }
 
 /// Longest wait for one accessibility reading.
@@ -47,7 +53,19 @@ const AX_TIMEOUT: Duration = Duration::from_secs(15);
 impl Controller {
     /// Wraps an open session. `mode` decides whether the media session also carries video.
     pub fn new(session: Session, mode: MediaMode) -> Self {
-        Self { session, display: None, media: None, input: None, ax: None, mode, last_screen: None, input_since_read: true }
+        Self {
+            session,
+            display: None,
+            media: None,
+            input: None,
+            ax: None,
+            mode,
+            last_screen: None,
+            input_since_read: true,
+            processes: HashMap::new(),
+            apps: AppDirectory::default(),
+            apps_refreshed: false,
+        }
     }
 
     /// The display in use, asked once and then reused (call [`Self::refresh_display`] after a turn).
@@ -160,7 +178,7 @@ impl Controller {
         }
         let changed = std::mem::take(&mut self.input_since_read);
         let read = self.ax.as_mut().expect("opened above").read(AX_TIMEOUT, full, changed).await;
-        let dump = match read {
+        let mut dump = match read {
             Ok(d) => d,
             Err(e) => {
                 // A closed or stuck subscription is reopened on the next call.
@@ -168,9 +186,56 @@ impl Controller {
                 return Err(e);
             }
         };
-        let screen = tokio::task::spawn_blocking(move || Screen::build(&dump, opts)).await?;
+        let pids: Vec<i64> = dump.elements.keys().map(|k| k.pid).collect();
+        self.learn_processes(&pids).await;
+        let springboard_only = !dump.applications.is_empty()
+            && dump.applications.iter().all(|k| self.describe(k.pid).bundle_id.as_deref() == Some(crate::apps::SPRINGBOARD));
+        if !full && springboard_only {
+            // SpringBoard's screens are told apart by identifiers, which only the second pass has
+            // (PITFALLS #22).
+            if let Some(d) = self.ax.as_mut().expect("opened above").complete().await {
+                dump = d;
+            }
+        }
+        let names: HashMap<i64, ProcName> = pids.iter().map(|&p| (p, self.describe(p))).collect();
+        let screen = tokio::task::spawn_blocking(move || {
+            let mut screen = Screen::build(&dump, opts);
+            screen.name_processes(|pid| names.get(&pid).cloned().unwrap_or_default());
+            screen
+        })
+        .await?;
         self.last_screen = Some(screen.clone());
         Ok(screen)
+    }
+
+    fn describe(&self, pid: i64) -> ProcName {
+        self.processes.get(&pid).map(|exe| self.apps.describe(exe)).unwrap_or_default()
+    }
+
+    /// Fetches the process list when a pid is new, and the app list when a bundle is. Failures
+    /// only leave names out.
+    async fn learn_processes(&mut self, pids: &[i64]) {
+        if pids.iter().all(|p| self.processes.contains_key(p)) {
+            return;
+        }
+        match self.session.processes().await {
+            Ok(list) => self.processes = list.into_iter().collect(),
+            Err(e) => {
+                tracing::debug!("process list: {e:#}");
+                return;
+            }
+        }
+        let unknown = pids
+            .iter()
+            .filter_map(|p| self.processes.get(p))
+            .any(|exe| !self.apps.knows(exe));
+        if self.apps.is_empty() || (unknown && !self.apps_refreshed) {
+            self.apps_refreshed |= !self.apps.is_empty();
+            match self.session.installed_apps().await {
+                Ok(list) => self.apps = AppDirectory::new(list),
+                Err(e) => tracing::debug!("app list: {e:#}"),
+            }
+        }
     }
 
     /// Launches an app by bundle id. Returns its pid.

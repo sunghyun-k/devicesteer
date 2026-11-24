@@ -19,7 +19,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8, #17, #18 |
 | Display info | #9 |
-| Accessibility tree | #10, #12 |
+| Accessibility tree | #10, #12, #19, #20, #21, #22 |
 | Daemon | #14 |
 | Viewer | #15, #18 |
 
@@ -299,4 +299,98 @@ viewer's own per-press counts, and `examples/touch_bench.rs`:
   (480 to 640 pt after a 380 pt drag, about as before).
 - Cost: the finger trails the pointer by the delay (20 ms at the viewer's pace), on top of #17's
   ~54 ms to the host. A down is written at once, so taps don't wait.
+
+### 19. Some screens answer the accessibility request only after 3 to 4 s
+
+On Control Center's first page (iPhone, iOS 27.2.1, USB) the first pass came 3.1 to 4.2 s after a
+request, every time (measured with no re-ask: 3.1, 3.5, 3.5, 3.7, 4.2 s). Under #12's rule of
+re-asking every 2.5 s, each re-ask restarted the quiet period before the answer was due, and `ui`
+failed after 15 s with nothing received; the screen still answered the moment requests stopped.
+The second pass came another 3.2 s later (most screens: 0.1 to 0.5 s).
+
+So `AxClient::read` doubles the wait before each further re-ask (2.5, 5, 10 s) and starts from
+the last answer's latency plus 1 s, and the wait for the second pass grows the same way. On that
+page a cold `ui` now takes 6 to 8 s and a repeated one ~3.5 s; ordinary screens are unchanged
+(1.2 to 2 s).
+
+Not this: a running stopwatch (a label changing every frame) answered in 1.3 s, so "the screen is
+animating" is not what delays an answer. Safari's start page timed out once while a Wi-Fi password
+prompt was up on the device and read normally (1.6 s) after it was dismissed; not reproduced.
+
+### 20. Where to tap an element is not always its frame's middle
+
+- **Switch rows.** In Settings a switch row's element spans the label and the switch
+  (`{{40, 238}, {348, 28}}`); tapping its middle hit the label and did nothing, twice. Tapping
+  26 pt in from the trailing end (the switch) toggled it, and the value went `0` → `1` → `0`.
+  `Screen::tap_point` does that for `switch` elements more than three times as wide as tall;
+  Control Center's square switch tiles are tapped in the middle. Untested: right-to-left layouts,
+  where the switch is at the leading end.
+- **Full-screen dismiss buttons.** Context menus and Safari's page menu come with a button that
+  covers the whole screen ("close menu"), listed after the menu items; its middle lies on an item.
+  The first fix (the nearest point not inside any smaller element) landed 6 pt above the first
+  item, on the menu's own background, which is not an element, and the menu stayed open. Points
+  now keep 24 pt clear of the smaller elements when the frame allows (8 pt, then 0 pt when not).
+- **Hidden under bars.** Web content scrolls under Safari's bottom bar, and its elements there
+  keep their frames (a link at y 862 under the address field). The covered-point rule moves the
+  tap off the field, but the bar's background still swallows it. Scroll the element up first.
+- Frames of other processes can be in the wrong space altogether: #21.
+
+### 21. Hosted views: elements of another process, some with frames in their own space
+
+`ui` lists elements by pid, and several processes draw into one screen. The application element
+belongs to the app; other pids appear only on elements (`ui` lists them as `hosted` apps):
+
+- Web content (Safari, an app's web view) is a WebKit content process, a new pid per site. Its
+  frames are screen points, and a tap by ref on a page's menu button opened that menu.
+- The keyboard is the app's own pid (keys came with the host's pid); one unlabeled InputUI button
+  sat at `{{30, 0}, {368, 44}}`, over the status bar, so probably in its own space too.
+- **Share sheet** (SharingUIService) and the map in a location-permission alert: frames are
+  relative to the hosted view. The share sheet's first icon read `{{32.7, 32.8}, {64, 64}}` while
+  it showed at about (42, 544) on the screen; the activation point (attribute 1) is in the same
+  local space. The dump has no element for the host view, so there is no offset to add. Tapping
+  these by ref misses; use coordinates from a screenshot.
+
+Possible fixes, untried: ask the device for the hosted element's parent or its host view with a
+single-attribute request (the payload has an `Answer` kind), or match the share sheet's layout
+against a screenshot.
+
+### 22. What the accessibility tree has and lacks (survey)
+
+Read on the test iPhone (iOS 27.2.1, Korean, USB, portrait) through the daemon; the full table is
+not kept in the repository.
+
+- **Off-screen rows are not in the tree**, `--all` or not: table and collection cells exist only
+  while on screen. Settings' top list took 4 scroll steps (~3 s each with the reading) to read to
+  the end; when two readings in a row are the same, the end is reached. Web content and context
+  menus do list elements beyond the screen with `--all`.
+- **The tree is flat**: the application element's children are the leaves; containers do not come
+  with the dump, so "which row does this label belong to" is not answerable (a third-party list
+  read as separate text pieces per row, none of them a button).
+- **System screens are SpringBoard**, whose application element has no label (`" "`). Home screen,
+  Control Center (three pages; one dump shows one page), the lock screen / notification list, the
+  app switcher and system alerts are told apart only by identifiers (`spotlight-pill`,
+  `Page control`, `cc-*`, `*-orb-button`, `card:<bundle id>:sceneID:...`, `kTCCService*`), which
+  only the second pass has. `ui` therefore waits for that pass when SpringBoard is the only app
+  (+0.1 to 3 s).
+- **The app switcher opened with a double home press listed no elements at all** (only the
+  application) on two readings 4 s apart; after a 30 pt drag the five cards appeared. Another time
+  it listed them at once. Cards are role 4 with a custom "close" action and identifier
+  `card:<bundle id>:...`.
+- **Edge gestures:** a swipe from the top edge opened Control Center and the notifications; a swipe
+  up from the bottom edge (y 925 of 926, fast or slow) only scrolled the app: the home-indicator
+  gesture never fired. Home (`button home`) and a double home press (app switcher) work.
+- **Values:** Settings switches give `0`/`1`, Control Center's give localized words (off / on);
+  web headings give their level (`2`); tab bar items `1`/`0` beside the `selected` trait; page
+  controls "page n of m". Calculator's display still has its number only in the identifier (#10).
+- **Labels** carried U+FFFC (an inline icon), U+200E, U+2060 and no-break spaces; `ui` drops the
+  first three kinds and turns no-break spaces into spaces. Control Center listed the battery twice
+  with the same frame; `ui` prints it once.
+- Role numbers seen (attribute 45): 1 application, 2 button (also keys, home screen icons),
+  3 switch, 4 plain (text, app switcher cards), 6 header, 7 image, 13 adjustable, 14 static text,
+  17 text field. The trait bits name every role correctly; no role was left `other` that had a
+  label. Unknown trait bits seen: 22 (home screen icons), 23 + 58 (status bar items in Control
+  Center), 33 (nearly everything), 62 (app switcher cards).
+- **App names:** CoreDevice's `listapps` did not answer within 12 s (all option combinations);
+  installation_proxy's `Browse` with four attributes listed 260 apps in 0.19 s, with localized
+  display names. SpringBoard is not in that list.
 

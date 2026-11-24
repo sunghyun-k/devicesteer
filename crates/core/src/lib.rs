@@ -11,6 +11,7 @@
 //! The same path works on macOS and Windows (Apple's usbmuxd ships with iTunes / Apple Devices
 //! there). Nothing needs root or a TUN interface.
 
+mod apps;
 pub mod ax;
 mod control;
 mod coredevice;

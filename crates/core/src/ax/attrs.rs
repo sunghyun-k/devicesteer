@@ -39,8 +39,8 @@ pub const LABEL_PLAIN: i64 = 33;
 /// Public UIAccessibilityTraits bits, plus private ones. Seen on device:
 /// text_entry and editing (Notes body while typing), search_field (Settings),
 /// back_button (navigation bars), toggle (Settings switches), not_enabled
-/// (Notes share button on an empty note), keyboard_key (keyboard, Calculator).
-/// Not yet seen on device: secure_text, tab_button.
+/// (Notes share button on an empty note), keyboard_key (keyboard, Calculator), tab_button (tab
+/// bars, iOS 27.2.1). Not yet seen on device: secure_text.
 pub mod traits {
     pub const BUTTON: u64 = 1 << 0;
     pub const LINK: u64 = 1 << 1;

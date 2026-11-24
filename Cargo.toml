@@ -26,6 +26,8 @@ idevice = { git = "https://github.com/jkcoxson/idevice", rev = "c8fff6d7fb2690ea
   "display_stream",
   # DTX, for the accessibility service.
   "dvt",
+  # App names and bundle ids for `ui` (CoreDevice's app list is too slow).
+  "installation_proxy",
 ] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

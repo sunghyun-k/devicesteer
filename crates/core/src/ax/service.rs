@@ -30,6 +30,11 @@ const ANSWER_AT_LEAST: Duration = Duration::from_millis(700);
 /// Every request restarts the device's quiet period, so ask again only after this long. Answers
 /// came 1.2 to 1.6 s after the request they answered (PITFALLS #12).
 const REASK_AFTER: Duration = Duration::from_millis(2500);
+/// Some screens answer only 3 to 4.2 s after a request, and re-asking every 2.5 s restarted their
+/// quiet period forever (PITFALLS #19). So each further re-ask waits twice as long as the last,
+/// and the first one waits at least this much longer than the last answer took.
+const REASK_GROWTH: f64 = 2.0;
+const REASK_MARGIN: Duration = Duration::from_millis(1000);
 /// After input, a second request this long after the first (PITFALLS #12).
 const SECOND_ASK: Duration = Duration::from_millis(800);
 
@@ -51,6 +56,8 @@ pub struct AxClient {
     changed: watch::Receiver<u64>,
     task: tokio::task::JoinHandle<()>,
     asked_at: Instant,
+    /// How long the last answer took after the request before it (PITFALLS #19).
+    latency: Duration,
 }
 
 impl Drop for AxClient {
@@ -127,7 +134,7 @@ impl AxClient {
             st.lock().unwrap().closed = true;
             let _ = changed_tx.send(ticks + 1);
         });
-        Ok(Self { ask: ask_tx, state, changed: changed_rx, task, asked_at })
+        Ok(Self { ask: ask_tx, state, changed: changed_rx, task, asked_at, latency: Duration::ZERO })
     }
 
     fn request(&mut self) -> Result<()> {
@@ -155,6 +162,7 @@ impl AxClient {
             }
         }
         let deadline = Instant::now() + timeout;
+        let mut reask = REASK_AFTER.max(self.latency + REASK_MARGIN);
         let seq = loop {
             let earliest = self.asked_at + ANSWER_AT_LEAST;
             {
@@ -162,7 +170,8 @@ impl AxClient {
                 if s.closed {
                     bail!("accessibility connection closed");
                 }
-                if s.initial_at.is_some_and(|at| at >= earliest) {
+                if let Some(at) = s.initial_at.filter(|at| *at >= earliest) {
+                    self.latency = at.saturating_duration_since(self.asked_at);
                     break s.seq;
                 }
             }
@@ -176,32 +185,45 @@ impl AxClient {
                     if unparsed > 0 { format!(" ({unparsed} payloads not understood)") } else { String::new() }
                 );
             }
-            if now >= self.asked_at + REASK_AFTER {
+            if now >= self.asked_at + reask {
                 self.request()?;
+                reask = reask.mul_f64(REASK_GROWTH);
             }
-            let wait = deadline.min(self.asked_at + REASK_AFTER).saturating_duration_since(now);
+            let wait = deadline.min(self.asked_at + reask).saturating_duration_since(now);
             let _ = tokio::time::timeout(wait.max(Duration::from_millis(10)), self.changed.changed()).await;
         };
-        if full {
-            let until = Instant::now() + Duration::from_millis(2500);
-            loop {
-                {
-                    let s = self.state.lock().unwrap();
-                    if s.full_seq == seq && let Some(d) = s.full.clone() {
-                        return Ok(d);
-                    }
-                    if s.seq > seq || s.closed {
-                        break;
-                    }
-                }
-                let left = until.saturating_duration_since(Instant::now());
-                if left.is_zero() || tokio::time::timeout(left, self.changed.changed()).await.is_err() {
-                    break;
-                }
-            }
+        if full && let Some(d) = self.second_pass(seq).await {
+            return Ok(d);
         }
         let s = self.state.lock().unwrap();
         Ok(s.initial.clone().expect("a dump arrived above"))
+    }
+
+    /// The newest reading with its second pass (identifiers) merged in, if that pass comes.
+    /// Sends no request.
+    pub async fn complete(&mut self) -> Option<Arc<Dump>> {
+        let seq = self.state.lock().unwrap().seq;
+        self.second_pass(seq).await
+    }
+
+    async fn second_pass(&mut self, seq: u64) -> Option<Arc<Dump>> {
+        // The second pass came 0.5 s after the first on most screens, 3.2 s on a slow one.
+        let until = Instant::now() + Duration::from_millis(2500).max(self.latency + REASK_MARGIN);
+        loop {
+            {
+                let s = self.state.lock().unwrap();
+                if s.full_seq == seq && let Some(d) = s.full.clone() {
+                    return Some(d);
+                }
+                if s.seq > seq || s.closed {
+                    return None;
+                }
+            }
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() || tokio::time::timeout(left, self.changed.changed()).await.is_err() {
+                return None;
+            }
+        }
     }
 }
 
