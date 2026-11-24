@@ -1,15 +1,10 @@
 //! Device discovery through usbmuxd.
 
 use anyhow::Result;
-use idevice::{
-    IdeviceService,
-    lockdown::LockdownClient,
-    provider::IdeviceProvider,
-    usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdDevice},
-};
+use idevice::usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdDevice};
 use serde::Serialize;
 
-use crate::step;
+use crate::{setup::SetupStep, step};
 
 /// How a device is reachable through usbmuxd.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -39,7 +34,12 @@ pub struct DeviceInfo {
     pub os_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub build_version: Option<String>,
-    /// Why lockdown could not be read (not paired, not trusted, connection dropped).
+    /// The first setup step the device still needs (`iphone-use setup status` says more). Absent
+    /// when it is ready.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setup: Option<SetupStep>,
+    /// Why the device could not be read (connection dropped, lockdown failed). A device that is
+    /// only waiting for setup has `setup` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -87,6 +87,7 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
                     device_class: None,
                     os_version: None,
                     build_version: None,
+                    setup: None,
                     error: None,
                 },
                 d,
@@ -97,8 +98,10 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
     let mut list = Vec::with_capacity(out.len());
     for (mut info, dev) in out {
         let provider = dev.to_provider(mux_addr(), "iphone-use");
-        match read_lockdown(&provider).await {
-            Ok(values) => {
+        match crate::setup::probe(&provider).await {
+            Ok(p) => {
+                info.setup = p.step();
+                let values = &p.values;
                 let s = |k: &str| values.get(k).and_then(|v| v.as_string()).map(str::to_owned);
                 info.name = s("DeviceName");
                 info.product_type = s("ProductType");
@@ -111,12 +114,4 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
         list.push(info);
     }
     Ok(list)
-}
-
-async fn read_lockdown(provider: &dyn IdeviceProvider) -> Result<plist::Dictionary> {
-    let mut lockdown = step("lockdown connection", LockdownClient::connect(provider)).await?;
-    let pairing = step("pairing record lookup", provider.get_pairing_file()).await?;
-    step("lockdown session", lockdown.start_session(&pairing)).await?;
-    let all = step("lockdown read", lockdown.get_value(None, None)).await?;
-    Ok(all.into_dictionary().unwrap_or_default())
 }

@@ -61,6 +61,18 @@ impl Session {
     ///
     /// USB is preferred when the device is reachable both ways.
     pub async fn open(udid: Option<&str>) -> Result<Self> {
+        match Self::open_tunnel(udid).await {
+            Ok(s) => Ok(s),
+            // A device that isn't set up fails somewhere along the way with an error that doesn't
+            // say why; the setup state does. The original words stay, "connection" included.
+            Err(e) => match crate::setup::status(udid).await {
+                Ok(s) if !s.ready => Err(e.context(format!("the device is not set up: {}", s.next))),
+                _ => Err(e),
+            },
+        }
+    }
+
+    async fn open_tunnel(udid: Option<&str>) -> Result<Self> {
         let device = pick_device(mux_devices().await?, udid)?;
         let transport = transport_of(&device.connection_type).context("unknown usbmuxd connection type")?;
         let provider = device.to_provider(mux_addr(), "iphone-use");
@@ -113,8 +125,8 @@ impl Session {
         if !self.rsd.services.contains_key(name.as_ref()) {
             bail!(
                 "the device does not advertise {name}. If it is a developer service, the Developer \
-                 Disk Image is probably not mounted: open Xcode's Devices window once with the \
-                 device connected, then retry"
+                 Disk Image is probably not mounted (it goes away at every restart): run \
+                 `iphone-use setup`, then retry"
             );
         }
         step(&format!("{name} connection"), T::connect_rsd(&mut self.adapter, &mut self.rsd)).await

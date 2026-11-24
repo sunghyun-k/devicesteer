@@ -1,6 +1,6 @@
 ---
 name: iphone-use
-description: Operate a real iPhone or iPad connected over USB or Wi-Fi. Read the screen's accessibility tree, tap, swipe, press buttons, launch apps, change appearance, accessibility settings and the simulated location, and record the screen, in a session the person watching in the iphone-use viewer can take over or stop. Use it when a task needs a physical device, not a simulator.
+description: Operate a real iPhone or iPad connected over USB or Wi-Fi, and set a new one up (trust, Developer Mode, Developer Disk Image) without Xcode. Read the screen's accessibility tree, tap, swipe, press buttons, launch apps, change appearance, accessibility settings and the simulated location, and record the screen, in a session the person watching in the iphone-use viewer can take over or stop. Use it when a task needs a physical device, not a simulator.
 metadata:
   bootstrap: "true"
 ---
@@ -22,6 +22,9 @@ output was truncated: save it to a file and read the file in parts, for example
 
 Points (`ui` frames, `tap x,y`, `swipe`) are always screen points in the orientation the screen
 shows, portrait or landscape; the guide explains it.
+
+A device that isn't ready yet (`devices` lists it with `setup`) is set up with `iphone-use setup`;
+the guide says which steps need the person holding the device.
 
 If `iphone-use` is not found, build it from this repository (`cargo build`, then use
 `target/debug/iphone-use`) or ask the user how it is installed.

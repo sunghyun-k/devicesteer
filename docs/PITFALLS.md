@@ -23,6 +23,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Daemon | #14, #23 |
 | Device settings | #24 |
 | Viewer | #15, #18, #23, #26, #27, #29 |
+| Device setup (pairing, Developer Mode, DDI) | #30, #31 |
 
 ## Entries
 
@@ -568,3 +569,40 @@ Seen while the viewer followed turns (#27) on macOS, Tauri dev build:
   sending its 2-second reports to `viewer.log` a few seconds after it opened, while it still took
   events. The page also reports right after a turn and a recording event, so a check doesn't
   depend on the timer.
+
+### 30. Pairing: the device answers "pending" until someone taps Trust, and only when unlocked
+
+`lockdown Pair` doesn't block while the "Trust This Computer?" alert is up. The device answers at
+once with `PairingDialogResponsePending`, and the host has to send the same request again
+(idevice's `LockdownClient::pair` resends it every second; `pair_once` returns after one try).
+While the device is locked it answers `PasswordProtected` and shows no alert at all: the alert
+appears once it is unlocked. "Don't Trust" gives `UserDeniedPairing`, and the device doesn't ask
+again until the cable is unplugged and plugged back in.
+
+Each request carries a freshly generated host certificate (a 2048-bit RSA key): `pair` builds it
+once and resends it; looping over `pair_once` would build a new key every second. In an
+unoptimized build the key takes seconds, so the workspace builds `rsa` and `num-bigint-dig` with
+`opt-level = 3` in the dev profile.
+
+The record isn't kept by idevice: the caller hands it to usbmuxd (`SavePairRecord`), which stores it
+where the OS looks (`/var/db/lockdown` on macOS; Apple's usbmuxd on Windows has its own store).
+`setup trust` opens a lockdown session with the new record before saving it, so a bad record never
+replaces a good one.
+
+### 31. `LookupImage` says nothing is mounted while the disk image is mounted
+
+iPhone, iOS 27.2.1, after Xcode 27 had prepared the device: `mobile_image_mounter`'s `LookupImage`
+returned no signature for `Personalized`, `Developer` or `Cryptex`, while the developer services
+(`com.apple.instruments.dtservicehub`, CoreDevice's app service) were listed over RSD and worked.
+`CopyDevices` listed the image: `MountPath` `/System/Developer`, `DiskImageType` `Personalized`,
+`PersonalizedImageType` `DeveloperDiskImage`, `IsMounted` true, with its backing image inside
+cryptexd's store (`com.apple.security.cryptexd/.../com.apple.MobileAsset.DDI`). Xcode 27 seems to
+have the image mounted through cryptexd from a MobileAsset, and `LookupImage` only knows images
+uploaded through the mounter itself.
+
+So setup reads `CopyDevices` and looks for a mounted entry at `/System/Developer` (`/Developer`
+before iOS 17).
+
+The image mounter also refuses personalized images while Developer Mode is off, so the disk image
+is checked only after Developer Mode reads on.
+

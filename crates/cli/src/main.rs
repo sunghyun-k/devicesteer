@@ -176,6 +176,24 @@ enum Command {
         #[command(subcommand)]
         action: SessionAction,
     },
+    /// Make a device ready without Xcode: trust this computer, Developer Mode, the Developer Disk
+    /// Image. Without an action, does every step that isn't done, waiting for the user where the
+    /// device needs them. Prints the state afterwards with `next`; progress goes to stderr as JSON
+    /// lines.
+    Setup {
+        #[command(flatten)]
+        target: Target,
+        #[command(subcommand)]
+        action: Option<SetupAction>,
+        /// How long to wait for the user at a step that needs them (tap Trust, turn on Developer
+        /// Mode and restart), in seconds. 0 with `developer-mode`: show the switch and return.
+        #[arg(long, global = true, default_value_t = 180)]
+        wait: u64,
+        /// A folder with a personalized Developer Disk Image (BuildManifest.plist and the files it
+        /// names) to use instead of Xcode's copy or the download. Also `IPHONE_USE_DDI`.
+        #[arg(long, global = true)]
+        ddi: Option<PathBuf>,
+    },
     /// Print the guide for agents that matches this version of iphone-use (Markdown).
     Skill,
     /// Screen-sharing media streams on the device.
@@ -185,6 +203,21 @@ enum Command {
         #[command(subcommand)]
         action: MediaAction,
     },
+}
+
+#[derive(Subcommand)]
+enum SetupAction {
+    /// Which steps are done and what to do next. Reads only; changes nothing.
+    Status,
+    /// Pair over USB: the device asks "Trust This Computer?"; the user taps Trust and enters the
+    /// passcode. Waits for them up to --wait.
+    Trust,
+    /// Show the Developer Mode switch in Settings > Privacy & Security, then wait (up to --wait)
+    /// while the user turns it on, the device restarts and they confirm with the passcode.
+    DeveloperMode,
+    /// Mount the personalized Developer Disk Image (Apple signs it for this device). Needed again
+    /// after every restart. No action on the device.
+    DiskImage,
 }
 
 #[derive(Subcommand)]
@@ -323,6 +356,25 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             v
         }
         Command::Devices => json!({ "devices": list_devices().await? }),
+        Command::Setup { target, action, wait, ddi } => {
+            use iphone_use_core::setup;
+            let udid = target.udid.as_deref();
+            let wait_for = Duration::from_secs(wait);
+            // Progress goes to stderr, one JSON object per line, so stdout stays one result.
+            let progress: setup::ProgressFn = std::sync::Arc::new(|p: setup::Progress| {
+                eprintln!("{}", json!({ "progress": p }));
+            });
+            let status = match action {
+                Some(SetupAction::Status) => setup::status(udid).await?,
+                Some(SetupAction::Trust) => setup::trust(udid, wait_for, progress).await?,
+                Some(SetupAction::DeveloperMode) => {
+                    setup::developer_mode(udid, (wait > 0).then_some(wait_for), progress).await?
+                }
+                Some(SetupAction::DiskImage) => setup::disk_image(udid, ddi.as_deref(), progress).await?,
+                None => setup::run(udid, wait_for, ddi.as_deref(), progress).await?,
+            };
+            serde_json::to_value(status)?
+        }
         Command::Services { target } => {
             let session = Session::open(target.udid.as_deref()).await?;
             json!({

@@ -65,6 +65,7 @@ app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC
 app/src-tauri/      Tauri shell (workspace member), a daemon client
 THIRD_PARTY_NOTICES.md  Code adapted from other projects, with their licenses
 docs/PITFALLS.md    Numbered observations, cited from code as PITFALLS #N
+docs/SETUP.md       Device setup without Xcode: steps, detection, where the disk image comes from
 ```
 
 ### The idevice pin

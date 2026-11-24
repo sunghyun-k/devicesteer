@@ -20,6 +20,36 @@ iphone-use devices                     # udid, name, model, OS, usb/wifi
 Pass `--udid <UDID>` with every command whenever more than one device is listed. If you don't know
 which device the user means, ask; don't pick one.
 
+A device listed with `setup` isn't ready yet; see the next section.
+
+## Set up a new device
+
+A device needs three steps before the other commands work: it trusts this computer, Developer Mode
+is on, and the Developer Disk Image is mounted (again after every restart). No Xcode is needed.
+
+```sh
+iphone-use setup status --udid <UDID>          # reads only: which steps are done, and `next`
+iphone-use setup --udid <UDID>                 # does every step that isn't done, in order
+iphone-use setup trust --udid <UDID>           # pair over USB; waits for the user to tap Trust
+iphone-use setup developer-mode --udid <UDID>  # shows the switch; waits while the user turns it on
+iphone-use setup disk-image --udid <UDID>      # mounts the disk image; nothing to do on the device
+```
+
+- **The first two steps need the person holding the device.** Before you run one, tell the user
+  what they will do: for `trust`, unlock the device, tap **Trust** and enter the passcode; for
+  `developer-mode`, open Settings > Privacy & Security > Developer Mode, turn it on, tap
+  **Restart**, and after the restart unlock it, tap **Turn On** and enter the passcode. Never do
+  their part with input commands, and never guess the passcode.
+- The steps wait up to `--wait` seconds (default 180) and print progress on stderr as
+  `{"progress": ...}` lines; `waiting_for_user: true` means the device waits for the person. Pass
+  `--wait 0` to `developer-mode` to show the switch and return at once.
+- The result is the state afterwards. If `ready` is false, follow `next` (or tell the user what it
+  says); don't loop on a step the user hasn't done.
+- `trust` works over USB only. If the user taps **Don't Trust**, the error says how to get the
+  prompt back.
+- `disk-image` uses Xcode's copy when there is one, or downloads Apple's image (about 17 MB) the
+  first time; `--ddi <folder>` names another. Apple signs it for the device over the network.
+
 ## Sessions: one goal, one session
 
 Everything you do for one user goal happens in **one session**. The session is what the viewer

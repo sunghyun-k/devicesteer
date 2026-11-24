@@ -15,6 +15,8 @@ tokio.workspace = true
 plist = "1.8"
 tracing.workspace = true
 uuid.workspace = true
+# Checks the downloaded Developer Disk Image against pinned hashes.
+sha2 = "0.10"
 # MP4 boxes for recordings (Apache-2.0). 2026.4+ needs rustc 1.93; the workspace builds on 1.88.
 shiguredo_mp4 = "=2026.3.0"
 

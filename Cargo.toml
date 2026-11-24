@@ -28,6 +28,12 @@ idevice = { git = "https://github.com/jkcoxson/idevice", rev = "c8fff6d7fb2690ea
   "dvt",
   # App names and bundle ids for `ui` (CoreDevice's app list is too slow).
   "installation_proxy",
+  # Device setup (`setup`): pairing, the Developer Mode switch, and mounting the personalized
+  # Developer Disk Image, signed through Apple's TSS server.
+  "pair",
+  "amfi",
+  "mobile_image_mounter",
+  "tss",
 ] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
@@ -37,3 +43,9 @@ iphone-use-core = { path = "crates/core" }
 iphone-use-daemon = { path = "crates/daemon" }
 uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
+
+# Pairing generates a 2048-bit RSA key; unoptimized, that takes many seconds in debug builds.
+[profile.dev.package.rsa]
+opt-level = 3
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
