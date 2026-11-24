@@ -7,9 +7,11 @@
 // state: device lists, connecting and errors, agent sessions, cursor moves with labels, human
 // touches, settings and the VoiceOver warning.
 //
-// URL options: `devices=normal|empty|error|slow`, `open=1` (open the first device at once),
-// `attach=ok|hang|error`, `panel=0` (no floating panel, for screenshots), `rotation=rot270` (start
-// turned).
+// URL options: `devices=normal|empty|error|slow`, `open=1` (show the first device's screen at
+// once, as IPHONE_USE_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
+// (no floating panel, for screenshots), `rotation=rot270` (start turned), `theme=light|dark`,
+// `session=agent|delegated_to_user|user` (a session already runs when the device is attached),
+// `lights=0` (no stand-in for the macOS traffic lights).
 
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
@@ -21,20 +23,27 @@ const params = new URLSearchParams(location.search);
 const SCREEN: Point = [428, 926];
 const PX: Point = [1284, 2778];
 
+// Made-up names only: nothing from a real device.
 const DEVICES = [
-  { udid: "00000000-0000000000000001", transports: ["usb", "wifi"], name: "Test iPhone", product_type: "iPhone13,4", device_class: "iPhone", os_version: "26.1" },
+  { udid: "00000000-0000000000000001", transports: ["usb", "wifi"], name: "Test iPhone", product_type: "iPhone13,4", device_class: "iPhone", os_version: "26.1", build_version: "23B85" },
   { udid: "00000000-0000000000000002", transports: ["wifi"], name: "Test iPad", product_type: "iPad14,3", device_class: "iPad", os_version: "26.0" },
+  { udid: "00000000-0000000000000004", transports: ["usb"], name: "QA iPhone", product_type: "iPhone17,2", device_class: "iPhone", os_version: "26.2" },
+  { udid: "00000000-0000000000000005", transports: ["wifi"], name: "Old iPhone", product_type: "iPhone12,8", device_class: "iPhone", os_version: "18.7" },
   { udid: "00000000-0000000000000003", transports: ["usb"], product_type: "iPhone15,2", error: "The device is locked. Unlock it and trust this computer, then refresh." },
 ];
 
 const state = {
   devices: params.get("devices") ?? "normal",
   attach: params.get("attach") ?? "ok",
+  watch: params.get("watch") ?? "ok",
+  streaming: false,
   channel: undefined as { id: number } | undefined,
   index: 0,
   frameTimer: undefined as number | undefined,
   pts: 0,
-  session: null as null | { id: string; name: string; owner: Owner; reason: string | null },
+  session: (params.get("session")
+    ? { id: "s0", name: "Check the Wi-Fi settings", owner: params.get("session") as Owner, reason: params.get("session") === "delegated_to_user" ? "Enter the passcode on the device" : null }
+    : null) as null | { id: string; name: string; owner: Owner; reason: string | null },
   settings: {
     appearance: "dark" as "light" | "dark" | null,
     text_size: "l" as string | null,
@@ -203,13 +212,20 @@ function settingsEvent(): void {
 }
 
 function startStream(): void {
+  if (state.streaming) return;
+  state.streaming = true;
   drawScreen();
   event({ event: "config", codec: "hvc1.mock", description: "", coded: CODED, display_px: PX, ...orientation() });
   window.setTimeout(() => {
+    if (!state.streaming) return;
     frame(true);
     state.frameTimer = window.setInterval(() => frame(false), 1000 / 30);
   }, 120);
-  control();
+}
+
+function stopStream(): void {
+  state.streaming = false;
+  window.clearInterval(state.frameTimer);
 }
 
 function orientation() {
@@ -240,12 +256,25 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       if (state.attach === "error") throw "connection to the device failed: the tunnel did not come up. Unlock the device and try again.";
       state.channel = args.channel as { id: number };
       state.index = 0;
-      window.setTimeout(startStream, 50);
+      window.setTimeout(() => {
+        control();
+        if (args.frames) startStream();
+      }, 50);
+      return {};
+    case "watch":
+      if (args.frames) {
+        if (state.watch === "hang") return new Promise(() => {});
+        await sleep(500);
+        if (state.watch === "error") throw "the screen stream did not start: no media packet arrived. Try again.";
+        startStream();
+      } else stopStream();
       return {};
     case "detach":
-      window.clearInterval(state.frameTimer);
+      stopStream();
       state.channel = undefined;
       return null;
+    case "save_screenshot":
+      return "/Users/me/Pictures/iphone-use 2026-11-24 18.52.07.png";
     case "report":
       state.lastReport = args.stats;
       return null;
@@ -420,13 +449,25 @@ function panel(): void {
   el.innerHTML = `<b>mock</b> (\` hides)<br>${KEYS.map(([k, t]) => `<kbd>${k}</kbd> ${t}`).join("<br>")}`;
   document.body.append(el);
   window.addEventListener("keydown", (e) => {
-    if (e.target instanceof HTMLInputElement) return;
+    if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
     if (e.key === "`") el.hidden = !el.hidden;
     KEYS.find(([k]) => k === e.key)?.[2]();
   });
 }
 
+/** Three gray dots where macOS draws the traffic lights, so the header's room for them reads. */
+function lights(): void {
+  const style = document.createElement("style");
+  style.textContent =
+    ":root.mac .lights{position:relative}:root.mac .lights::before{content:'';position:absolute;left:6px;top:50%;" +
+    "width:12px;height:12px;margin-top:-6px;border-radius:50%;background:#ff5f57;box-shadow:20px 0 #febc2e,40px 0 #28c840}";
+  document.head.append(style);
+}
+
 export function installMock(): void {
+  const theme = params.get("theme");
+  if (theme) document.documentElement.dataset.theme = theme;
+  if (params.get("lights") !== "0") lights();
   mockWindows("main");
   mockIPC((cmd, args) => handle(cmd, (args ?? {}) as Record<string, unknown>));
   (window as unknown as { VideoDecoder: unknown }).VideoDecoder = FakeDecoder;

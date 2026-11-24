@@ -93,16 +93,9 @@ interface Settings {
   unsupported: string[];
 }
 
+type Point = [number, number];
+
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
-
-// ---------- device picker ----------
-
-const picker = $<HTMLElement>("#picker");
-const list = $<HTMLUListElement>("#devices");
-const status = $<HTMLParagraphElement>("#status");
-const refresh = $<HTMLButtonElement>("#refresh");
-
-const pickerEmpty = $<HTMLDivElement>("#picker-empty");
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -121,103 +114,242 @@ function icon(name: string, className = "icon"): SVGSVGElement {
   return svg;
 }
 
-/** "iPhone 26.1" and the like, when the device said. */
+/** Local settings of the window (panels shown, last device): conveniences only, so storage that
+ * is missing or throws just means defaults. */
+const prefs = {
+  get(key: string): string | null {
+    try {
+      return localStorage.getItem(`iphone-use.${key}`);
+    } catch {
+      return null;
+    }
+  },
+  set(key: string, value: string): void {
+    try {
+      localStorage.setItem(`iphone-use.${key}`, value);
+    } catch {
+      // Not kept; the default comes back next time.
+    }
+  },
+};
+
+// ---------- window chrome ----------
+
+const app = $<HTMLDivElement>("#app");
+const center = $<HTMLElement>("#center");
+const root = document.documentElement;
+
+// On macOS the window has no title bar (titleBarStyle Overlay) and the traffic lights sit over
+// the top-left corner; the headers keep room for them. Elsewhere the window keeps its frame.
+if (/Mac/.test(navigator.platform) && "__TAURI_INTERNALS__" in window) root.classList.add("mac");
+// The selected device shows in the accent color while the window has focus, gray otherwise.
+const focused = () => root.classList.toggle("focused", document.hasFocus());
+window.addEventListener("focus", focused);
+window.addEventListener("blur", focused);
+focused();
+
+/** Sidebar and inspector, each shown or hidden. Narrow windows start with them hidden: they
+ * float over the stage there (style.css, "narrow windows"). */
+function showPanel(which: "sidebar" | "inspector", on: boolean, remember = true): void {
+  app.classList.toggle(`no-${which}`, !on);
+  if (which === "inspector") $<HTMLButtonElement>("#inspector-toggle").setAttribute("aria-pressed", String(on));
+  if (remember) prefs.set(which, on ? "1" : "0");
+  layout();
+}
+const narrow = (px: number) => window.innerWidth <= px;
+$<HTMLButtonElement>("#sidebar-hide").addEventListener("click", () => showPanel("sidebar", false));
+$<HTMLButtonElement>("#sidebar-show").addEventListener("click", () => showPanel("sidebar", app.classList.contains("no-sidebar")));
+$<HTMLButtonElement>("#inspector-toggle").addEventListener("click", () =>
+  showPanel("inspector", app.classList.contains("no-inspector")),
+);
+
+// ---------- devices ----------
+
+const availableList = $<HTMLUListElement>("#available");
+const unavailableList = $<HTMLUListElement>("#unavailable");
+const listMessage = $<HTMLDivElement>("#list-message");
+const search = $<HTMLInputElement>("#search");
+const refreshBtn = $<HTMLButtonElement>("#refresh");
+
+let devices: DeviceInfo[] = [];
+let selected: DeviceInfo | undefined;
+let listError: string | undefined;
+
+/** "iOS 26.1", "iPadOS 26.0", when the device said. */
 function osLabel(d: DeviceInfo): string | undefined {
-  return d.os_version ? `${d.device_class ?? "iOS"} ${d.os_version}` : undefined;
+  if (!d.os_version) return undefined;
+  return `${d.device_class === "iPad" ? "iPadOS" : "iOS"} ${d.os_version}`;
 }
 
+function deviceName(d: DeviceInfo): string {
+  return d.name ?? d.product_type ?? "Unknown device";
+}
+
+const isTablet = (d: DeviceInfo | undefined) => d?.device_class === "iPad" || !!d?.product_type?.startsWith("iPad");
+
 function row(d: DeviceInfo): HTMLLIElement {
-  const li = document.createElement("li");
-  const glyph = el("div", "device-icon");
-  glyph.append(icon(d.device_class === "iPad" ? "i-tablet" : "i-phone", ""));
-  const text = el("div", "device-text");
-  text.append(el("div", "name", d.name ?? d.product_type ?? "Unknown device"));
-  const meta = el("div", "meta");
-  for (const part of [d.product_type, osLabel(d)].filter(Boolean) as string[]) {
-    if (meta.childElementCount) meta.append(el("span", "sep", "·"));
-    meta.append(el("span", "", part));
-  }
-  for (const t of d.transports) meta.append(el("span", "chip", t === "wifi" ? "Wi-Fi" : t.toUpperCase()));
-  text.append(meta);
-  const udid = el("div", "udid", d.udid);
-  udid.title = d.udid;
-  text.append(udid);
-  li.append(glyph, text);
+  const li = el("li", "dev");
+  li.dataset.udid = d.udid;
+  li.setAttribute("role", "option");
+  li.tabIndex = 0;
+  const glyph = el("div", "glyph");
+  glyph.append(icon(isTablet(d) ? "i-tablet" : "i-phone"));
+  const text = el("div", "text");
+  text.append(el("span", "name", deviceName(d)));
+  // The model identifier, or why the device can't be used.
+  const sub = d.error ? "Unavailable" : [d.name ? d.product_type : undefined, d.transports.includes("usb") ? "USB" : d.transports.length ? "Wi-Fi" : undefined]
+    .filter(Boolean)
+    .join(" · ");
+  text.append(el("span", "model", sub));
+  li.append(glyph, text, el("span", "ver", d.os_version ?? ""));
   if (d.error) {
     li.classList.add("unavailable");
-    text.append(el("div", "error", d.error));
-  } else {
-    li.classList.add("pickable");
-    li.tabIndex = 0;
-    li.setAttribute("role", "button");
-    li.append(icon("i-chevron", "icon chevron"));
-    li.addEventListener("click", () => openViewer(d));
-    li.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        void openViewer(d);
-      }
-    });
+    li.title = d.error;
   }
+  li.addEventListener("click", () => void select(d));
+  li.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      void select(d);
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const rows = [...document.querySelectorAll<HTMLLIElement>(".dev")];
+      rows[rows.indexOf(li) + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
+    }
+  });
   return li;
 }
 
-/** The picker's empty or error state, or none. */
-function pickerMessage(m: { title: string; detail: string; error?: boolean } | null): void {
-  pickerEmpty.hidden = !m;
-  if (!m) return;
-  pickerEmpty.classList.toggle("is-error", !!m.error);
-  pickerEmpty.querySelector("use")!.setAttribute("href", m.error ? "#i-alert" : "#i-cable");
-  pickerEmpty.querySelector(".empty-title")!.textContent = m.title;
-  pickerEmpty.querySelector(".empty-detail")!.textContent = m.detail;
-}
-
-async function load(): Promise<void> {
-  refresh.disabled = true;
-  status.textContent = "Looking for devices…";
-  try {
-    const devices = await invoke<DeviceInfo[]>("list_devices");
-    list.replaceChildren(...devices.map(row));
-    status.textContent = devices.length
-      ? `${devices.length} device${devices.length > 1 ? "s" : ""}. Click one to view it.`
-      : "";
-    pickerMessage(
-      devices.length ? null : { title: "No devices", detail: "Connect an iPhone or iPad over USB, then refresh." },
-    );
-  } catch (e) {
-    list.replaceChildren();
-    status.textContent = "";
-    pickerMessage({ title: "Couldn't list devices", detail: String(e), error: true });
-  } finally {
-    refresh.disabled = false;
+/** The sidebar from `devices`, filtered by the search field, with the selection marked. */
+function renderList(): void {
+  const q = search.value.trim().toLowerCase();
+  const match = (d: DeviceInfo) =>
+    !q || [d.name, d.product_type, d.os_version, d.udid].some((s) => s?.toLowerCase().includes(q));
+  const shown = devices.filter(match);
+  // The selected device stays listed while it is unplugged, so its view doesn't lose its row.
+  if (selected && !devices.some((d) => d.udid === selected!.udid) && match(selected)) shown.unshift(selected);
+  const ok = shown.filter((d) => !d.error);
+  const bad = shown.filter((d) => d.error);
+  availableList.replaceChildren(...ok.map(row));
+  unavailableList.replaceChildren(...bad.map(row));
+  $<HTMLElement>("#sec-available").hidden = !ok.length;
+  $<HTMLElement>("#sec-unavailable").hidden = !bad.length;
+  markSelection();
+  let m: { title: string; detail: string; cls?: string } | null = null;
+  if (listError) m = { title: "Couldn't list devices", detail: listError, cls: "error" };
+  else if (!listed) m = { title: "Looking for devices…", detail: "", cls: "loading" };
+  else if (!devices.length) m = { title: "No devices", detail: "Connect an iPhone or iPad with a cable, unlock it and trust this computer." };
+  else if (!shown.length) m = { title: "No matches", detail: `Nothing matches “${search.value.trim()}”.` };
+  listMessage.hidden = !m;
+  if (m) {
+    listMessage.className = `list-message ${m.cls ?? ""}`;
+    listMessage.querySelector(".title")!.textContent = m.title;
+    listMessage.querySelector(".detail")!.textContent = m.detail;
   }
 }
 
-refresh.addEventListener("click", load);
-$<HTMLButtonElement>("#picker-retry").addEventListener("click", load);
+function markSelection(): void {
+  const busy = !!activeSession();
+  for (const li of document.querySelectorAll<HTMLLIElement>(".dev")) {
+    const on = li.dataset.udid === selected?.udid;
+    li.setAttribute("aria-selected", String(on));
+    const glyph = li.querySelector(".glyph")!;
+    glyph.querySelector(".busy")?.remove();
+    if (on && busy) {
+      const dot = el("span", "busy");
+      dot.title = "An agent session runs on this device";
+      glyph.append(dot);
+    }
+  }
+}
 
-// ---------- viewer ----------
+/** Whether the device list has come back once. */
+let listed = false;
+let loading = false;
 
-const viewer = $<HTMLElement>("#viewer");
+async function loadDevices(): Promise<void> {
+  if (loading) return;
+  loading = true;
+  refreshBtn.disabled = true;
+  try {
+    devices = await invoke<DeviceInfo[]>("list_devices");
+    listError = undefined;
+  } catch (e) {
+    devices = [];
+    listError = String(e);
+  } finally {
+    listed = true;
+    loading = false;
+    refreshBtn.disabled = false;
+  }
+  // The selected device's details can change (unlocked, trusted, a transport came or went).
+  const now = selected && devices.find((d) => d.udid === selected!.udid);
+  if (now && selected) {
+    const wasError = !!selected.error;
+    selected = now;
+    showDeviceText();
+    if (wasError && !now.error) {
+      // It became usable: attach now, as if just picked.
+      const d = now;
+      selected = undefined;
+      void select(d);
+    }
+  }
+  renderList();
+}
+
+search.addEventListener("input", renderList);
+search.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    document.querySelector<HTMLLIElement>(".dev")?.focus();
+  } else if (e.key === "Escape") {
+    search.value = "";
+    renderList();
+  }
+});
+refreshBtn.addEventListener("click", () => void loadDevices());
+// Devices come and go (a cable, Wi-Fi): the list keeps itself current while the window shows.
+window.setInterval(() => {
+  if (!document.hidden) void loadDevices();
+}, 8000);
+
+// ---------- the selected device ----------
+
+const stage = $<HTMLDivElement>("#stage");
+const scroller = $<HTMLDivElement>("#scroller");
+const deviceEl = $<HTMLDivElement>("#device");
 const canvas = $<HTMLCanvasElement>("#screen");
 const overlay = $<HTMLDivElement>("#overlay");
-const stage = $<HTMLDivElement>("#stage");
-const viewerStatus = $<HTMLParagraphElement>("#viewer-status");
 const glow = $<HTMLDivElement>("#glow");
-const sessionIdle = $<HTMLParagraphElement>("#session-idle");
-const sessionPanel = $<HTMLDivElement>("#session-panel");
-const sessionName = $<HTMLSpanElement>("#session-name");
-const sessionState = $<HTMLSpanElement>("#session-state");
-const sessionPrimary = $<HTMLButtonElement>("#session-primary");
-const sessionStop = $<HTMLButtonElement>("#session-stop");
 const ctx = canvas.getContext("2d")!;
-const stageMessage = $<HTMLDivElement>("#stage-message");
+const introArt = $<HTMLDivElement>("#intro-art");
+const viewBtn = $<HTMLButtonElement>("#view-screen");
 
-/** What the stage shows: a spinner while connecting, an error, or the screen once a frame drew. */
-function stageState(state: "connecting" | "error" | "live", title = "", detail = ""): void {
+/** What the stage shows: nothing selected; the selected device with View Screen; one that can't
+ * be used; connecting; an error; or the live screen once a frame drew. */
+type StageState = "none" | "intro" | "unavailable" | "connecting" | "error" | "live";
+
+function stageState(state: StageState, text = ""): void {
   stage.dataset.state = state;
-  stageMessage.querySelector(".empty-title")!.textContent = title;
-  stageMessage.querySelector(".empty-detail")!.textContent = detail;
+  center.classList.toggle("live", state === "live");
+  $<HTMLSpanElement>("#intro-busy-text").textContent = state === "connecting" ? text || "Connecting…" : "";
+  $<HTMLParagraphElement>("#intro-reason").textContent = state === "error" || state === "unavailable" ? text : "";
+  updateMenu();
+  if (state === "live") layout();
+}
+
+function showDeviceText(): void {
+  const d = selected;
+  const name = d ? deviceName(d) : "";
+  const meta = d ? [osLabel(d), d.name ? d.product_type : undefined].filter(Boolean).join(" · ") : "";
+  $<HTMLSpanElement>("#device-name").textContent = d ? name : "No device";
+  $<HTMLSpanElement>("#device-meta").textContent = d ? meta : listed && !devices.length ? "Connect a device to begin" : "Choose a device";
+  $<HTMLHeadingElement>("#intro-name").textContent = name;
+  $<HTMLParagraphElement>("#intro-meta").textContent = d ? (osLabel(d) ?? d.product_type ?? "") : "";
+  introArt.classList.toggle("tablet", isTablet(d));
+  introArt.classList.toggle("unavailable", !!d?.error);
+  showInfo();
 }
 
 let config: Config | undefined;
@@ -227,7 +359,7 @@ let control: ControlEvent = { session: null, human_touching: false, agent_stoppe
 /** Labels shown so far, for the report. */
 let labelsShown = 0;
 
-/** Decoder numbers, shown under the screen and reported to the backend's log. */
+/** Decoder numbers, shown in the inspector and reported to the backend's log. */
 const stats = {
   received: 0,
   decoded: 0,
@@ -253,14 +385,14 @@ const received = new Map<number, number>();
 /** Frames that arrive while the decoder is being set up, from the last keyframe on: the device
  * sends one keyframe per stream, so dropping it means nothing decodes. */
 let pending: { header: { keyframe: boolean; pts_us: number }; data: Uint8Array }[] = [];
-/** Bumped by every `config` and by leaving the viewer, so a setup that finishes late gives way. */
+/** Bumped by every `config` and by leaving the screen, so a setup that finishes late gives way. */
 let configGen = 0;
 /** Codec and parameter sets the current decoder was set up with. */
 let decoderKey = "";
 
 function send(cmd: string, args: unknown = {}): Promise<unknown> {
   return invoke("send", { cmd, args }).catch((e) => {
-    viewerStatus.textContent = String(e);
+    showNote(String(e), { error: true });
     throw e;
   });
 }
@@ -390,7 +522,7 @@ async function configure(cfg: Config): Promise<void> {
       drawFrame(frame);
       lastFrame?.close();
       lastFrame = frame;
-      if (stage.dataset.state !== "live") stageState("live");
+      if (stage.dataset.state !== "live" && wantView) stageState("live");
       stats.decoded++;
       stats.fpsWindow.push(performance.now());
     },
@@ -456,6 +588,17 @@ function onFrame(header: { keyframe: boolean; pts_us: number }, data: Uint8Array
   }
 }
 
+// ---------- agent session ----------
+
+const sessionIdle = $<HTMLParagraphElement>("#session-idle");
+const sessionPanel = $<HTMLDivElement>("#session-panel");
+const sessionName = $<HTMLSpanElement>("#session-name");
+const sessionState = $<HTMLSpanElement>("#session-state");
+const sessionPrimary = $<HTMLButtonElement>("#session-primary");
+const sessionStop = $<HTMLButtonElement>("#session-stop");
+
+const activeSession = () => (control.session && control.session.owner !== "finished" ? control.session : null);
+
 /** What the panel says and does for each owner: status text, the main button and its action. */
 function panelFor(s: AgentSession): { state: string; button: string; action: string } {
   switch (s.owner) {
@@ -469,18 +612,21 @@ function panelFor(s: AgentSession): { state: string; button: string; action: str
 }
 
 /** The session's glow and panel stay up for as long as the session runs, not only while input
- * arrives, so the person watching always knows an agent holds the device. */
+ * arrives, so the person watching always knows an agent holds the device. A session that starts
+ * while the screen isn't shown shows it: the person should see what the agent does. */
 function onControl(c: ControlEvent): void {
-  const was = control.session && control.session.owner !== "finished" ? control.session.id : null;
+  const was = activeSession()?.id ?? null;
   control = c;
-  const s = c.session && c.session.owner !== "finished" ? c.session : null;
+  const s = activeSession();
   // The cursor marks where this session's agent works; it goes with the session. Input sent
   // without a session keeps it until the device changes.
   if (was && s?.id !== was) hideCursor();
   sessionPanel.hidden = !s;
   sessionIdle.hidden = !!s;
   glow.hidden = !s;
+  markSelection();
   if (!s) return;
+  if (s.id !== was && !wantView && attachedUdid) void view();
   const human = s.owner !== "agent";
   glow.classList.toggle("human", human);
   sessionPanel.classList.toggle("human", human);
@@ -490,19 +636,23 @@ function onControl(c: ControlEvent): void {
   sessionState.title = p.state;
   sessionPrimary.textContent = p.button;
   sessionPrimary.dataset.action = p.action;
-  layout();
 }
+
+sessionPrimary.addEventListener("click", () => {
+  if (sessionPrimary.dataset.action) void send("control", { action: sessionPrimary.dataset.action });
+});
+sessionStop.addEventListener("click", () => void send("control", { action: "stop" }));
 
 /** Where a point of the screen (in points) is on the overlay, in CSS pixels. */
 function toOverlay(p: [number, number], screen: [number, number]): [number, number] {
   return [(p[0] / screen[0]) * overlay.clientWidth, (p[1] / screen[1]) * overlay.clientHeight];
 }
 
-/** Whether a label that starts `offset` px right of overlay point `x` stays inside the window. The
+/** Whether a label that starts `offset` px right of overlay point `x` stays inside the stage. The
  * window keeps whatever size the user gave it (PITFALLS #29), so in a narrow one a label beside a
  * point near the right edge would be cut off: it goes on the left of the point instead. */
 function fitsRight(label: HTMLElement, x: number, offset: number): boolean {
-  return overlay.getBoundingClientRect().left + x + offset + label.offsetWidth <= window.innerWidth - 8;
+  return overlay.getBoundingClientRect().left + x + offset + label.offsetWidth <= stage.getBoundingClientRect().right - 8;
 }
 
 /** Shows an input's label next to where it happened (or at the bottom, for a button) for a
@@ -814,28 +964,126 @@ function onMessage(buf: Uint8Array): void {
   } else if (kind === 1) {
     const hl = view.getUint32(5);
     const header = JSON.parse(new TextDecoder().decode(payload.subarray(4, 4 + hl)));
-    onFrame(header, payload.subarray(4 + hl));
+    if (wantView) onFrame(header, payload.subarray(4 + hl));
   }
 }
 
-/** Keeps the overlay exactly over the drawn canvas. */
+// ---------- the device frame and zoom ----------
+//
+// The screen is drawn inside a hardware frame sized from the screen itself, so it fits any model
+// without a table of devices: a thin even bezel and round corners for Face ID phones, a thick
+// top and bottom with a home button for the older 16:9 ones, and square-ish corners for iPads.
+// The zoom is the size of one screen point in CSS pixels: "fit" works it out from the room the
+// stage has; "actual size" is one point per CSS pixel.
+
+type Zoom = "fit" | number;
+let zoom: Zoom = "fit";
+/** The scale the last layout used, to zoom in and out from. */
+let scale = 1;
+const ZOOM_MIN = 0.2;
+const ZOOM_MAX = 3;
+
+/** The frame around a screen of `w` by `h` points, in points. */
+function frameFor(w: number, h: number) {
+  const m = Math.min(w, h);
+  const long = Math.max(w, h) / m;
+  const kind = isTablet(selected) || long < 1.6 ? "tablet" : long < 1.9 ? "classic" : "modern";
+  const portrait = h >= w;
+  let side: number, end: number, screenR: number, outerR: number;
+  if (kind === "tablet") {
+    side = end = 0.045 * m;
+    screenR = 0.024 * m;
+    outerR = screenR + side;
+  } else if (kind === "classic") {
+    side = 0.075 * m;
+    end = 0.29 * m;
+    screenR = 0.006 * m;
+    outerR = 0.17 * m;
+  } else {
+    side = end = 0.042 * m;
+    screenR = 0.125 * m;
+    outerR = screenR + side;
+  }
+  const [t, r, b, l] = portrait ? [end, side, end, side] : [side, end, side, end];
+  return { kind, portrait, pad: [t, r, b, l], rim: 0.011 * m, screenR, outerR, home: 0.16 * m };
+}
+
+/** Sizes the device to the zoom and keeps the overlay on the screen. */
 function layout(): void {
-  const r = canvas.getBoundingClientRect();
-  const s = stage.getBoundingClientRect();
-  for (const e of [overlay, glow]) {
-    e.style.left = `${r.left - s.left}px`;
-    e.style.top = `${r.top - s.top}px`;
-    e.style.width = `${r.width}px`;
-    e.style.height = `${r.height}px`;
-  }
-  // Round the picture's corners about as much as the display's, and size touch discs as a
-  // fingertip on it (56 points).
-  stage.style.setProperty("--screen-r", `${Math.round(Math.min(r.width, r.height) * 0.085)}px`);
-  if (config) overlay.style.setProperty("--touch", `${Math.max(20, (56 / config.screen[0]) * r.width)}px`);
+  if (!config) return;
+  const [w, h] = config.screen;
+  const f = frameFor(w, h);
+  const [t, r, b, l] = f.pad;
+  const outerW = w + l + r + 2 * f.rim;
+  const outerH = h + t + b + 2 * f.rim;
+  const cs = getComputedStyle(scroller);
+  const availW = scroller.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH = scroller.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const fit = Math.max(0.05, Math.min(availW / outerW, availH / outerH, ZOOM_MAX));
+  scale = zoom === "fit" ? fit : zoom;
+  const s = scale;
+  deviceEl.dataset.kind = f.kind;
+  deviceEl.dataset.orient = f.portrait ? "portrait" : "landscape";
+  const px = (n: number) => `${n * s}px`;
+  // The rim and side buttons are drawn outside the element, inside the scroller's padding.
+  deviceEl.style.width = px(w + l + r);
+  deviceEl.style.height = px(h + t + b);
+  const set = (k: string, v: string) => deviceEl.style.setProperty(k, v);
+  set("--pad-t", px(t));
+  set("--pad-r", px(r));
+  set("--pad-b", px(b));
+  set("--pad-l", px(l));
+  set("--rim", `${Math.max(1.5, f.rim * s)}px`);
+  set("--outer-r", px(f.outerR));
+  set("--screen-r", px(f.screenR));
+  set("--home", px(f.home));
+  set("--h", px(h + t + b));
+  // Touch discs are a fingertip on the screen (56 points).
+  overlay.style.setProperty("--touch", `${Math.max(20, 56 * s)}px`);
   placeCursor();
+  showZoom();
 }
-new ResizeObserver(layout).observe(stage);
+new ResizeObserver(() => layout()).observe(scroller);
 
+function setZoom(z: Zoom): void {
+  if (!config) return;
+  zoom = typeof z === "number" ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) : z;
+  layout();
+  // Zoom about the middle of what shows.
+  scroller.scrollLeft = (scroller.scrollWidth - scroller.clientWidth) / 2;
+  scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2;
+}
+
+function showZoom(): void {
+  $<HTMLButtonElement>("#zoom-fit").setAttribute("aria-pressed", String(zoom === "fit"));
+  $<HTMLButtonElement>("#zoom-actual").setAttribute("aria-pressed", String(zoom !== "fit" && Math.abs(scale - 1) < 0.001));
+  $<HTMLButtonElement>("#zoom-in").disabled = scale >= ZOOM_MAX - 0.001;
+  $<HTMLButtonElement>("#zoom-out").disabled = scale <= ZOOM_MIN + 0.001;
+  stage.dataset.zoom = zoom === "fit" ? "fit" : String(Math.round(scale * 100));
+}
+
+$<HTMLButtonElement>("#zoom-in").addEventListener("click", () => setZoom(scale * 1.25));
+$<HTMLButtonElement>("#zoom-out").addEventListener("click", () => setZoom(scale / 1.25));
+$<HTMLButtonElement>("#zoom-fit").addEventListener("click", () => setZoom("fit"));
+$<HTMLButtonElement>("#zoom-actual").addEventListener("click", () => setZoom(1));
+window.addEventListener("keydown", (e) => {
+  if (!(e.metaKey || e.ctrlKey) || stage.dataset.state !== "live") return;
+  const z: Record<string, () => void> = {
+    "=": () => setZoom(scale * 1.25),
+    "+": () => setZoom(scale * 1.25),
+    "-": () => setZoom(scale / 1.25),
+    "0": () => setZoom(1),
+    "9": () => setZoom("fit"),
+  };
+  if (z[e.key]) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    z[e.key]();
+  }
+});
+
+// ---------- human input ----------
+//
 // Human input is a live touch: down on pointerdown, the pointer's path as it moves (one step per
 // pointer event, with the event's time), up on release. The daemon replays the path at a steady
 // rate from those times (PITFALLS #18), so steps need not go out evenly. They go out one at a
@@ -843,7 +1091,6 @@ new ResizeObserver(layout).observe(stage);
 // backlog of moves would make the finger trail the mouse. While a step is in flight, newer moves
 // replace the queued one.
 
-type Point = [number, number];
 /** `t`: when the pointer was there (ms, the page's clock). */
 type Step = { phase: "down" | "move" | "up"; point: Point; t?: number };
 
@@ -944,7 +1191,75 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) endPress();
 });
 
-$<HTMLButtonElement>("#home").addEventListener("click", () => void send("button", { name: "home" }));
+$<HTMLButtonElement>("#home").addEventListener("click", () => void send("button", { name: "home" }).catch(() => {}));
+
+// ---------- notes: where a file went, or what failed ----------
+
+const note = $<HTMLDivElement>("#note");
+const noteText = $<HTMLParagraphElement>("#note-text");
+const noteReveal = $<HTMLButtonElement>("#note-reveal");
+let notePath: string | undefined;
+/** The last recording saved, for the More menu. */
+let recordedPath: string | undefined;
+
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+/** The note over the stage: `text`, then the file name when there is a file to show. */
+function showNote(text: string, o: { path?: string; error?: boolean; icon?: string } = {}): void {
+  notePath = o.path;
+  note.hidden = false;
+  note.classList.toggle("error", !!o.error);
+  $<HTMLElement>("#note-icon").querySelector("use")!.setAttribute("href", `#${o.error ? "i-alert" : (o.icon ?? "i-record")}`);
+  noteText.replaceChildren();
+  if (o.path) {
+    const name = document.createElement("strong");
+    name.textContent = fileName(o.path);
+    noteText.append(`${text} `, name);
+    noteText.title = o.path;
+  } else {
+    noteText.textContent = text;
+    noteText.title = text;
+  }
+  noteReveal.hidden = !o.path;
+}
+
+function reveal(path: string | undefined): void {
+  if (path) invoke("reveal", { path }).catch((e) => showNote(String(e), { error: true }));
+}
+noteReveal.textContent = navigator.userAgent.includes("Windows") ? "Show in Explorer" : "Show in Finder";
+noteReveal.addEventListener("click", () => reveal(notePath));
+$<HTMLButtonElement>("#note-dismiss").addEventListener("click", () => (note.hidden = true));
+
+/** A local date and time for file names, such as 2026-11-24 18.52.07. */
+function stamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
+}
+
+// ---------- screenshot ----------
+//
+// The canvas holds the last frame at the panel's full resolution, turned upright: that is the
+// screenshot, without the overlay (cursor, labels, touch discs), which is drawn over it in HTML.
+
+const shotBtn = $<HTMLButtonElement>("#shot");
+shotBtn.addEventListener("click", async () => {
+  if (!lastFrame) return;
+  shotBtn.disabled = true;
+  try {
+    const blob = await new Promise<Blob | null>((done) => canvas.toBlob(done, "image/png"));
+    if (!blob) throw new Error("the screen could not be encoded as PNG");
+    const png = new Uint8Array(await blob.arrayBuffer());
+    const path = await invoke<string>("save_screenshot", png, { headers: { "x-stamp": stamp() } });
+    showNote("Screenshot saved to", { path, icon: "i-camera" });
+  } catch (e) {
+    showNote(`Screenshot failed: ${e}`, { error: true });
+  } finally {
+    shotBtn.disabled = false;
+  }
+});
 
 // ---------- recording ----------
 //
@@ -954,13 +1269,9 @@ $<HTMLButtonElement>("#home").addEventListener("click", () => void send("button"
 
 const recordBtn = $<HTMLButtonElement>("#record");
 const recordLabel = $<HTMLSpanElement>("#record-label");
-const recordNote = $<HTMLDivElement>("#record-note");
-const recordText = $<HTMLParagraphElement>("#record-text");
-const recordReveal = $<HTMLButtonElement>("#record-reveal");
 /** The running recording, with its start on the page's clock. */
 let recording: { path: string; since: number } | undefined;
 let recordTimer: number | undefined;
-let recordedPath: string | undefined;
 
 function clock(seconds: number): string {
   const s = Math.floor(seconds);
@@ -970,17 +1281,15 @@ function clock(seconds: number): string {
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-function fileName(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path;
-}
-
 function showRecording(): void {
   window.clearInterval(recordTimer);
   recordBtn.classList.toggle("recording", !!recording);
   recordBtn.setAttribute("aria-pressed", String(!!recording));
+  recordBtn.querySelector("use")!.setAttribute("href", recording ? "#i-stop" : "#i-record");
   if (!recording) {
-    recordLabel.textContent = "Record";
+    recordLabel.textContent = "";
     recordBtn.title = "Record the screen";
+    recordBtn.setAttribute("aria-label", "Record");
     return;
   }
   const r = recording;
@@ -988,44 +1297,24 @@ function showRecording(): void {
   tick();
   recordTimer = window.setInterval(tick, 500);
   recordBtn.title = `Stop recording (${fileName(r.path)})`;
-}
-
-/** The note under the toolbar: where the recording went, or why it failed. */
-function recordMessage(text: string, path?: string, error = false): void {
-  recordedPath = path;
-  recordNote.hidden = false;
-  recordNote.classList.toggle("error", error);
-  recordText.replaceChildren();
-  if (path) {
-    const name = document.createElement("strong");
-    name.textContent = fileName(path);
-    recordText.append(`${text} `, name);
-    recordText.title = path;
-  } else {
-    recordText.textContent = text;
-    recordText.title = text;
-  }
-  recordReveal.hidden = !path;
+  recordBtn.setAttribute("aria-label", "Stop recording");
 }
 
 function onRecording(e: RecordingEvent): void {
   if (e.recording) {
     recording = { path: e.path, since: performance.now() - (e.seconds ?? 0) * 1000 };
-    recordNote.hidden = true;
+    if (!note.classList.contains("error")) note.hidden = true;
   } else {
     recording = undefined;
-    if (e.error) recordMessage(`Recording failed: ${e.error}`, undefined, true);
-    else recordMessage(`Saved ${e.summary ? clock(e.summary.seconds) : ""} to`, e.path);
+    if (e.error) showNote(`Recording failed: ${e.error}`, { error: true });
+    else {
+      recordedPath = e.path;
+      showNote(`Recording saved${e.summary ? ` (${clock(e.summary.seconds)})` : ""} to`, { path: e.path });
+    }
   }
   showRecording();
+  updateMenu();
   report();
-}
-
-/** A local date and time for the file name, such as 2026-11-24 18.52.07. */
-function stamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
 }
 
 recordBtn.addEventListener("click", async () => {
@@ -1038,34 +1327,66 @@ recordBtn.addEventListener("click", async () => {
       await invoke("send", { cmd: "record_start", args: { path } });
     }
   } catch (e) {
-    recordMessage(String(e), undefined, true);
+    showNote(String(e), { error: true });
   } finally {
     recordBtn.disabled = false;
   }
 });
-recordReveal.textContent = navigator.userAgent.includes("Windows") ? "Show in Explorer" : "Show in Finder";
-recordReveal.addEventListener("click", () => {
-  if (recordedPath) invoke("reveal", { path: recordedPath }).catch((e) => recordMessage(String(e), undefined, true));
-});
-$<HTMLButtonElement>("#record-dismiss").addEventListener("click", () => (recordNote.hidden = true));
-sessionPrimary.addEventListener("click", () => {
-  if (sessionPrimary.dataset.action) void send("control", { action: sessionPrimary.dataset.action });
-});
-sessionStop.addEventListener("click", () => void send("control", { action: "stop" }));
 
-// ---------- device settings ----------
+// ---------- More menu ----------
 
-const settingsPanel = $<HTMLElement>("#settings");
-const settingsToggle = $<HTMLButtonElement>("#settings-toggle");
+const moreBtn = $<HTMLButtonElement>("#more");
+const moreMenu = $<HTMLDivElement>("#more-menu");
+
+function openMenu(open: boolean): void {
+  moreMenu.hidden = !open;
+  moreBtn.setAttribute("aria-expanded", String(open));
+  if (open) moreMenu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+}
+
+function updateMenu(): void {
+  $<HTMLButtonElement>("#menu-stop-view").disabled = !wantView;
+  $<HTMLButtonElement>("#menu-reveal").disabled = !recordedPath;
+}
+
+moreBtn.addEventListener("click", () => openMenu(moreMenu.hidden));
+document.addEventListener("pointerdown", (e) => {
+  if (!moreMenu.hidden && !(e.target as Element).closest(".menu-anchor")) openMenu(false);
+});
+moreMenu.addEventListener("keydown", (e) => {
+  const items = [...moreMenu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+  const i = items.indexOf(document.activeElement as HTMLButtonElement);
+  if (e.key === "Escape") {
+    openMenu(false);
+    moreBtn.focus();
+  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+  }
+});
+moreMenu.addEventListener("click", (e) => {
+  if ((e.target as Element).closest("button")) openMenu(false);
+});
+$<HTMLButtonElement>("#menu-stop-view").addEventListener("click", () => void stopView());
+$<HTMLButtonElement>("#menu-reveal").addEventListener("click", () => reveal(recordedPath));
+$<HTMLButtonElement>("#menu-refresh").addEventListener("click", () => void loadDevices());
+
+// ---------- inspector: settings ----------
+
+const settingsPane = $<HTMLElement>("#pane-settings");
 const settingsStatus = $<HTMLParagraphElement>("#settings-status");
-const voWarning = $<HTMLParagraphElement>("#vo-warning");
+const voWarning = $<HTMLDivElement>("#vo-warning");
+const appearance = $<HTMLSelectElement>("#appearance");
 const liquidGlass = $<HTMLInputElement>("#liquid-glass");
 const textSize = $<HTMLInputElement>("#text-size");
+const locationMode = $<HTMLSelectElement>("#location-mode");
+const locationEdit = $<HTMLDivElement>("#location-edit");
 const latitude = $<HTMLInputElement>("#latitude");
 const longitude = $<HTMLInputElement>("#longitude");
 
 /** Text sizes from smallest to largest, as the CLI names them (`iphone_use_core::TEXT_SIZES`). */
 const TEXT_SIZES = ["xs", "s", "m", "l", "xl", "xxl", "xxxl", "ax1", "ax2", "ax3", "ax4", "ax5"];
+const TEXT_SIZE_NAMES = ["Extra Small", "Small", "Medium", "Large (default)", "Extra Large", "XXL", "XXXL", "AX1", "AX2", "AX3", "AX4", "AX5"];
 /** On/off items: the field in `Settings` and the name `settings_set` takes. */
 const TOGGLES: [keyof Settings, string][] = [
   ["reduce_motion", "reduce-motion"],
@@ -1078,7 +1399,14 @@ const TOGGLES: [keyof Settings, string][] = [
 let settings: Partial<Settings> = {};
 
 function item(name: string): HTMLElement {
-  return settingsPanel.querySelector<HTMLElement>(`[data-item="${name}"]`)!;
+  return settingsPane.querySelector<HTMLElement>(`[data-item="${name}"]`)!;
+}
+
+/** Fills a slider's track up to its thumb. */
+function fill(s: HTMLInputElement): void {
+  const min = Number(s.min);
+  const max = Number(s.max);
+  s.style.setProperty("--p", `${((Number(s.value) - min) / (max - min)) * 100}%`);
 }
 
 /** Shows the settings, merged into what is known (an event may carry one key). */
@@ -1086,28 +1414,34 @@ function showSettings(s: Partial<Settings>): void {
   settings = { ...settings, ...s };
   const cur = settings;
   voWarning.hidden = cur.voiceover !== true;
-  for (const radio of settingsPanel.querySelectorAll<HTMLInputElement>('input[name="appearance"]')) {
-    radio.checked = radio.value === cur.appearance;
-  }
+  appearance.value = cur.appearance ?? "";
   if (cur.liquid_glass != null) liquidGlass.value = String(cur.liquid_glass);
-  $<HTMLOutputElement>("#liquid-glass-value").value = cur.liquid_glass != null ? cur.liquid_glass.toFixed(2) : "–";
+  liquidGlass.title = cur.liquid_glass != null ? `Clear to tinted: ${cur.liquid_glass.toFixed(2)}` : "Clear to tinted";
   const size = cur.text_size ? TEXT_SIZES.indexOf(cur.text_size) : -1;
   if (size >= 0) textSize.value = String(size);
-  $<HTMLOutputElement>("#text-size-value").value = cur.text_size ?? "–";
+  textSize.title = size >= 0 ? TEXT_SIZE_NAMES[size] : "";
+  fill(liquidGlass);
+  fill(textSize);
   for (const [key] of TOGGLES) {
     item(key).querySelector<HTMLInputElement>("input")!.checked = cur[key] === true;
   }
-  $<HTMLOutputElement>("#location-value").value = cur.location
-    ? `${cur.location[0].toFixed(4)}, ${cur.location[1].toFixed(4)}`
-    : "not simulated";
-  if (cur.location && document.activeElement !== latitude && document.activeElement !== longitude) {
-    latitude.value = String(cur.location[0]);
-    longitude.value = String(cur.location[1]);
+  const editing = document.activeElement === latitude || document.activeElement === longitude;
+  if (cur.location) {
+    locationMode.value = "custom";
+    if (!editing) {
+      latitude.value = String(cur.location[0]);
+      longitude.value = String(cur.location[1]);
+    }
+  } else if (!editing) {
+    locationMode.value = "none";
   }
-  for (const el of settingsPanel.querySelectorAll<HTMLElement>("[data-item]")) {
-    const off = cur.unsupported?.includes(el.dataset.item!) ?? false;
-    el.classList.toggle("unsupported", off);
-    for (const input of el.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button")) input.disabled = off;
+  locationEdit.hidden = locationMode.value !== "custom";
+  for (const e of settingsPane.querySelectorAll<HTMLElement>("[data-item]")) {
+    const off = cur.unsupported?.includes(e.dataset.item!) ?? false;
+    e.classList.toggle("unsupported", off);
+    for (const input of e.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>("input, button, select")) {
+      input.disabled = off;
+    }
   }
 }
 
@@ -1117,7 +1451,7 @@ function settingsMessage(text: string, error = false): void {
 }
 
 async function readSettings(): Promise<void> {
-  settingsMessage("Reading…");
+  settingsMessage("Reading settings…");
   try {
     showSettings(await invoke<Settings>("send", { cmd: "settings", args: {} }));
     settingsMessage("");
@@ -1128,7 +1462,7 @@ async function readSettings(): Promise<void> {
 
 /** Changes one item; on failure the controls go back to the last known values. */
 async function setSetting(name: string, value: (string | number)[]): Promise<void> {
-  settingsPanel.setAttribute("aria-busy", "true");
+  settingsPane.setAttribute("aria-busy", "true");
   settingsMessage("Applying…");
   try {
     const r = await invoke<{ settings: Settings }>("send", { cmd: "settings_set", args: { name, value: value.map(String) } });
@@ -1138,63 +1472,235 @@ async function setSetting(name: string, value: (string | number)[]): Promise<voi
     showSettings({});
     settingsMessage(String(e), true);
   } finally {
-    settingsPanel.removeAttribute("aria-busy");
+    settingsPane.removeAttribute("aria-busy");
   }
 }
 
-settingsToggle.addEventListener("click", () => {
-  const open = settingsPanel.hidden;
-  settingsPanel.hidden = !open;
-  settingsToggle.setAttribute("aria-expanded", String(open));
-  layout();
-  if (open) void readSettings();
-});
-$<HTMLButtonElement>("#settings-close").addEventListener("click", () => settingsToggle.click());
-for (const radio of settingsPanel.querySelectorAll<HTMLInputElement>('input[name="appearance"]')) {
-  radio.addEventListener("change", () => void setSetting("appearance", [radio.value]));
-}
-liquidGlass.addEventListener("input", () => {
-  $<HTMLOutputElement>("#liquid-glass-value").value = Number(liquidGlass.value).toFixed(2);
-});
+appearance.addEventListener("change", () => void setSetting("appearance", [appearance.value]));
+liquidGlass.addEventListener("input", () => fill(liquidGlass));
 liquidGlass.addEventListener("change", () => void setSetting("liquid-glass", [liquidGlass.value]));
 textSize.addEventListener("input", () => {
-  $<HTMLOutputElement>("#text-size-value").value = TEXT_SIZES[Number(textSize.value)];
+  fill(textSize);
+  textSize.title = TEXT_SIZE_NAMES[Number(textSize.value)];
 });
 textSize.addEventListener("change", () => void setSetting("text-size", [TEXT_SIZES[Number(textSize.value)]]));
 for (const [key, name] of TOGGLES) {
   const box = item(key).querySelector<HTMLInputElement>("input")!;
   box.addEventListener("change", () => void setSetting(name, [box.checked ? "on" : "off"]));
 }
-$<HTMLButtonElement>("#location-set").addEventListener("click", () => {
+locationMode.addEventListener("change", () => {
+  if (locationMode.value === "none") {
+    locationEdit.hidden = true;
+    if (settings.location) void setSetting("location", ["clear"]);
+  } else {
+    locationEdit.hidden = false;
+    latitude.focus();
+  }
+});
+function simulateLocation(): void {
   const [lat, lon] = [latitude.value, longitude.value].map((v) => (v.trim() ? Number(v) : NaN));
   if (!(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 180)) {
     settingsMessage("Enter a latitude (-90 to 90) and a longitude (-180 to 180) in degrees.", true);
     return;
   }
   void setSetting("location", ["set", lat, lon]);
-});
-$<HTMLButtonElement>("#location-clear").addEventListener("click", () => void setSetting("location", ["clear"]));
+}
+$<HTMLButtonElement>("#location-set").addEventListener("click", simulateLocation);
+for (const f of [latitude, longitude]) {
+  f.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") simulateLocation();
+  });
+}
 $<HTMLButtonElement>("#vo-off").addEventListener("click", () => void setSetting("voiceover", ["off"]));
 
-let statsTimer: number | undefined;
-/** Which visit to the viewer the channel's messages belong to. */
-let viewerGen = 0;
+// ---------- inspector: tabs and info ----------
 
-function showStats(): void {
+for (const tab of ["settings", "info"]) {
+  $<HTMLButtonElement>(`#tab-${tab}`).addEventListener("click", () => {
+    for (const t of ["settings", "info"]) {
+      $<HTMLButtonElement>(`#tab-${t}`).setAttribute("aria-selected", String(t === tab));
+      $<HTMLElement>(`#pane-${t}`).hidden = t !== tab;
+    }
+    prefs.set("tab", tab);
+    showInfo();
+  });
+}
+if (prefs.get("tab") === "info") $<HTMLButtonElement>("#tab-info").click();
+
+function out(id: string, text: string): void {
+  const o = $<HTMLOutputElement>(`#info-${id}`);
+  o.value = text || "–";
+  o.title = text;
+}
+
+const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+function showInfo(): void {
+  const d = selected;
+  out("name", d?.name ?? "");
+  out("model", d?.product_type ?? "");
+  out("os", d ? [osLabel(d), d.build_version ? `(${d.build_version})` : ""].filter(Boolean).join(" ") : "");
+  out("connection", d ? d.transports.map((t) => (t === "wifi" ? "Wi-Fi" : "USB")).join(", ") : "");
+  out("udid", d?.udid ?? "");
   const now = performance.now();
   stats.fpsWindow = stats.fpsWindow.filter((t) => now - t < 1000);
-  const d = stats.decodeMs.slice(-60);
-  const avg = d.length ? d.reduce((a, b) => a + b, 0) / d.length : 0;
-  const parts = [
-    config ? `${config.codec} ${config.coded.join("×")}` : "waiting for video…",
-    `${stats.fpsWindow.length} fps`,
-    `decoded ${stats.decoded}/${stats.received}`,
-    d.length ? `decode ${avg.toFixed(1)} ms` : "",
-    stats.supported === false ? "decoder unsupported" : "",
-    stats.lastError,
-  ];
-  viewerStatus.textContent = parts.filter(Boolean).join(" · ");
+  const dm = stats.decodeMs.slice(-60);
+  const states: Record<string, string> = {
+    none: "",
+    intro: "Not shown",
+    unavailable: "Unavailable",
+    connecting: "Connecting…",
+    error: "Error",
+    live: stats.supported === false ? "Decoder unsupported" : "Live",
+  };
+  out("stream", states[stage.dataset.state ?? "none"] ?? "");
+  const live = stage.dataset.state === "live";
+  out("video", live && config ? `${config.codec.split(".")[0].toUpperCase()} ${config.display_px.join("×")}` : "");
+  out("screen", live && config ? `${config.screen.join("×")} pt, ${config.orientation}` : "");
+  out("fps", live ? `${stats.fpsWindow.length} fps` : "");
+  out("decoded", live ? `${stats.decoded} of ${stats.received}${stats.dropped ? `, ${stats.dropped} dropped` : ""}` : "");
+  out("decode", live && dm.length ? `${avg(dm).toFixed(1)} ms` : "");
+  out("touch", stats.touchMs.length ? `${avg(stats.touchMs).toFixed(0)} ms` : "");
+  $<HTMLParagraphElement>("#info-error").textContent = stats.lastError;
 }
+
+// ---------- attaching, viewing ----------
+//
+// Picking a device attaches to its daemon without video: the settings, the VoiceOver warning and
+// the agent session work from there. View Screen asks for the frames; a session that starts asks
+// for them too. Stop Viewing drops them and the stream stops, unless something else needs it.
+
+/** The device attached to, once `attach` succeeded. */
+let attachedUdid: string | undefined;
+/** Whether the screen should show (frames asked for, or about to be). */
+let wantView = false;
+let statsTimer: number | undefined;
+/** Which attachment the channel's messages belong to. */
+let viewerGen = 0;
+
+/** Drops the video and everything drawn from it; the attachment stays. */
+function resetScreen(): void {
+  endPress();
+  configGen++;
+  decoder?.close();
+  decoder = undefined;
+  decoderKey = "";
+  pending = [];
+  received.clear();
+  waitingForKey = true;
+  config = undefined;
+  lastFrame?.close();
+  lastFrame = undefined;
+  hideCursor();
+  for (const d of fingers.values()) d.remove();
+  fingers.clear();
+  stats.frame = undefined;
+  zoom = "fit";
+}
+
+/** Leaves the attached device: everything about it goes. */
+async function detach(): Promise<void> {
+  window.clearInterval(statsTimer);
+  viewerGen++;
+  wantView = false;
+  const was = attachedUdid;
+  attachedUdid = undefined;
+  resetScreen();
+  recording = undefined;
+  showRecording();
+  note.hidden = true;
+  settings = {};
+  showSettings({ unsupported: [] });
+  onControl({ session: null, human_touching: false, agent_stopped: false });
+  voWarning.hidden = true;
+  settingsMessage("");
+  Object.assign(stats, { received: 0, decoded: 0, dropped: 0, errors: 0, lastError: "", decodeMs: [], touchMs: [], fpsWindow: [] });
+  if (was) await invoke("detach").catch(() => {});
+}
+
+async function select(d: DeviceInfo, opts: { view?: boolean } = {}): Promise<void> {
+  if (selected?.udid === d.udid && attachedUdid === d.udid) {
+    if (opts.view) void view();
+    return;
+  }
+  await detach();
+  selected = d;
+  prefs.set("device", d.udid);
+  showDeviceText();
+  renderList();
+  if (narrow(720)) showPanel("sidebar", false, false);
+  settingsPane.classList.toggle("disabled", !!d.error);
+  if (d.error) {
+    settingsMessage("Settings show once the device is available.");
+    stageState("unavailable", d.error);
+    return;
+  }
+  stageState(opts.view ? "connecting" : "intro");
+  if (opts.view) wantView = true;
+  await attach(d);
+}
+
+async function attach(d: DeviceInfo): Promise<void> {
+  const channel = new Channel<ArrayBuffer | number[]>();
+  const gen = ++viewerGen;
+  channel.onmessage = (m) => {
+    // Messages of an earlier attachment can still be in flight after another device was picked.
+    if (gen === viewerGen) onMessage(m instanceof ArrayBuffer ? new Uint8Array(m) : Uint8Array.from(m));
+  };
+  settingsMessage("Connecting…");
+  try {
+    await invoke("attach", { udid: d.udid, frames: wantView, channel });
+  } catch (e) {
+    if (gen !== viewerGen) return;
+    settingsMessage("");
+    stageState("error", `Couldn't connect to ${deviceName(d)}: ${e}`);
+    return;
+  }
+  if (gen !== viewerGen) return;
+  attachedUdid = d.udid;
+  // VoiceOver changes what taps do, so its warning shows whether or not the inspector is open.
+  void readSettings();
+  statsTimer = window.setInterval(() => {
+    showInfo();
+    if (Math.round(performance.now() / 1000) % 2 === 0) report();
+  }, 1000);
+}
+
+async function view(): Promise<void> {
+  if (!selected || selected.error) return;
+  wantView = true;
+  if (stage.dataset.state !== "live") stageState("connecting", "Starting the screen…");
+  if (!attachedUdid) {
+    // Still attaching (it asks for frames now), or it failed: try again.
+    if (stage.dataset.state === "error" || !viewerGen) await attach(selected);
+    return;
+  }
+  const gen = viewerGen;
+  try {
+    await invoke("watch", { frames: true });
+  } catch (e) {
+    if (gen === viewerGen) stageState("error", `Couldn't start the screen: ${e}`);
+  }
+}
+
+async function stopView(): Promise<void> {
+  if (!wantView) return;
+  wantView = false;
+  resetScreen();
+  stageState("intro");
+  if (attachedUdid) await invoke("watch", { frames: false }).catch(() => {});
+}
+
+viewBtn.addEventListener("click", () => void view());
+$<HTMLButtonElement>("#intro-retry").addEventListener("click", () => {
+  if (!selected) return;
+  const d = selected;
+  if (attachedUdid) void view();
+  else {
+    selected = undefined;
+    void select(d, { view: wantView });
+  }
+});
 
 function report(): void {
   const d = stats.decodeMs.slice(-120);
@@ -1211,15 +1717,21 @@ function report(): void {
       errors: stats.errors,
       lastError: stats.lastError,
       fps: stats.fpsWindow.length,
-      decodeMsAvg: d.length ? d.reduce((a, b) => a + b, 0) / d.length : null,
+      decodeMsAvg: d.length ? avg(d) : null,
       decodeMsMax: d.length ? Math.max(...d) : null,
       inputs: stats.inputs,
       lastInput: stats.lastInput,
-      touchMsAvg: stats.touchMs.length ? stats.touchMs.reduce((a, b) => a + b, 0) / stats.touchMs.length : null,
+      touchMsAvg: stats.touchMs.length ? avg(stats.touchMs) : null,
       touchMsMax: stats.touchMs.length ? Math.max(...stats.touchMs) : null,
       touchErrors: stats.touchErrors,
       control,
-      // What the session panel shows, so a check of the viewer doesn't need anyone to look.
+      // What the window shows, so a check of the viewer doesn't need anyone to look.
+      stage: stage.dataset.state,
+      wantView,
+      zoom: zoom === "fit" ? "fit" : zoom,
+      scale: Math.round(scale * 1000) / 1000,
+      device: { kind: deviceEl.dataset.kind ?? null, size: [deviceEl.offsetWidth, deviceEl.offsetHeight] },
+      panels: { sidebar: !app.classList.contains("no-sidebar"), inspector: !app.classList.contains("no-inspector") },
       panel: sessionPanel.hidden
         ? null
         : { name: sessionName.textContent, state: sessionState.textContent, button: sessionPrimary.textContent },
@@ -1249,80 +1761,30 @@ function report(): void {
       timelineMs: document.timeline.currentTime,
       session_slot: sessionIdle.hidden ? "panel" : "idle",
       recording: recording ? { file: fileName(recording.path), label: recordLabel.textContent } : null,
-      recordNote: recordNote.hidden ? null : recordText.textContent,
+      note: note.hidden ? null : noteText.textContent,
     },
   });
 }
 
-/** The device the viewer shows, for Try again. */
-let lastDevice: DeviceInfo | undefined;
+// ---------- start ----------
 
-async function openViewer(d: DeviceInfo): Promise<void> {
-  picker.hidden = true;
-  viewer.hidden = false;
-  const name = d.name ?? d.product_type ?? d.udid;
-  $<HTMLSpanElement>("#device-name").textContent = name;
-  $<HTMLSpanElement>("#device-meta").textContent = [d.name ? d.product_type : undefined, osLabel(d)]
-    .filter(Boolean)
-    .join(" · ");
-  lastDevice = d;
-  stageState("connecting", `Connecting to ${name}…`);
-  viewerStatus.textContent = "";
-  const channel = new Channel<ArrayBuffer | number[]>();
-  const gen = ++viewerGen;
-  channel.onmessage = (m) => {
-    // Messages of an earlier visit can still be in flight after Back.
-    if (gen === viewerGen) onMessage(m instanceof ArrayBuffer ? new Uint8Array(m) : Uint8Array.from(m));
-  };
-  try {
-    await invoke("attach", { udid: d.udid, channel });
-  } catch (e) {
-    if (gen === viewerGen) stageState("error", `Couldn't connect to ${name}`, String(e));
+showPanel("sidebar", !narrow(720) && prefs.get("sidebar") !== "0", false);
+showPanel("inspector", !narrow(1000) && prefs.get("inspector") !== "0", false);
+settingsPane.classList.add("disabled");
+stageState("none");
+showDeviceText();
+renderList();
+updateMenu();
+void (async () => {
+  // A device to open right away (`IPHONE_USE_VIEWER_UDID`): selected and shown.
+  const udid = await invoke<string | null>("initial_udid");
+  await loadDevices();
+  if (udid) {
+    void select(devices.find((d) => d.udid === udid) ?? { udid, transports: [] }, { view: true });
     return;
   }
-  // VoiceOver changes what taps do, so its warning shows whether or not the panel is open.
-  void readSettings();
-  statsTimer = window.setInterval(() => {
-    showStats();
-    if (Math.round(performance.now() / 1000) % 2 === 0) report();
-  }, 1000);
-}
-
-$<HTMLButtonElement>("#stage-retry").addEventListener("click", () => {
-  if (lastDevice) void openViewer(lastDevice);
-});
-$<HTMLButtonElement>("#stage-back").addEventListener("click", () => $<HTMLButtonElement>("#back").click());
-
-$<HTMLButtonElement>("#back").addEventListener("click", async () => {
-  endPress();
-  window.clearInterval(statsTimer);
-  viewerGen++;
-  await invoke("detach");
-  configGen++;
-  decoder?.close();
-  decoder = undefined;
-  decoderKey = "";
-  pending = [];
-  received.clear();
-  waitingForKey = true;
-  recording = undefined;
-  showRecording();
-  recordNote.hidden = true;
-  config = undefined;
-  lastFrame?.close();
-  lastFrame = undefined;
-  settings = {};
-  onControl({ session: null, human_touching: false, agent_stopped: false });
-  hideCursor();
-  voWarning.hidden = true;
-  settingsMessage("");
-  stageState("connecting");
-  viewer.hidden = true;
-  picker.hidden = false;
-});
-
-void (async () => {
-  const udid = await invoke<string | null>("initial_udid");
-  await load();
-  if (udid) void openViewer({ udid, transports: [] });
+  const last = prefs.get("device");
+  const pick = devices.find((d) => d.udid === last && !d.error) ?? devices.find((d) => !d.error);
+  if (pick) void select(pick);
+  else showDeviceText();
 })();

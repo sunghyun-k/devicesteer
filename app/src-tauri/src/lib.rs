@@ -25,11 +25,17 @@ async fn list_devices() -> Result<Vec<DeviceInfo>, String> {
     iphone_use_core::list_devices().await.map_err(|e| format!("{e:#}"))
 }
 
-/// Attaches to `udid`'s daemon (starting it if needed) and streams its events and frames to
-/// `channel`, each as one wire message (see `iphone_use_daemon::wire`), so the page parses one
-/// format for both.
+/// Attaches to `udid`'s daemon (starting it if needed) and streams its events, and its video
+/// frames when `frames`, to `channel`, each as one wire message (see `iphone_use_daemon::wire`),
+/// so the page parses one format for both. A selected device is attached without frames: its
+/// settings and agent session show before anyone asks for the screen.
 #[tauri::command]
-async fn attach(udid: String, channel: Channel<InvokeResponseBody>, viewer: State<'_, Viewer>) -> Result<Value, String> {
+async fn attach(
+    udid: String,
+    frames: bool,
+    channel: Channel<InvokeResponseBody>,
+    viewer: State<'_, Viewer>,
+) -> Result<Value, String> {
     detach_inner(&viewer).await;
     let mut client = Client::connect(Some(&udid), Source::Human).await.map_err(|e| format!("{e:#}"))?;
     let mut events = client.take_events().ok_or("events already taken")?;
@@ -44,9 +50,16 @@ async fn attach(udid: String, channel: Channel<InvokeResponseBody>, viewer: Stat
     *viewer.forwarder.lock().await = Some(forwarder);
     *viewer.client.lock().await = Some(client.clone());
     client
-        .request("subscribe", serde_json::json!({ "frames": true }))
+        .request("subscribe", serde_json::json!({ "frames": frames }))
         .await
         .map_err(|e| format!("{e:#}"))
+}
+
+/// Starts or stops the video frames of the attached device, keeping its events.
+#[tauri::command]
+async fn watch(frames: bool, viewer: State<'_, Viewer>) -> Result<Value, String> {
+    let client = viewer.client.lock().await.clone().ok_or("not attached to a device")?;
+    client.request("subscribe", serde_json::json!({ "frames": frames })).await.map_err(|e| format!("{e:#}"))
 }
 
 async fn detach_inner(viewer: &Viewer) {
@@ -101,6 +114,26 @@ fn recording_path(app: tauri::AppHandle, stamp: String) -> Result<String, String
     Ok(dir.join(format!("iphone-use {name}.mp4")).to_string_lossy().into_owned())
 }
 
+/// Saves a PNG of the screen the page drew (the request body) to the user's pictures folder (or
+/// home), named by the `x-stamp` header, the page's local date and time. Returns its path.
+#[tauri::command]
+fn save_screenshot(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    use tauri::Manager;
+    let tauri::ipc::InvokeBody::Raw(png) = request.body() else {
+        return Err("save_screenshot takes the PNG as the request body".into());
+    };
+    let stamp = request.headers().get("x-stamp").and_then(|v| v.to_str().ok()).unwrap_or("screenshot");
+    let name: String = stamp.chars().filter(|c| c.is_ascii_alphanumeric() || " -.".contains(*c)).collect();
+    let dir = app
+        .path()
+        .picture_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| format!("no folder for screenshots: {e}"))?;
+    let path = dir.join(format!("iphone-use {name}.png"));
+    std::fs::write(&path, png).map_err(|e| format!("could not save {}: {e}", path.display()))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// Shows a file in Finder (or Explorer), selected.
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
@@ -119,7 +152,7 @@ fn reveal(path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(Viewer::default())
-        .invoke_handler(tauri::generate_handler![list_devices, attach, detach, send, report, initial_udid, recording_path, reveal])
+        .invoke_handler(tauri::generate_handler![list_devices, attach, watch, detach, send, report, initial_udid, recording_path, save_screenshot, reveal])
         .run(tauri::generate_context!())
         .expect("error while running the iphone-use app");
 }
