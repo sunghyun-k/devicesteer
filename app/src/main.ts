@@ -29,10 +29,14 @@ interface ControlEvent {
 
 interface InputEvent {
   source: "agent" | "human";
-  kind: "tap" | "swipe" | "button";
+  kind: "tap" | "swipe" | "button" | "touch";
   points: [number, number][];
   screen: [number, number];
   duration_ms?: number;
+  /** For `touch`: one step of a live touch. */
+  phase?: "down" | "move" | "up";
+  /** For a `touch` up the daemon did itself: why (timeout, disconnect, control change). */
+  lifted?: string;
 }
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -118,6 +122,9 @@ const stats = {
   fpsWindow: [] as number[],
   inputs: { agent: 0, human: 0 } as Record<string, number>,
   lastInput: "",
+  // Round trip of a human touch step: sent from the page until the daemon wrote the report.
+  touchMs: [] as number[],
+  touchErrors: 0,
 };
 const received = new Map<number, number>();
 /** Frames that arrive while the decoder is being set up, from the last keyframe on: the device
@@ -239,11 +246,49 @@ function ripple(at: [number, number], color: string): HTMLDivElement {
   return r;
 }
 
+/** The finger of a live touch on the overlay, by source, while it is down. */
+const fingers = new Map<string, HTMLDivElement>();
+
+function onTouch(e: InputEvent, color: string): void {
+  const p = e.points[0];
+  if (!p || !e.screen[0]) {
+    fingers.get(e.source)?.remove();
+    fingers.delete(e.source);
+    return;
+  }
+  const at = toOverlay(p, e.screen);
+  let dot = fingers.get(e.source);
+  if (e.phase === "down") {
+    ripple(at, color);
+    dot?.remove();
+    dot = undefined;
+  }
+  if (e.phase === "up") {
+    dot?.remove();
+    fingers.delete(e.source);
+    ripple(at, color);
+    return;
+  }
+  if (!dot) {
+    dot = document.createElement("div");
+    dot.className = "dot";
+    dot.style.setProperty("--c", color);
+    overlay.append(dot);
+    fingers.set(e.source, dot);
+  }
+  dot.style.left = `${at[0]}px`;
+  dot.style.top = `${at[1]}px`;
+}
+
 function onInput(e: InputEvent): void {
-  stats.inputs[e.source] = (stats.inputs[e.source] ?? 0) + 1;
-  stats.lastInput = `${e.source} ${e.kind} ${JSON.stringify(e.points)}`;
+  if (e.kind !== "touch" || e.phase !== "move") {
+    stats.inputs[e.source] = (stats.inputs[e.source] ?? 0) + 1;
+    stats.lastInput = `${e.source} ${e.kind}${e.phase ? ` ${e.phase}` : ""} ${JSON.stringify(e.points)}`;
+  }
   const color = e.source === "agent" ? "#ff9f0a" : "#0a84ff";
-  if (e.kind === "tap" && e.points[0]) {
+  if (e.kind === "touch") {
+    onTouch(e, color);
+  } else if (e.kind === "tap" && e.points[0]) {
     ripple(toOverlay(e.points[0], e.screen), color);
   } else if (e.kind === "swipe" && e.points.length === 2) {
     const [a, b] = [toOverlay(e.points[0], e.screen), toOverlay(e.points[1], e.screen)];
@@ -301,39 +346,120 @@ function layout(): void {
 }
 new ResizeObserver(layout).observe(stage);
 
-// Human input: a short press is a tap, anything that moved is a swipe of the same length.
-let press: { x: number; y: number; t: number; lastMove: number } | undefined;
+// Human input is a live touch: down on pointerdown, the pointer's path as it moves (one step per
+// animation frame), up on release. Steps go out one at a time and in order: an `up` that overtook
+// the last `move` would leave the gesture short, and a backlog of moves would make the finger
+// trail the mouse. While a step is in flight, newer moves replace the queued one.
 
-function toScreen(e: PointerEvent): [number, number] | undefined {
+type Point = [number, number];
+type Step = { phase: "down" | "move" | "up"; point: Point };
+
+/** The press in progress. `dead` after the daemon refused a step: the rest of it is ignored. */
+let press: { pointerId: number; last: Point; dead: boolean } | undefined;
+let steps: Step[] = [];
+let stepping = false;
+let frameMove: Point | undefined;
+let frameRequest = 0;
+let keepAlive: number | undefined;
+/** The daemon lifts a finger after 2 s without a step; a mouse held still repeats its point. */
+const KEEP_ALIVE_MS = 500;
+
+function toScreen(e: PointerEvent): { point: Point; inside: boolean } | undefined {
   if (!config) return undefined;
   const r = canvas.getBoundingClientRect();
-  return [((e.clientX - r.left) / r.width) * config.screen[0], ((e.clientY - r.top) / r.height) * config.screen[1]];
+  const u = (e.clientX - r.left) / r.width;
+  const v = (e.clientY - r.top) / r.height;
+  const inside = u >= 0 && u <= 1 && v >= 0 && v <= 1;
+  const clamp = (n: number) => Math.min(Math.max(n, 0), 1);
+  return { point: [clamp(u) * config.screen[0], clamp(v) * config.screen[1]], inside };
+}
+
+function queueStep(step: Step): void {
+  const last = steps[steps.length - 1];
+  if (step.phase === "move" && last?.phase === "move") last.point = step.point;
+  else steps.push(step);
+  void sendSteps();
+}
+
+async function sendSteps(): Promise<void> {
+  if (stepping) return;
+  stepping = true;
+  while (steps.length) {
+    const step = steps.shift()!;
+    const began = performance.now();
+    try {
+      await invoke("send", { cmd: "touch", args: step });
+      if (step.phase === "move") {
+        stats.touchMs.push(performance.now() - began);
+        if (stats.touchMs.length > 240) stats.touchMs.splice(0, 120);
+      }
+    } catch (e) {
+      stats.touchErrors++;
+      stats.lastError = String(e);
+      // Drop the rest of this press; the next `down` starts afresh.
+      const next = steps.findIndex((s) => s.phase === "down");
+      steps = next < 0 ? [] : steps.slice(next);
+      if (press && step.phase !== "up" && next < 0) press.dead = true;
+    }
+  }
+  stepping = false;
+}
+
+function endPress(at?: Point): void {
+  if (!press) return;
+  const p = press;
+  press = undefined;
+  window.clearInterval(keepAlive);
+  cancelAnimationFrame(frameRequest);
+  frameMove = undefined;
+  if (!p.dead) queueStep({ phase: "up", point: at ?? p.last });
 }
 
 canvas.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || press) return;
+  const at = toScreen(e);
+  if (!at) return;
   canvas.setPointerCapture(e.pointerId);
-  press = { x: e.clientX, y: e.clientY, t: performance.now(), lastMove: performance.now() };
+  press = { pointerId: e.pointerId, last: at.point, dead: false };
+  queueStep({ phase: "down", point: at.point });
+  keepAlive = window.setInterval(() => {
+    if (press && !press.dead) queueStep({ phase: "move", point: press.last });
+  }, KEEP_ALIVE_MS);
 });
-canvas.addEventListener("pointermove", () => {
-  if (press) press.lastMove = performance.now();
-});
-canvas.addEventListener("pointerup", (e) => {
-  if (!press || !config) return;
-  const start = press;
-  press = undefined;
-  const now = performance.now();
-  const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-  const r = canvas.getBoundingClientRect();
-  const scale = config.screen[0] / r.width;
-  const from: [number, number] = [((start.x - r.left) * scale), ((start.y - r.top) * scale)];
-  const to = toScreen(e)!;
-  if (moved < 6) {
-    void send("tap", { point: to });
-  } else {
-    const duration = Math.min(Math.max(now - start.t, 100), 2000);
-    // Resting before release means "put it here", not "fling".
-    void send("swipe", { from, to, duration_ms: Math.round(duration), place: now - start.lastMove > 120 });
+
+canvas.addEventListener("pointermove", (e) => {
+  if (!press || press.dead || e.pointerId !== press.pointerId) return;
+  const at = toScreen(e);
+  if (!at) return;
+  // Leaving the screen lifts the finger at its edge, as a finger sliding off the glass would.
+  if (!at.inside) {
+    endPress(at.point);
+    return;
   }
+  press.last = at.point;
+  frameMove = at.point;
+  if (!frameRequest) {
+    frameRequest = requestAnimationFrame(() => {
+      frameRequest = 0;
+      if (press && !press.dead && frameMove) queueStep({ phase: "move", point: frameMove });
+      frameMove = undefined;
+    });
+  }
+});
+
+canvas.addEventListener("pointerup", (e) => {
+  if (!press || e.pointerId !== press.pointerId) return;
+  endPress(toScreen(e)?.point);
+});
+// Every way a press can end without a pointerup still lifts the finger.
+for (const type of ["pointercancel", "lostpointercapture"] as const) {
+  canvas.addEventListener(type, (e) => {
+    if (press && e.pointerId === press.pointerId) endPress();
+  });
+}
+window.addEventListener("blur", () => endPress());
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) endPress();
 });
 
 $<HTMLButtonElement>("#home").addEventListener("click", () => void send("button", { name: "home" }));
@@ -381,6 +507,9 @@ function report(): void {
       decodeMsMax: d.length ? Math.max(...d) : null,
       inputs: stats.inputs,
       lastInput: stats.lastInput,
+      touchMsAvg: stats.touchMs.length ? stats.touchMs.reduce((a, b) => a + b, 0) / stats.touchMs.length : null,
+      touchMsMax: stats.touchMs.length ? Math.max(...stats.touchMs) : null,
+      touchErrors: stats.touchErrors,
       control,
       badgeVisible: !badge.hidden,
       ripplesOnScreen: overlay.childElementCount,
@@ -409,6 +538,7 @@ async function openViewer(d: DeviceInfo): Promise<void> {
 }
 
 $<HTMLButtonElement>("#back").addEventListener("click", async () => {
+  endPress();
   window.clearInterval(statsTimer);
   await invoke("detach");
   decoder?.close();

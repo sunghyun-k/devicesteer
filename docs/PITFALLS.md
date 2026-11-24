@@ -17,7 +17,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screen streams (displayservice) | #1, #2, #7, #11, #13 |
 | Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
-| Touch and HID input | #6, #7, #8 |
+| Touch and HID input | #6, #7, #8, #17 |
 | Display info | #9 |
 | Accessibility tree | #10, #12 |
 | Daemon | #14 |
@@ -240,3 +240,26 @@ succeeded; `xcodebuild -showdestinations` listed the device; and `xcodebuild bui
 id=<udid>` of a small app succeeded in 12 s. Our session survived it: streams kept flowing and a
 tap afterwards worked. Installing and launching from Xcode (`xcodebuild test` or Run) was not
 tried.
+
+### 17. Live touch: a finger that rests has to look still
+
+The viewer drives a touch live (`touch` down / move / up, one report per step). Measured on the
+test iPhone (iOS 27.2.1, USB) in Settings:
+
+- **Reports at the same point are not samples.** A drag of 200 pt at ~600 pt/s, a 350 ms rest,
+  then the release flung the list ~400 pt: the device took the speed of the last reports that
+  moved, however long ago. Three reports at exactly the resting point (16 ms apart) before the
+  release changed nothing; nor did a wobble of 1 report unit (0.007 pt). Four reports 16 ms apart
+  that wobble by 51 units (about a pixel) made the list stop where the finger did (~180 of 200 pt,
+  the rest is touch slop), in both directions. A release while moving still coasts as before. So
+  `Input::touch` sends those before an `up` that comes 50 ms or more after the last report;
+  `Motion::Place` gets the same effect from its ease-out.
+- **A contact with no further reports stays down.** Holding for 1.5 s with no reports opened an
+  icon's context menu, and holding on went into home screen editing, as a finger does. So a still
+  finger needs no repeated reports; the viewer's keep-alive `move` (every 0.5 s, for the daemon's
+  2 s lift timer) is not sent on to the device when the point didn't change.
+- Down and up back to back (a trackpad tap-to-click) tapped a row once the up waited for the
+  50 ms tap hold. A swipe from x = 1 pt went back a page.
+- Latency: a `move` step's round trip through the daemon was ~1 ms (client on the same Mac). From
+  a 40 pt step with the finger already scrolling to the first video frame showing it at the host:
+  45 to 64 ms (median 54 ms, six steps). The viewer adds its decode time (#15).

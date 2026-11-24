@@ -34,6 +34,8 @@ pub const AGENT_ACTIVE_FOR: Duration = Duration::from_millis(2500);
 pub struct ControlState {
     pub human_owns: bool,
     pub agent_stopped: bool,
+    /// A human's finger is down in the viewer (a live touch).
+    pub human_touching: bool,
     last_agent_input: Option<Instant>,
     /// What the last `control` event said `agent_active` was.
     reported_active: bool,
@@ -50,6 +52,8 @@ impl ControlState {
             Some("a human took over the device in the viewer; agent input is refused until they hand control back. Wait and retry later")
         } else if self.agent_stopped {
             Some("a human stopped the agent in the viewer; agent input is refused until they resume it. Stop and report back")
+        } else if self.human_touching {
+            Some("a human is touching the screen in the viewer and kept touching while the agent waited; read the screen again and retry")
         } else {
             None
         }
@@ -100,6 +104,8 @@ mod tests {
         assert!(c.refuse_agent().unwrap().contains("stopped"));
         c.apply(ControlAction::ResumeAgent);
         assert!(c.refuse_agent().is_none());
+        c.human_touching = true;
+        assert!(c.refuse_agent().unwrap().contains("touching"));
     }
 
     #[test]

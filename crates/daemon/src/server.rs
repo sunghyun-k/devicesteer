@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex as StdMutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -17,7 +17,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use iphone_use_core::{
-    Button, Controller, Frame, FrameStream, MediaMode, Motion, Recorder, RecordSummary, Session,
+    Button, Controller, Frame, FrameStream, MediaMode, Motion, Recorder, RecordSummary, Session, TouchPhase,
     ax::{BuildOptions, Screen},
 };
 use serde::Deserialize;
@@ -39,12 +39,31 @@ const MEDIA_IDLE: Duration = Duration::from_secs(30);
 const VIDEO_STALE_MS: u64 = 3000;
 /// How long a late viewer waits for a keyframe it asked for before the stream is restarted.
 const KEYFRAME_WAIT: Duration = Duration::from_millis(800);
+/// A live touch whose client sent nothing for this long is lifted, so a client that hangs or
+/// loses an `up` doesn't leave a finger on the screen. A client holding still (a long press)
+/// repeats its last `move` to keep it down.
+const TOUCH_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long agent requests wait for a human's touch to end before input is refused.
+const AGENT_WAITS_FOR_TOUCH: Duration = Duration::from_secs(3);
+
+/// Commands that put input on the device.
+const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch"];
 
 struct Recording {
     path: PathBuf,
     stop: oneshot::Sender<()>,
     done: oneshot::Receiver<Result<RecordSummary>>,
     started: Instant,
+}
+
+/// A live touch with its finger down.
+struct Touch {
+    /// The client connection that drives it.
+    conn: u64,
+    source: Source,
+    at: (f64, f64),
+    /// When that client last sent a step.
+    last: Instant,
 }
 
 #[derive(Default)]
@@ -54,6 +73,7 @@ struct Device {
     frames: Option<(String, FrameStream, tokio::task::JoinHandle<()>)>,
     recording: Option<Recording>,
     last_input: Option<Instant>,
+    touch: Option<Touch>,
 }
 
 pub struct Daemon {
@@ -69,6 +89,7 @@ pub struct Daemon {
     frame_subscribers: AtomicUsize,
     clients: AtomicUsize,
     last_client: StdMutex<Instant>,
+    next_conn: AtomicU64,
 }
 
 #[derive(Deserialize, Clone)]
@@ -80,6 +101,9 @@ struct Request {
     args: Value,
     #[serde(default)]
     source: Source,
+    /// The client connection it came on (set by the daemon, not the client).
+    #[serde(skip)]
+    conn: u64,
 }
 
 /// Errors that mean the tunnel is gone: the cached session is dropped and the next request
@@ -110,6 +134,7 @@ impl Daemon {
             frame_subscribers: AtomicUsize::new(0),
             clients: AtomicUsize::new(0),
             last_client: StdMutex::new(Instant::now()),
+            next_conn: AtomicU64::new(1),
         })
     }
 
@@ -270,13 +295,118 @@ impl Daemon {
         }
     }
 
+    /// Lifts the live touch's finger, if one is down and `which` picks it. The `input` event
+    /// says why, so the viewer clears its indicator.
+    async fn lift_touch(&self, dev: &mut Device, which: impl Fn(&Touch) -> bool, why: &str) {
+        if !dev.touch.as_ref().is_some_and(&which) {
+            return;
+        }
+        let t = dev.touch.take().expect("checked above");
+        self.control.lock().unwrap().human_touching = false;
+        tracing::info!("lifting the {:?} touch: {why}", t.source);
+        let mut screen = (0.0, 0.0);
+        if let Some(c) = dev.controller.as_mut() {
+            match c.touch(TouchPhase::Up, None).await {
+                Ok(sent) => screen = sent.screen,
+                Err(e) => tracing::warn!("could not lift the touch: {e:#}"),
+            }
+        }
+        self.emit(json!({
+            "event": "input",
+            "source": t.source,
+            "kind": "touch",
+            "phase": "up",
+            "points": [[t.at.0, t.at.1]],
+            "screen": [screen.0, screen.1],
+            "lifted": why,
+        }));
+    }
+
+    /// One step of a live touch from client `req.conn`.
+    async fn touch(self: &Arc<Self>, dev: &mut Device, req: &Request) -> Result<Value> {
+        let a = &req.args;
+        let phase: TouchPhase = serde_json::from_value(a.get("phase").cloned().unwrap_or_default())
+            .map_err(|_| anyhow!("touch needs a phase: down, move or up"))?;
+        let at = a.get("point").map(point).transpose()?;
+        let mine = dev.touch.as_ref().map(|t| t.conn == req.conn);
+        match (phase, mine) {
+            // Another client's finger is down. A human's touch lifts it, as a second hand on the
+            // glass would take over; an agent never gets here while a human touches (check_agent).
+            (TouchPhase::Down, Some(false)) => {
+                if req.source == Source::Agent {
+                    bail!("another agent client is touching the screen; wait for it to lift and retry");
+                }
+                self.lift_touch(dev, |_| true, "a human touched the screen").await;
+            }
+            (TouchPhase::Move | TouchPhase::Up, Some(false)) => {
+                bail!("another client is touching the screen; this client has no finger down")
+            }
+            (TouchPhase::Move, None) => {
+                bail!("no finger is down (another touch, a control change or {} s without a step lifted it); send phase down to touch again", TOUCH_TIMEOUT.as_secs())
+            }
+            (TouchPhase::Up, None) => return Ok(json!({ "phase": "up", "lifted": false })),
+            _ => {}
+        }
+        if phase != TouchPhase::Up && at.is_none() {
+            bail!("a touch down or move needs a point [x, y] in screen points");
+        }
+        let sync = self.sync_video(dev).await;
+        let c = self.controller(dev).await?;
+        sync?;
+        let sent = c.touch(phase, at).await;
+        let p = at.or(dev.touch.as_ref().map(|t| t.at)).unwrap_or_default();
+        let sent = match sent {
+            Ok(s) => s,
+            Err(e) => {
+                // The finger's state on the device is unknown; don't keep refusing the agent.
+                dev.touch = None;
+                self.control.lock().unwrap().human_touching = false;
+                return Err(e);
+            }
+        };
+        dev.touch = match phase {
+            TouchPhase::Up => None,
+            _ => Some(Touch { conn: req.conn, source: req.source, at: p, last: Instant::now() }),
+        };
+        if req.source == Source::Human {
+            self.control.lock().unwrap().human_touching = dev.touch.is_some();
+        }
+        dev.last_input = Some(Instant::now());
+        self.input_event(req.source, "touch", &[p], sent.screen, json!({ "phase": phase }));
+        Ok(json!({ "phase": phase, "point": [p.0, p.1], "screen": sent.screen, "ms": sent.ms }))
+    }
+
+    /// An agent's request waits while a human touches, for up to [`AGENT_WAITS_FOR_TOUCH`]: the
+    /// agent should not move the screen under a person's finger, nor read it mid-gesture.
+    async fn wait_for_human_touch(&self) {
+        let began = Instant::now();
+        while self.control.lock().unwrap().human_touching && began.elapsed() < AGENT_WAITS_FOR_TOUCH {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     /// Runs one request against the device. Connection errors drop the cached session.
     async fn device_op(self: &Arc<Self>, req: &Request) -> Result<Value> {
+        if req.source == Source::Agent {
+            self.wait_for_human_touch().await;
+        }
         let mut dev = self.device.lock().await;
+        if req.source == Source::Agent && INPUT_COMMANDS.contains(&req.cmd.as_str()) {
+            // The human may have touched again while this waited for the lock.
+            self.check_agent(req.source)?;
+        }
         let r = self.device_op_locked(&mut dev, req).await;
+        // A tap or swipe lifts a live touch's finger first, and a media restart closes HID with
+        // it; forget such a touch so its next `move` says the finger is gone.
+        if dev.touch.is_some() && !dev.controller.as_ref().is_some_and(Controller::touching) {
+            dev.touch = None;
+            self.control.lock().unwrap().human_touching = false;
+        }
         if let Err(e) = &r
             && is_connection_error(e)
         {
+            dev.touch = None;
+            self.control.lock().unwrap().human_touching = false;
             self.forget(&mut dev, e).await;
         }
         r
@@ -337,6 +467,10 @@ impl Daemon {
                 c.button(b).await?;
                 dev.last_input = Some(Instant::now());
                 Ok(json!({ "pressed": b }))
+            }
+            "touch" => {
+                self.check_agent(req.source)?;
+                self.touch(dev, req).await
             }
             "ui" => {
                 let opts = BuildOptions { all: a.get("all").and_then(|v| v.as_bool()).unwrap_or(false) };
@@ -418,6 +552,7 @@ impl Daemon {
                     "recording": dev.recording.as_ref().map(|r| json!({ "path": r.path, "seconds": r.started.elapsed().as_secs_f64() })),
                     "clients": self.clients.load(Ordering::Relaxed),
                     "viewers": self.frame_subscribers.load(Ordering::Relaxed),
+                    "touch": dev.touch.as_ref().map(|t| json!({ "source": t.source, "point": [t.at.0, t.at.1], "idle_ms": t.last.elapsed().as_millis() as u64 })),
                 }))
             }
             other => bail!("unknown command `{other}`"),
@@ -433,6 +568,9 @@ impl Daemon {
             n += 1;
             if self.control.lock().unwrap().active_changed() {
                 self.emit_control();
+            }
+            if let Ok(mut dev) = self.device.try_lock() {
+                self.lift_touch(&mut dev, |t| t.last.elapsed() > TOUCH_TIMEOUT, "no step for 2 s").await;
             }
             if !n.is_multiple_of(4) {
                 continue;
@@ -467,6 +605,7 @@ impl Daemon {
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static,
     {
         self.clients.fetch_add(1, Ordering::Relaxed);
+        let conn = self.next_conn.fetch_add(1, Ordering::Relaxed);
         let (mut rd, mut wr) = tokio::io::split(stream);
         let (out_tx, mut out_rx) = mpsc::channel::<Arc<Message>>(512);
         let writer = tokio::task::spawn_local(async move {
@@ -480,7 +619,7 @@ impl Daemon {
         while let Ok(Some(msg)) = wire::read(&mut rd).await {
             let Message::Json(v) = msg else { continue };
             let req: Request = match serde_json::from_value(v) {
-                Ok(r) => r,
+                Ok(r) => Request { conn, ..r },
                 Err(e) => {
                     let _ = out_tx.send(Arc::new(Message::Json(json!({ "ok": false, "error": format!("bad request: {e}") })))).await;
                     continue;
@@ -543,6 +682,17 @@ impl Daemon {
                     match serde_json::from_value::<ControlAction>(req.args.get("action").cloned().unwrap_or_default()) {
                         Ok(action) => {
                             self.control.lock().unwrap().apply(action);
+                            // Whoever lost the screen lifts their finger: the human on handing
+                            // back, the agent when the human takes over or stops it.
+                            let losing = match action {
+                                ControlAction::Release => Some(Source::Human),
+                                ControlAction::TakeOver | ControlAction::StopAgent => Some(Source::Agent),
+                                ControlAction::ResumeAgent => None,
+                            };
+                            if let Some(losing) = losing {
+                                let mut dev = self.device.lock().await;
+                                self.lift_touch(&mut dev, |t| t.source == losing, "control changed").await;
+                            }
                             self.emit_control();
                             Ok(self.control.lock().unwrap().event())
                         }
@@ -562,6 +712,10 @@ impl Daemon {
             if out_tx.send(Arc::new(Message::Json(reply))).await.is_err() {
                 break;
             }
+        }
+        {
+            let mut dev = self.device.lock().await;
+            self.lift_touch(&mut dev, |t| t.conn == conn, "its client disconnected").await;
         }
         if let Some((task, frames)) = subscription.take() {
             task.abort();

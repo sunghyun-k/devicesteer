@@ -11,7 +11,7 @@ use crate::{
     Session,
     ax::{AxClient, BuildOptions, Screen},
     display::Display,
-    input::{Button, Input, Motion, TAP_HOLD},
+    input::{Button, Input, Motion, TAP_HOLD, TouchPhase},
     media::{MediaMode, MediaSession, MediaStatus},
 };
 
@@ -125,6 +125,26 @@ impl Controller {
         let input = self.input.as_mut().expect("opened above");
         input.drag(&display, from, to, duration, motion).await?;
         Ok(Sent { screen: display.size(), ms: began.elapsed().as_millis() as u64 })
+    }
+
+    /// One step of a live touch (see [`Input::touch`]).
+    pub async fn touch(&mut self, phase: TouchPhase, at: Option<(f64, f64)>) -> Result<Sent> {
+        // Lifting a finger the HID connection no longer has (it was closed) needs no connection.
+        if phase == TouchPhase::Up && !self.touching() {
+            let screen = self.display().await?.size();
+            return Ok(Sent { screen, ms: 0 });
+        }
+        let (_, display) = self.ensure_input().await?;
+        let began = std::time::Instant::now();
+        self.input_since_read = true;
+        let input = self.input.as_mut().expect("opened above");
+        input.touch(&display, phase, at).await?;
+        Ok(Sent { screen: display.size(), ms: began.elapsed().as_millis() as u64 })
+    }
+
+    /// Whether a live touch has a finger down.
+    pub fn touching(&self) -> bool {
+        self.input.as_ref().is_some_and(Input::touching)
     }
 
     pub async fn button(&mut self, button: Button) -> Result<()> {

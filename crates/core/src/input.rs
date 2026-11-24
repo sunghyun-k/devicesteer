@@ -40,6 +40,13 @@ const TOUCH_GAP: Duration = Duration::from_millis(150);
 pub const TAP_HOLD: Duration = Duration::from_millis(50);
 /// Time between touch samples while dragging.
 const DRAG_STEP: Duration = Duration::from_millis(16);
+/// A live touch with no report for this long before its `up` was resting (PITFALLS #17).
+const RESTING: Duration = Duration::from_millis(50);
+/// Reports at the resting point sent before such an `up`, `DRAG_STEP` apart.
+const STILL_SAMPLES: u32 = 4;
+/// How far those reports wobble, in report units: about one pixel on a phone. Reports at exactly
+/// the same point don't count as samples (PITFALLS #17).
+const STILL_WOBBLE: u16 = 51;
 
 /// A hardware button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,6 +93,25 @@ pub enum Motion {
     Place,
 }
 
+/// One step of a touch that a client drives live (the viewer's mouse): finger down, moved to a
+/// point, or lifted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TouchPhase {
+    Down,
+    Move,
+    Up,
+}
+
+/// A finger that is down between live touch calls.
+#[derive(Debug, Clone, Copy)]
+struct Held {
+    at: (u16, u16),
+    since: Instant,
+    /// When the last report went out.
+    reported: Instant,
+}
+
 /// An open HID connection, ready for touches.
 pub struct Input {
     hid: UniversalHidServiceClient<Box<dyn ReadWrite>>,
@@ -96,6 +122,8 @@ pub struct Input {
     touchscreen: u64,
     last_release: Option<Instant>,
     settle: Duration,
+    /// The finger of a live touch, while it is down.
+    held: Option<Held>,
 }
 
 /// The touchscreens among a connection's HID surfaces: `CoreDevice touchscreen(<display>)`.
@@ -149,6 +177,7 @@ impl Input {
             touchscreen,
             last_release: None,
             settle: SETTLE,
+            held: None,
         };
         // A "finger up" with no finger down does nothing, but the first report on a new
         // connection is sometimes lost and takes a gesture with it (PITFALLS #8).
@@ -182,8 +211,68 @@ impl Input {
         r
     }
 
+    /// Whether a live touch has a finger down.
+    pub fn touching(&self) -> bool {
+        self.held.is_some()
+    }
+
+    /// One step of a live touch, at `at` in screen points. `Up` may leave out the point: the finger
+    /// lifts where it is.
+    ///
+    /// The reports go out as the calls come, so the path is the caller's. There is no gap before
+    /// a contact (PITFALLS #8) because a person's two quick clicks are meant as a double tap. A
+    /// `Move` with no finger down puts one down; an `Up` with none does nothing.
+    pub async fn touch(&mut self, display: &Display, phase: TouchPhase, at: Option<(f64, f64)>) -> Result<()> {
+        let at = at.map(|p| display.report_point(p));
+        match (phase, self.held) {
+            (TouchPhase::Down | TouchPhase::Move, held) => {
+                let at = at.ok_or_else(|| anyhow!("a touch down or move needs a point"))?;
+                // A finger that stays put sends nothing: the device keeps it down (a long press).
+                if held.is_some_and(|h| h.at == at) {
+                    return Ok(());
+                }
+                self.report(TOUCHSCREEN_STATE_CONTACT, at.0, at.1).await?;
+                let since = held.map_or_else(Instant::now, |h| h.since);
+                self.held = Some(Held { at, since, reported: Instant::now() });
+                Ok(())
+            }
+            (TouchPhase::Up, None) => Ok(()),
+            (TouchPhase::Up, Some(h)) => {
+                let at = at.unwrap_or(h.at);
+                if at != h.at {
+                    self.report(TOUCHSCREEN_STATE_CONTACT, at.0, at.1).await?;
+                } else if h.reported.elapsed() >= RESTING {
+                    // The device takes the speed of the last reports that moved, however long
+                    // ago: a finger that rested and then lifted would fling the list. Show it
+                    // still, with samples that move by a pixel (PITFALLS #17).
+                    for i in 0..STILL_SAMPLES {
+                        let x = if i % 2 == 0 { at.0.saturating_add(STILL_WOBBLE) } else { at.0 };
+                        self.report(TOUCHSCREEN_STATE_CONTACT, x, at.1).await?;
+                        tokio::time::sleep(DRAG_STEP).await;
+                    }
+                }
+                // A trackpad tap-to-click sends down and up within a millisecond or two; hold
+                // for as long as a tap does, or the device may miss the touch.
+                if let Some(wait) = TAP_HOLD.checked_sub(h.since.elapsed()) {
+                    tokio::time::sleep(wait).await;
+                }
+                self.held = None;
+                self.release(at.0, at.1).await
+            }
+        }
+    }
+
+    /// Lifts a live touch's finger, if one is down, before a gesture of our own.
+    async fn lift(&mut self) -> Result<()> {
+        match self.held.take() {
+            Some(h) => self.release(h.at.0, h.at.1).await,
+            None => Ok(()),
+        }
+    }
+
     /// Finger down at `at` (screen points as the user sees them), held for `hold`, then lifted.
     pub async fn tap(&mut self, display: &Display, at: (f64, f64), hold: Duration) -> Result<()> {
+        self.lift().await?;
         let (x, y) = display.report_point(at);
         self.gap().await;
         self.report(TOUCHSCREEN_STATE_CONTACT, x, y).await?;
@@ -200,6 +289,7 @@ impl Input {
         duration: Duration,
         motion: Motion,
     ) -> Result<()> {
+        self.lift().await?;
         let (from, to) = (display.report_point(from), display.report_point(to));
         self.gap().await;
         let steps = (duration.as_millis() / DRAG_STEP.as_millis()).clamp(4, 240) as u32;
@@ -273,8 +363,11 @@ impl Input {
         Ok(())
     }
 
-    /// Lets the last release sink in, then closes the connections.
-    pub async fn close(self) {
+    /// Lifts a finger left down, lets the last release sink in, then closes the connections.
+    pub async fn close(mut self) {
+        if let Err(e) = self.lift().await {
+            tracing::warn!("could not lift the finger before closing HID: {e:#}");
+        }
         if let Some(t) = self.last_release {
             let since = t.elapsed();
             if since < self.settle {

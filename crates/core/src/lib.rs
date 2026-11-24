@@ -27,7 +27,7 @@ mod session;
 pub use control::{Controller, Sent};
 pub use devices::{DeviceInfo, Transport, list_devices};
 pub use display::{Display, Rotation};
-pub use input::{Button, Input, Motion, TAP_HOLD};
+pub use input::{Button, Input, Motion, TAP_HOLD, TouchPhase};
 pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, StreamStatus, server_status};
 pub use record::{Frame, FrameStream, RecordSummary, Recorder};
 pub use session::{ServiceInfo, Session, resolve_udid};
