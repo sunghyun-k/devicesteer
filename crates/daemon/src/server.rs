@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex as StdMutex,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -17,7 +17,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use iphone_use_core::{
-    Button, Controller, Frame, FrameStream, MediaMode, Motion, Recorder, RecordSummary, Session, TouchPhase,
+    Button, Controller, Frame, FrameStream, MediaMode, Motion, RecordSummary, Recorder, Resampler, Session, TouchPhase,
     ax::{BuildOptions, Screen},
 };
 use serde::Deserialize;
@@ -43,6 +43,14 @@ const KEYFRAME_WAIT: Duration = Duration::from_millis(800);
 /// loses an `up` doesn't leave a finger on the screen. A client holding still (a long press)
 /// repeats its last `move` to keep it down.
 const TOUCH_TIMEOUT: Duration = Duration::from_secs(2);
+/// A live touch's path is written to the device on this tick, from where the pointer was a
+/// little earlier (PITFALLS #18). Twice the phone's 60 Hz display, so each display frame gets a
+/// new point.
+const TOUCH_TICK: Duration = Duration::from_micros(8333);
+/// The least the reports play behind the client's pointer (ms), so a point to interpolate
+/// towards has arrived: the viewer's moves come ~10 to 17 ms apart. The resampler raises it for
+/// clients that send less often.
+const TOUCH_MIN_DELAY_MS: f64 = 20.0;
 /// How long agent requests wait for a human's touch to end before input is refused.
 const AGENT_WAITS_FOR_TOUCH: Duration = Duration::from_secs(3);
 
@@ -64,6 +72,8 @@ struct Touch {
     at: (f64, f64),
     /// When that client last sent a step.
     last: Instant,
+    /// The pointer's path, played to the device on [`TOUCH_TICK`].
+    path: Resampler,
 }
 
 #[derive(Default)]
@@ -90,6 +100,10 @@ pub struct Daemon {
     clients: AtomicUsize,
     last_client: StdMutex<Instant>,
     next_conn: AtomicU64,
+    /// The daemon's clock for touch paths (ms since this instant).
+    epoch: Instant,
+    /// A live touch may be down: the touch tick has work.
+    touch_live: AtomicBool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -135,6 +149,8 @@ impl Daemon {
             clients: AtomicUsize::new(0),
             last_client: StdMutex::new(Instant::now()),
             next_conn: AtomicU64::new(1),
+            epoch: Instant::now(),
+            touch_live: AtomicBool::new(false),
         })
     }
 
@@ -322,9 +338,13 @@ impl Daemon {
         }));
     }
 
-    /// One step of a live touch from client `req.conn`.
+    /// One step of a live touch from client `req.conn`: args `phase` (down, move, up), `point`
+    /// `[x, y]` in screen points, and optionally `t`, when the pointer was there (ms on the
+    /// client's own clock), which spaces the replayed path as it was drawn (PITFALLS #18). A move's
+    /// answer means it joined the path, not that it reached the device.
     async fn touch(self: &Arc<Self>, dev: &mut Device, req: &Request) -> Result<Value> {
         let a = &req.args;
+        iphone_use_core::trace::line("req", format_args!("{} {}", req.conn, a.get("phase").and_then(Value::as_str).unwrap_or("?")));
         let phase: TouchPhase = serde_json::from_value(a.get("phase").cloned().unwrap_or_default())
             .map_err(|_| anyhow!("touch needs a phase: down, move or up"))?;
         let at = a.get("point").map(point).transpose()?;
@@ -350,10 +370,54 @@ impl Daemon {
         if phase != TouchPhase::Up && at.is_none() {
             bail!("a touch down or move needs a point [x, y] in screen points");
         }
+        // The client's own time of the step (ms, any clock), to space the path as it was drawn.
+        let client_t = a.get("t").and_then(Value::as_f64);
+        let now = self.now_ms();
+        // A move only extends the path; the touch tick writes it (PITFALLS #18).
+        if phase == TouchPhase::Move
+            && let (Some(t), Some(p)) = (dev.touch.as_mut(), at)
+        {
+            t.path.push(now, client_t, p);
+            t.at = p;
+            t.last = Instant::now();
+            let screen = match dev.controller.as_mut() {
+                Some(c) => c.display().await?.size(),
+                None => (0.0, 0.0),
+            };
+            dev.last_input = Some(Instant::now());
+            self.input_event(req.source, "touch", &[p], screen, json!({ "phase": phase }));
+            return Ok(json!({ "phase": phase, "point": [p.0, p.1], "screen": screen }));
+        }
         let sync = self.sync_video(dev).await;
-        let c = self.controller(dev).await?;
+        self.controller(dev).await?;
         sync?;
-        let sent = c.touch(phase, at).await;
+        let Device { controller, touch, .. } = &mut *dev;
+        let c = controller.as_mut().expect("opened above");
+        let sent = match (phase, touch.as_mut()) {
+            (TouchPhase::Up, Some(t)) => {
+                // Play the rest of the path before lifting, or the end of the gesture is cut off.
+                if let Some(p) = at {
+                    t.path.push(now, client_t, p);
+                }
+                let mut played = Ok(());
+                loop {
+                    let now = self.now_ms();
+                    if let Err(e) = c.touch(TouchPhase::Move, Some(t.path.sample(now))).await {
+                        played = Err(e);
+                        break;
+                    }
+                    if now >= t.path.done_at() {
+                        break;
+                    }
+                    tokio::time::sleep(TOUCH_TICK).await;
+                }
+                match played {
+                    Ok(()) => c.touch(TouchPhase::Up, Some(t.path.last())).await,
+                    Err(e) => Err(e),
+                }
+            }
+            _ => c.touch(phase, at).await,
+        };
         let p = at.or(dev.touch.as_ref().map(|t| t.at)).unwrap_or_default();
         let sent = match sent {
             Ok(s) => s,
@@ -366,14 +430,55 @@ impl Daemon {
         };
         dev.touch = match phase {
             TouchPhase::Up => None,
-            _ => Some(Touch { conn: req.conn, source: req.source, at: p, last: Instant::now() }),
+            _ => Some(Touch {
+                conn: req.conn,
+                source: req.source,
+                at: p,
+                last: Instant::now(),
+                path: Resampler::new(now, client_t, p, TOUCH_MIN_DELAY_MS),
+            }),
         };
+        if dev.touch.is_some() {
+            self.touch_live.store(true, Ordering::Relaxed);
+        }
         if req.source == Source::Human {
             self.control.lock().unwrap().human_touching = dev.touch.is_some();
         }
         dev.last_input = Some(Instant::now());
         self.input_event(req.source, "touch", &[p], sent.screen, json!({ "phase": phase }));
         Ok(json!({ "phase": phase, "point": [p.0, p.1], "screen": sent.screen, "ms": sent.ms }))
+    }
+
+    fn now_ms(&self) -> f64 {
+        self.epoch.elapsed().as_secs_f64() * 1000.0
+    }
+
+    /// Writes live touches' paths to the device at a steady rate (PITFALLS #18).
+    async fn touch_tick(self: Arc<Self>) {
+        let mut tick = tokio::time::interval(TOUCH_TICK);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            if !self.touch_live.load(Ordering::Relaxed) {
+                continue;
+            }
+            let mut dev = self.device.lock().await;
+            let now = self.now_ms();
+            let Some(p) = dev.touch.as_mut().map(|t| t.path.sample(now)) else {
+                self.touch_live.store(false, Ordering::Relaxed);
+                continue;
+            };
+            let Some(c) = dev.controller.as_mut().filter(|c| c.touching()) else { continue };
+            // An unchanged point sends nothing (a resting finger stays down, PITFALLS #17).
+            if let Err(e) = c.touch(TouchPhase::Move, Some(p)).await {
+                tracing::warn!("live touch report failed: {e:#}");
+                dev.touch = None;
+                self.control.lock().unwrap().human_touching = false;
+                if is_connection_error(&e) {
+                    self.forget(&mut dev, &e).await;
+                }
+            }
+        }
     }
 
     /// An agent's request waits while a human touches, for up to [`AGENT_WAITS_FOR_TOUCH`]: the
@@ -625,6 +730,9 @@ impl Daemon {
                     continue;
                 }
             };
+            if req.cmd == "touch" {
+                iphone_use_core::trace::line("recv", format_args!("{conn}"));
+            }
             let result = match req.cmd.as_str() {
                 "ping" => Ok(json!({ "udid": self.udid, "pid": std::process::id() })),
                 "subscribe" => {
@@ -759,6 +867,7 @@ async fn run(udid: &str) -> Result<()> {
     let daemon = Daemon::new(udid.to_string());
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(4);
     tokio::task::spawn_local(daemon.clone().housekeeping(shutdown_tx.clone()));
+    tokio::task::spawn_local(daemon.clone().touch_tick());
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
     tracing::info!("daemon for {udid} listening");

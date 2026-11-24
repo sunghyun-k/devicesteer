@@ -17,11 +17,11 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screen streams (displayservice) | #1, #2, #7, #11, #13 |
 | Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
-| Touch and HID input | #6, #7, #8, #17 |
+| Touch and HID input | #6, #7, #8, #17, #18 |
 | Display info | #9 |
 | Accessibility tree | #10, #12 |
 | Daemon | #14 |
-| Viewer | #15 |
+| Viewer | #15, #18 |
 
 ## Entries
 
@@ -263,3 +263,40 @@ test iPhone (iOS 27.2.1, USB) in Settings:
 - Latency: a `move` step's round trip through the daemon was ~1 ms (client on the same Mac). From
   a 40 pt step with the finger already scrolling to the first video frame showing it at the host:
   45 to 64 ms (median 54 ms, six steps). The viewer adds its decode time (#15).
+
+### 18. Live touch: steps must reach the device as an even path
+
+Dragging in the viewer scrolled the phone's list in visible jerks. Measured on the test iPhone
+(iOS 27.2.1, USB, 60 Hz panel) with `IPHONE_USE_INPUT_TRACE` (`crates/core/src/trace.rs`), the
+viewer's own per-press counts, and `examples/touch_bench.rs`:
+
+- **The viewer sent two moves a second.** pointermove fired 60 to 100 times a second, but after
+  the first press or two, no move left the page except the 0.5 s keep-alive: the page batched
+  moves per animation frame, and a press that ended with a frame request pending cancelled it
+  without clearing its handle, so no later press asked for a frame again. The page now sends a
+  step per pointer event, with the event's `timeStamp` as `t`.
+- **The rest of the path was fine.** A 60 Hz client through the daemon (video subscribed) put 61
+  reports a second on the device, 0.5 to 1.5 ms round trip per step (debug build; release ~0.5 ms),
+  writes taking 0.1 to 0.6 ms. Debug against release made no visible difference. The single-thread
+  daemon (#14) never held a report back by more than a few ms.
+- **Even 60 Hz reports still judder against a 60 Hz panel.** The video stream sends a frame only
+  when the screen changes, at the device's own pts, so missing frames and the list's shift between
+  frames (row profiles of a recording, matched frame to frame) show what the glass did. Reports
+  written as they arrived (60 Hz, up to 6 ms of jitter, as the page adds) missed 3 to 6 display
+  frames in half of the 0.6 s swipes; at 30 Hz, 6 to 8 per swipe.
+- **So the daemon replays the path** (`Resampler`, `TOUCH_TICK` in the daemon): moves only extend
+  it, with each point at the client's time (mapped by the smallest send-to-arrival offset seen),
+  and a 120 Hz tick reports where the pointer was 20 ms before, interpolated. After that: no missed
+  frames at 60 Hz with jitter (0 to 1 per swipe), the per-frame shift as even as before
+  (unevenness over 25 %: 5 to 7 frames of ~137), and a 30 Hz client as smooth (9 of 139). The
+  reports themselves went out 8.3 ms apart with a speed that varied by 1 to 2 %.
+- **The delay grows with the client's spacing and never shrinks within a touch.** A fixed 24 ms
+  left a 30 Hz client uneven (112 of 136: the playback caught up with the path and waited); a delay
+  that followed the jitter both ways kept changing the playback speed and was worse at 60 Hz (35
+  of 137). Growing only, at 0.1 ms per ms, was as good as the fixed delay at 60 Hz and smooth at 30 Hz.
+- **An `up` plays the rest of the path first**, then lifts as #17 says: resting before the release
+  still stops the list where the finger stopped, and a release while moving still coasts
+  (480 to 640 pt after a 380 pt drag, about as before).
+- Cost: the finger trails the pointer by the delay (20 ms at the viewer's pace), on top of #17's
+  ~54 ms to the host. A down is written at once, so taps don't wait.
+

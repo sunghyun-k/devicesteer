@@ -190,10 +190,14 @@ impl Input {
 
     async fn report(&mut self, state: u8, x: u16, y: u16) -> Result<()> {
         let bytes = build_touchscreen_report(state, x, y, None);
-        self.hid
+        let began = Instant::now();
+        let r = self
+            .hid
             .send_report(self.touchscreen, bytes)
             .await
-            .map_err(|e| anyhow!("touch report failed (connection error: {e:?})"))
+            .map_err(|e| anyhow!("touch report failed (connection error: {e:?})"));
+        crate::trace::line("hid", format_args!("{state} {x} {y} {}", began.elapsed().as_micros()));
+        r
     }
 
     async fn gap(&self) {

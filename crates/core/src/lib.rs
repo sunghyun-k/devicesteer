@@ -21,8 +21,10 @@ mod media;
 mod mp4;
 pub mod paths;
 mod record;
+mod resample;
 mod video;
 mod session;
+pub mod trace;
 
 pub use control::{Controller, Sent};
 pub use devices::{DeviceInfo, Transport, list_devices};
@@ -30,6 +32,7 @@ pub use display::{Display, Rotation};
 pub use input::{Button, Input, Motion, TAP_HOLD, TouchPhase};
 pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, StreamStatus, server_status};
 pub use record::{Frame, FrameStream, RecordSummary, Recorder};
+pub use resample::Resampler;
 pub use session::{ServiceInfo, Session, resolve_udid};
 pub use video::ParameterSets;
 
