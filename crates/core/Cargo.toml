@@ -1,0 +1,15 @@
+[package]
+name = "iphone-use-core"
+description = "Device layer for iphone-use: connection, tunnel and services over idevice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+idevice.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+tokio.workspace = true
+plist = "1.8"
+tracing = "0.1"
