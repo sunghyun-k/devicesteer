@@ -995,8 +995,8 @@ function onMessage(buf: Uint8Array): void {
 
 // ---------- the device frame and zoom ----------
 //
-// The screen is drawn as it is, with rounded corners and no hardware around it: round corners for
-// Face ID phones, nearly square ones for the older 16:9 phones and for iPads. Hardware buttons are
+// The screen is drawn as it is: a plain rectangle with no hardware around it (style.css, #bezel,
+// says why the corners are square). Hardware buttons are
 // real controls in the device bar, not pictures. The zoom is the size of one screen point in CSS
 // pixels: "fit" works it out from the room the stage has; "actual size" is one point per CSS pixel.
 
@@ -1007,15 +1007,14 @@ let scale = 1;
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 3;
 
-/** The kind of screen and its corner radius, in points. `pad` and `rim` stay for the layout: the
- * screen has no frame, so they are zero. */
+/** The kind of screen. `pad` and `rim` stay for the layout: the screen has no frame, so they are
+ * zero. */
 function frameFor(w: number, h: number) {
   const m = Math.min(w, h);
   const long = Math.max(w, h) / m;
   const kind = isTablet(selected) || long < 1.6 ? "tablet" : long < 1.9 ? "classic" : "modern";
   const portrait = h >= w;
-  const screenR = (kind === "tablet" ? 0.03 : kind === "classic" ? 0.025 : 0.125) * m;
-  return { kind, portrait, pad: [0, 0, 0, 0], rim: 0, screenR, outerR: screenR };
+  return { kind, portrait, pad: [0, 0, 0, 0], rim: 0 };
 }
 
 /** Sizes the device to the zoom and keeps the overlay on the screen. */
@@ -1039,8 +1038,6 @@ function layout(): void {
   deviceEl.style.height = px(h + t + b);
   const set = (k: string, v: string) => deviceEl.style.setProperty(k, v);
   set("--rim", `${Math.max(1.5, f.rim * s)}px`);
-  set("--outer-r", px(f.outerR));
-  set("--screen-r", px(f.screenR));
   // Touch discs are a fingertip on the screen (56 points).
   overlay.style.setProperty("--touch", `${Math.max(20, 56 * s)}px`);
   placeCursor();
