@@ -1663,6 +1663,7 @@ source = "git+https://github.com/jkcoxson/idevice?rev=c8fff6d7fb2690eaeb591ce510
 dependencies = [
  "async-stream",
  "base64 0.22.1",
+ "flate2",
  "futures",
  "indexmap 2.14.2",
  "jktcp",
@@ -1679,6 +1680,7 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -1752,6 +1754,7 @@ dependencies = [
  "anyhow",
  "clap",
  "iphone-use-core",
+ "plist",
  "serde",
  "serde_json",
  "tokio",
@@ -1767,6 +1770,7 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

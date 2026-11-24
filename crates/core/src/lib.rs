@@ -11,10 +11,20 @@
 //! The same path works on macOS and Windows (Apple's usbmuxd ships with iTunes / Apple Devices
 //! there). Nothing needs root or a TUN interface.
 
+mod control;
+mod coredevice;
 mod devices;
+mod display;
+mod input;
+mod media;
+pub mod paths;
 mod session;
 
+pub use control::{Controller, Sent};
 pub use devices::{DeviceInfo, Transport, list_devices};
+pub use display::{Display, Rotation};
+pub use input::{Button, Input, Motion, TAP_HOLD};
+pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, StreamStatus, server_status};
 pub use session::{ServiceInfo, Session};
 
 /// How long one connection step (usbmuxd, lockdown, proxy, RSD) may take before we give up.

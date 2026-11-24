@@ -1,0 +1,141 @@
+//! One device under control: the tunnel, the media session that keeps HID input alive (and
+//! carries the live screen), and the HID connection. The CLI uses it for one command; the daemon
+//! keeps it open.
+
+use std::time::Duration;
+
+use anyhow::Result;
+use serde::Serialize;
+
+use crate::{
+    Session,
+    display::Display,
+    input::{Button, Input, Motion, TAP_HOLD},
+    media::{MediaMode, MediaSession, MediaStatus},
+};
+
+/// A media session that sent nothing for this long no longer keeps the HID gate open
+/// (PITFALLS #7); it is restarted before the next input.
+const MEDIA_STALE_MS: u64 = 2500;
+
+/// What a gesture was sent with, for the caller's output.
+#[derive(Debug, Clone, Serialize)]
+pub struct Sent {
+    /// The screen size the points were placed on.
+    pub screen: (f64, f64),
+    /// Milliseconds from the call until the last report was written.
+    pub ms: u64,
+}
+
+pub struct Controller {
+    pub session: Session,
+    display: Option<Display>,
+    media: Option<MediaSession>,
+    input: Option<Input>,
+    mode: MediaMode,
+}
+
+impl Controller {
+    /// Wraps an open session. `mode` decides whether the media session also carries video.
+    pub fn new(session: Session, mode: MediaMode) -> Self {
+        Self { session, display: None, media: None, input: None, mode }
+    }
+
+    /// The display in use, asked once and then reused (call [`Self::refresh_display`] after a turn).
+    pub async fn display(&mut self) -> Result<Display> {
+        if let Some(d) = &self.display {
+            return Ok(d.clone());
+        }
+        let d = self.session.display().await?;
+        self.display = Some(d.clone());
+        Ok(d)
+    }
+
+    pub async fn refresh_display(&mut self) -> Result<Display> {
+        self.display = None;
+        self.display().await
+    }
+
+    /// Starts the media session if it isn't running or went quiet.
+    pub async fn ensure_media(&mut self) -> Result<&mut MediaSession> {
+        let stale = self
+            .media
+            .as_ref()
+            .is_some_and(|m| m.idle_ms().is_none_or(|ms| ms > MEDIA_STALE_MS));
+        if stale {
+            tracing::debug!("media went quiet; restarting it and the HID connection");
+            self.drop_input().await;
+            if let Some(mut m) = self.media.take() {
+                let _ = m.stop().await;
+            }
+        }
+        if self.media.is_none() {
+            let display = self.display().await?;
+            let m = MediaSession::start(
+                &self.session.udid,
+                self.session.adapter(),
+                self.session.rsd(),
+                self.mode,
+                display.display_id.unwrap_or(1),
+            )
+            .await?;
+            self.media = Some(m);
+        }
+        Ok(self.media.as_mut().expect("started above"))
+    }
+
+    async fn ensure_input(&mut self) -> Result<(&mut Input, Display)> {
+        self.ensure_media().await?;
+        let display = self.display().await?;
+        if self.input.is_none() {
+            let input = Input::open(self.session.adapter(), self.session.rsd(), &display).await?;
+            self.input = Some(input);
+        }
+        Ok((self.input.as_mut().expect("opened above"), display))
+    }
+
+    async fn drop_input(&mut self) {
+        if let Some(i) = self.input.take() {
+            i.close().await;
+        }
+    }
+
+    pub async fn tap(&mut self, at: (f64, f64)) -> Result<Sent> {
+        let (input, display) = self.ensure_input().await?;
+        let began = std::time::Instant::now();
+        input.tap(&display, at, TAP_HOLD).await?;
+        Ok(Sent { screen: display.size(), ms: began.elapsed().as_millis() as u64 })
+    }
+
+    pub async fn drag(&mut self, from: (f64, f64), to: (f64, f64), duration: Duration, motion: Motion) -> Result<Sent> {
+        let (input, display) = self.ensure_input().await?;
+        let began = std::time::Instant::now();
+        input.drag(&display, from, to, duration, motion).await?;
+        Ok(Sent { screen: display.size(), ms: began.elapsed().as_millis() as u64 })
+    }
+
+    pub async fn button(&mut self, button: Button) -> Result<()> {
+        let (input, _) = self.ensure_input().await?;
+        input.button(button).await
+    }
+
+    pub fn media(&self) -> Option<&MediaSession> {
+        self.media.as_ref()
+    }
+
+    pub async fn media_status(&mut self) -> Result<Option<MediaStatus>> {
+        match self.media.as_mut() {
+            Some(m) => Ok(Some(m.status().await?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Closes the HID connection and stops our streams (only ours).
+    pub async fn close(&mut self) -> Result<()> {
+        self.drop_input().await;
+        match self.media.take() {
+            Some(mut m) => m.stop().await,
+            None => Ok(()),
+        }
+    }
+}

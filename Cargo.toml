@@ -22,9 +22,13 @@ idevice = { git = "https://github.com/jkcoxson/idevice", rev = "c8fff6d7fb2690ea
   "rsd",
   "xpc",
   "core_device",
+  # Screen-sharing media streams and CoreDevice HID (touch, buttons).
+  "display_stream",
 ] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 iphone-use-core = { path = "crates/core" }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"

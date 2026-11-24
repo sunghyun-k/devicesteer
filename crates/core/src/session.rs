@@ -15,6 +15,7 @@ use serde::Serialize;
 
 use crate::{
     devices::{Transport, mux_addr, mux_devices, transport_of},
+    display::{DeviceInfoLink, Display},
     step,
 };
 
@@ -116,6 +117,22 @@ impl Session {
             );
         }
         step(&format!("{name} connection"), T::connect_rsd(&mut self.adapter, &mut self.rsd)).await
+    }
+
+    /// The tunnel, for services that open their own connections over it.
+    pub fn adapter(&self) -> &AdapterHandle {
+        &self.adapter
+    }
+
+    /// The RSD service list, for services that open their own connections over it.
+    pub fn rsd(&self) -> &RsdHandshake {
+        &self.rsd
+    }
+
+    /// The display in use: size in points, rotation, and the id its video streams by.
+    pub async fn display(&mut self) -> Result<Display> {
+        let mut link: DeviceInfoLink = self.connect().await?;
+        step("display info", link.active_display()).await
     }
 
     /// Captures the active display as PNG.

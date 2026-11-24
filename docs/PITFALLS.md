@@ -14,10 +14,11 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 
 | Topic | Entries |
 |---|---|
-| Screen streams (displayservice) | #1, #2 |
+| Screen streams (displayservice) | #1, #2, #7 |
 | Connection and tunnel | #3, #4 |
 | Screenshots | #5 |
-| Touch and HID input (carried over, unverified on the new path) | #6 |
+| Touch and HID input | #6, #7, #8 |
+| Display info | #9 |
 
 ## Entries
 
@@ -87,3 +88,44 @@ connection code, run an Xcode build to the device while a session is open.
 - Old #16: unanswered reports need an HTTP/2 PING round trip before closing, or the tail is lost on
   Wi-Fi.
 - Old #17: wait about 0.8 s after a home-button release before closing.
+
+### 7. Touches need a running media stream; buttons don't
+
+Re-checked on the idevice path (iPhone, iOS 27.2.1, USB): with no displayservice stream running,
+touch reports on `hid.universalhidservice` were dropped (a back-button tap and a scroll did
+nothing; one earlier tap went through, probably while the device was still tearing down the
+previous command's stream). A home press on `hid.indigo` worked without any stream.
+
+So `Controller` starts a media session before opening HID. The audio stream alone is enough and
+costs almost nothing (~1.7 KB/s, 100 packets/s); the video stream adds ~200 KB/s on a still home
+screen. If the device refuses audio with CoreDevice error 9022 ("microphone or camera in use":
+a call, a screen recording), the video stream sets up the session instead. A session whose
+packets stop for 2.5 s no longer opens the gate and is restarted before the next input.
+
+Measured: starting the audio stream took ~0.2 s to the first packet; audio + video ~0.33 s.
+Stopping by `RemoteSSRC` (#1) left `sessions: []` in the server status every time.
+
+### 8. HID connection warm-up
+
+From iphone-cli's measurements, kept as is (see `crates/core/src/input.rs`):
+
+- Wait for the reply to the connected-services list, then 0.3 s more: the device makes a new
+  connection's HID devices one after another, and a touch sent before the touchscreen is open is
+  held and delivered later all at once (an edge swipe then becomes a jump).
+- The first report on a new connection is sometimes lost with its whole gesture. Sending a
+  "released" report first (no finger down, so it does nothing) avoids that.
+- A tap is contact, 50 ms, release. Keep 150 ms between a release and the next contact (or two
+  taps become a double tap), and 0.3 s after the last release before closing the connection
+  (0.8 s after a button, old #17).
+
+On the test iPhone over USB, with a new tunnel, media session and HID connection per command, a
+tap command took ~1.2 s end to end, a 400 ms scroll ~1.7 s, a home press ~2.4 s (the indigo
+connection plus the 0.8 s settle). The daemon keeps all three open, which removes most of that.
+
+### 9. `getdisplayinfo` on a phone with one panel
+
+The answer lists the panel plus sizeless "wireless" displays. Only foldables mark their panels with
+`active` and give them a `uniqueId`; a phone with one panel has neither key (iOS 27.2.1). Pick the
+sized display with `primary: true` there. Its touchscreen's HID product name is
+`CoreDevice touchscreen(nil)`, so "nil" stands in for the missing id. `displayId` (1 for the
+panel) is what the video stream's `VideoStreamForDisplayID` takes.

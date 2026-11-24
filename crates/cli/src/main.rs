@@ -2,11 +2,11 @@
 //!
 //! Output is JSON on stdout. Errors go to stderr as `{"error": "..."}` with exit code 1.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use iphone_use_core::{Session, list_devices};
+use iphone_use_core::{Button, Controller, MediaMode, Motion, Session, list_devices};
 use serde_json::json;
 
 #[derive(Parser)]
@@ -42,6 +42,59 @@ enum Command {
         /// Panel to capture (a display `uniqueId`); defaults to the device's primary panel.
         #[arg(long)]
         display: Option<String>,
+    },
+    /// Show the display in use: size in points, scale, rotation.
+    Display {
+        #[command(flatten)]
+        target: Target,
+    },
+    /// Tap a point given as `x,y` in screen points (as the screen is turned now).
+    Tap {
+        #[command(flatten)]
+        target: Target,
+        /// `x,y` in points.
+        at: String,
+    },
+    /// Drag one finger from `x,y` to `x,y` (points).
+    Swipe {
+        #[command(flatten)]
+        target: Target,
+        from: String,
+        to: String,
+        /// How long the drag takes, in milliseconds.
+        #[arg(long, default_value_t = 300)]
+        duration: u64,
+        /// Slow to a stop before lifting, so content moves by the finger's distance and stays
+        /// (a scroll step). Without it the content keeps coasting.
+        #[arg(long)]
+        place: bool,
+    },
+    /// Press a hardware button: home, lock, volume_up, volume_down.
+    Button {
+        #[command(flatten)]
+        target: Target,
+        name: String,
+    },
+    /// Screen-sharing media streams on the device.
+    Media {
+        #[command(flatten)]
+        target: Target,
+        #[command(subcommand)]
+        action: MediaAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum MediaAction {
+    /// The device's media server status (all clients' streams).
+    Status,
+    /// Start an input-only media session, report its numbers after `seconds`, and stop it.
+    Probe {
+        #[arg(long, default_value_t = 3)]
+        seconds: u64,
+        /// Also start the video stream.
+        #[arg(long)]
+        video: bool,
     },
 }
 
@@ -83,7 +136,105 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                 "height": height,
             })
         }
+        Command::Display { target } => {
+            let mut session = Session::open(target.udid.as_deref()).await?;
+            let d = session.display().await?;
+            json!({ "udid": session.udid, "display": d, "screen": d.size() })
+        }
+        Command::Tap { target, at } => {
+            let at = parse_point(&at)?;
+            with_controller(&target, async |c| {
+                let sent = c.tap(at).await?;
+                Ok(json!({ "tapped": [at.0, at.1], "screen": sent.screen, "ms": sent.ms }))
+            })
+            .await?
+        }
+        Command::Swipe { target, from, to, duration, place } => {
+            let (from, to) = (parse_point(&from)?, parse_point(&to)?);
+            let motion = if place { Motion::Place } else { Motion::Flick };
+            with_controller(&target, async |c| {
+                let sent = c.drag(from, to, Duration::from_millis(duration), motion).await?;
+                Ok(json!({ "from": [from.0, from.1], "to": [to.0, to.1], "screen": sent.screen, "ms": sent.ms }))
+            })
+            .await?
+        }
+        Command::Button { target, name } => {
+            let button = Button::parse(&name)?;
+            with_controller(&target, async |c| {
+                c.button(button).await?;
+                Ok(json!({ "pressed": button }))
+            })
+            .await?
+        }
+        Command::Media { target, action } => match action {
+            MediaAction::Status => {
+                let session = Session::open(target.udid.as_deref()).await?;
+                let status = iphone_use_core::server_status(session.adapter(), session.rsd()).await?;
+                json!({ "udid": session.udid, "status": plist_to_json(&status) })
+            }
+            MediaAction::Probe { seconds, video } => {
+                let mode = if video { MediaMode::Video } else { MediaMode::InputOnly };
+                let session = Session::open(target.udid.as_deref()).await?;
+                let mut c = Controller::new(session, mode);
+                let began = std::time::Instant::now();
+                let r = async {
+                    c.ensure_media().await?;
+                    let started_ms = began.elapsed().as_millis() as u64;
+                    tokio::time::sleep(Duration::from_secs(seconds)).await;
+                    let status = c.media_status().await?;
+                    Ok::<_, anyhow::Error>(json!({ "started_ms": started_ms, "media": status }))
+                }
+                .await;
+                let closed = c.close().await;
+                let mut v = r?;
+                closed?;
+                v["stopped"] = json!(true);
+                v
+            }
+        },
     })
+}
+
+/// Opens a controller for one command, runs `f`, and always closes it (stopping only our streams).
+async fn with_controller(
+    target: &Target,
+    f: impl AsyncFnOnce(&mut Controller) -> Result<serde_json::Value>,
+) -> Result<serde_json::Value> {
+    let session = Session::open(target.udid.as_deref()).await?;
+    let udid = session.udid.clone();
+    let mut c = Controller::new(session, MediaMode::InputOnly);
+    let r = f(&mut c).await;
+    let closed = c.close().await;
+    let mut v = r?;
+    closed?;
+    v["udid"] = json!(udid);
+    Ok(v)
+}
+
+/// `x,y` in points.
+fn parse_point(s: &str) -> Result<(f64, f64)> {
+    let (x, y) = s
+        .split_once(',')
+        .with_context(|| format!("`{s}` is not a point; write it as x,y in screen points, such as 200,400"))?;
+    let num = |v: &str| v.trim().parse::<f64>().with_context(|| format!("`{v}` in `{s}` is not a number"));
+    Ok((num(x)?, num(y)?))
+}
+
+/// A plist value as JSON (data as its length, dates as strings).
+fn plist_to_json(v: &plist::Value) -> serde_json::Value {
+    use plist::Value as P;
+    match v {
+        P::Array(a) => a.iter().map(plist_to_json).collect(),
+        P::Dictionary(d) => d.iter().map(|(k, v)| (k.clone(), plist_to_json(v))).collect::<serde_json::Map<_, _>>().into(),
+        P::Boolean(b) => json!(b),
+        P::Data(d) => json!(format!("<{} bytes>", d.len())),
+        P::Date(d) => json!(format!("{d:?}")),
+        P::Real(r) => json!(r),
+        P::Integer(i) => i.as_signed().map(|n| json!(n)).or_else(|| i.as_unsigned().map(|n| json!(n))).unwrap_or(json!(null)),
+        P::String(s) => json!(s),
+        P::Uid(u) => json!(u.get()),
+        _ => json!(null),
+    }
 }
 
 /// Width and height from a PNG's IHDR chunk.
