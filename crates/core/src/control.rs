@@ -87,6 +87,12 @@ impl Controller {
         self.display().await
     }
 
+    /// Takes a display read elsewhere (the daemon polls it to follow the interface orientation,
+    /// PITFALLS #27), so the next gesture is placed on the screen as it is turned now.
+    pub fn set_display(&mut self, d: Display) {
+        self.display = Some(d);
+    }
+
     /// Starts the media session if it isn't running or went quiet.
     pub async fn ensure_media(&mut self) -> Result<&mut MediaSession> {
         let stale = self

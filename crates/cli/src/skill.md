@@ -106,6 +106,21 @@ iphone-use screenshot -o /absolute/path/screen.png
 - Private data on screen (messages, codes, accounts): read only what the task needs, and don't copy
   it into your replies, files or logs.
 
+## Coordinates and orientation
+
+All points are **screen points as the screen shows right now**, portrait or landscape: `x` grows to
+the right and `y` downwards as you read the screen, from its top-left corner. `ui` frames, `tap x,y`,
+`swipe` and the `screen` size in results all use this space, and `screenshot` is upright too. You
+never turn points yourself.
+
+- `ui` prints `orientation` (`portrait` or `landscape`) and the screen's `width` and `height`.
+  Check them when your points come from somewhere else than this reading.
+- The screen turns when the person turns the device (with rotation lock off and an app that
+  rotates in front); the home screen of most iPhones stays portrait. **After a turn, read the
+  screen again**: refs and points from before it point at the wrong places. The daemon notices a
+  turn within about half a second.
+- `iphone-use display` shows the current `rotation` and `orientation` without reading the screen.
+
 ## Input
 
 ```sh

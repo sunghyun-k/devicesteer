@@ -8,12 +8,14 @@
 // touches, settings and the VoiceOver warning.
 //
 // URL options: `devices=normal|empty|error|slow`, `open=1` (open the first device at once),
-// `attach=ok|hang|error`, `panel=0` (no floating panel, for screenshots).
+// `attach=ok|hang|error`, `panel=0` (no floating panel, for screenshots), `rotation=rot270` (start
+// turned).
 
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
 type Point = [number, number];
 type Owner = "agent" | "delegated_to_user" | "user" | "finished";
+type Rotation = "rot0" | "rot90" | "rot180" | "rot270";
 
 const params = new URLSearchParams(location.search);
 const SCREEN: Point = [428, 926];
@@ -46,16 +48,65 @@ const state = {
     unsupported: [] as string[],
   },
   settingsFail: false,
+  rotation: (params.get("rotation") ?? "rot0") as Rotation,
   lastReport: undefined as unknown,
+  fitWindow: undefined as unknown,
 };
 
 // ---------- placeholder screen ----------
 
+/** The panel's picture, in its native orientation (portrait), as the device's video has it. */
 const screen = new OffscreenCanvas(PX[0], PX[1]);
+const upright = new OffscreenCanvas(PX[0], PX[1]);
+const quarter = () => state.rotation === "rot90" || state.rotation === "rot270";
+/** The screen as the user sees it, in points. */
+const turnedScreen = (): Point => (quarter() ? [SCREEN[1], SCREEN[0]] : SCREEN);
+
+/** Draws the screen as the user sees it, then turns it onto the panel as the device does: the
+ * video stays portrait and the interface turns inside it (PITFALLS #27). */
+function drawScreen(): void {
+  const [w, h] = turnedScreen();
+  if (quarter()) drawLandscape(w, h);
+  else drawPortrait();
+  const g = screen.getContext("2d")!;
+  // Screen to panel: the inverse of the viewer's panelToCanvas.
+  const [pw, ph] = PX;
+  const m: Record<Rotation, [number, number, number, number, number, number]> = {
+    rot0: [1, 0, 0, 1, 0, 0],
+    rot90: [0, -1, 1, 0, 0, ph],
+    rot180: [-1, 0, 0, -1, pw, ph],
+    rot270: [0, 1, -1, 0, pw, 0],
+  };
+  g.setTransform(...m[state.rotation]);
+  g.drawImage(upright, 0, 0);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+/** A landscape app: a top bar, a sidebar of rows and a content area. */
+function drawLandscape(w: number, h: number): void {
+  const s = 3;
+  upright.width = w * s;
+  upright.height = h * s;
+  const g = upright.getContext("2d")!;
+  const dark = state.settings.appearance !== "light";
+  g.fillStyle = dark ? "#1c1c1e" : "#f2f2f7";
+  g.fillRect(0, 0, w * s, h * s);
+  g.fillStyle = dark ? "#2c2c2e" : "#fff";
+  g.fillRect(0, 0, w * s, 52 * s);
+  g.fillStyle = dark ? "#fff" : "#000";
+  g.font = `600 ${17 * s}px -apple-system, system-ui, sans-serif`;
+  g.textBaseline = "middle";
+  g.fillText("Landscape", 60 * s, 28 * s);
+  for (let i = 0; i < 6; i++) roundRect(g, 60 * s, (72 + i * 52) * s, 240 * s, 40 * s, 10 * s, dark ? "#2c2c2e" : "#fff");
+  roundRect(g, 320 * s, 72 * s, (w - 380) * s, (h - 100) * s, 14 * s, `hsl(210 55% ${dark ? 40 : 70}%)`);
+  roundRect(g, (w / 2 - 68) * s, (h - 9) * s, 136 * s, 5 * s, 2.5 * s, dark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.8)");
+}
 
 /** A generic home screen: wallpaper, status bar, a grid of blank icons, a dock. No real apps. */
-function drawScreen(): void {
-  const g = screen.getContext("2d")!;
+function drawPortrait(): void {
+  upright.width = PX[0];
+  upright.height = PX[1];
+  const g = upright.getContext("2d")!;
   const dark = state.settings.appearance !== "light";
   const bg = g.createLinearGradient(0, 0, PX[0], PX[1]);
   bg.addColorStop(0, dark ? "#2b3145" : "#a9c1e8");
@@ -153,7 +204,7 @@ function settingsEvent(): void {
 
 function startStream(): void {
   drawScreen();
-  event({ event: "config", codec: "hvc1.mock", description: "", coded: CODED, display_px: PX, screen: SCREEN });
+  event({ event: "config", codec: "hvc1.mock", description: "", coded: CODED, display_px: PX, ...orientation() });
   window.setTimeout(() => {
     frame(true);
     state.frameTimer = window.setInterval(() => frame(false), 1000 / 30);
@@ -161,8 +212,13 @@ function startStream(): void {
   control();
 }
 
+function orientation() {
+  const screen = turnedScreen();
+  return { rotation: state.rotation, orientation: screen[0] > screen[1] ? "landscape" : "portrait", screen };
+}
+
 function input(source: "agent" | "human", kind: string, points: Point[], extra: Record<string, unknown> = {}): void {
-  event({ event: "input", source, kind, points, screen: SCREEN, ...extra });
+  event({ event: "input", source, kind, points, screen: turnedScreen(), ...extra });
 }
 
 const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
@@ -192,6 +248,10 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       return null;
     case "report":
       state.lastReport = args.stats;
+      return null;
+    case "fit_window":
+      // A browser tab can't resize its window; the request is kept for checks.
+      state.fitWindow = args;
       return null;
     case "send":
       return send(String(args.cmd), (args.args ?? {}) as Record<string, unknown>);
@@ -286,6 +346,12 @@ const mock = {
   unsupported(items: string[] = ["liquid_glass", "reduce_transparency"]) {
     mock.settings({ unsupported: items, liquid_glass: null, reduce_transparency: null });
   },
+  /** Turns the interface; the next frame shows it, as on the device. */
+  rotate(r: Rotation = state.rotation === "rot0" ? "rot270" : "rot0") {
+    state.rotation = r;
+    drawScreen();
+    event({ event: "orientation", ...orientation() });
+  },
   settingsFail(on = true) {
     state.settingsFail = on;
   },
@@ -296,6 +362,7 @@ const mock = {
     state.attach = kind;
   },
   report: () => state.lastReport,
+  fitWindow: () => state.fitWindow,
 };
 
 declare global {
@@ -319,6 +386,7 @@ const KEYS: [string, string, () => void][] = [
   ["v", "VoiceOver on/off", () => mock.voiceover(!state.settings.voiceover)],
   ["u", "Unsupported settings", () => mock.unsupported()],
   ["f", "Settings fail", () => mock.settingsFail(!state.settingsFail)],
+  ["r", "Turn the screen", () => mock.rotate()],
 ];
 
 function panel(): void {

@@ -56,6 +56,7 @@ pub async fn run(udid: Option<&str>, output: &Path, seconds: Option<f64>) -> Res
     let stream = FrameStream::start(&mut media);
     let mut frames = stream.subscribe();
     let mut recorder = Recorder::create(output)?;
+    recorder.set_rotation(display.rotation);
     let mut first_frame_ms = None;
     let deadline = seconds.map(|s| Instant::now() + Duration::from_secs_f64(s));
     let mut last_frame_at = Instant::now();

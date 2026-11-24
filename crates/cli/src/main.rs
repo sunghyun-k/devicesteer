@@ -349,7 +349,7 @@ async fn run(command: Command) -> Result<serde_json::Value> {
         Command::Display { target } => {
             let mut session = Session::open(target.udid.as_deref()).await?;
             let d = session.display().await?;
-            json!({ "udid": session.udid, "display": d, "screen": d.size() })
+            json!({ "udid": session.udid, "display": d, "screen": d.size(), "orientation": d.orientation() })
         }
         Command::Daemon { target, action } => match action {
             Some(DaemonAction::Status) => target.client().await?.request("status", json!({})).await?,
@@ -453,7 +453,9 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                 let began = std::time::Instant::now();
                 let screen = c.ui(BuildOptions { all }, full).await?;
                 save_refs(&c.session.udid, &screen);
+                let orientation = c.display().await?.orientation();
                 let mut v = serde_json::to_value(&screen)?;
+                v["orientation"] = json!(orientation);
                 v["ms"] = json!(began.elapsed().as_millis() as u64);
                 Ok(v)
             })

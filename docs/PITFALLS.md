@@ -14,15 +14,15 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 
 | Topic | Entries |
 |---|---|
-| Screen streams (displayservice) | #1, #2, #7, #11, #13 |
+| Screen streams (displayservice) | #1, #2, #7, #11, #13, #27 |
 | Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
-| Touch and HID input | #6, #7, #8, #17, #18 |
-| Display info | #9 |
-| Accessibility tree | #10, #12, #19, #20, #21, #22, #25 |
+| Touch and HID input | #6, #7, #8, #17, #18, #27 |
+| Display info | #9, #27 |
+| Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23, #26 |
+| Viewer | #15, #18, #23, #26, #27 |
 
 ## Entries
 
@@ -497,3 +497,36 @@ macOS web view) drew the whole picture scaled into the destination: the viewer s
 in. The viewer now draws the whole frame scaled up so the screen fills the canvas
 (`drawImage(frame, dx, dy, dw, dh)` with the destination larger than the canvas) and lets the
 canvas clip the padding off. It reports the frame's geometry as `frame` in `viewer.log`.
+
+### 27. Landscape: only the interface turns; nothing announces it
+
+Test iPhone (iOS 27.2.1, USB), rotation lock off, Safari in front, turned by hand between
+portrait and both landscapes while `examples/rotation_probe.rs` (core) watched the stream and
+polled `getdisplayinfo`.
+
+- **The video doesn't turn.** In landscape the coded picture stays 1296x2816 (portrait, the
+  padding of #11 still at the right and bottom), and the landscape interface is drawn turned inside
+  it: with `rot270` the screen's top-left corner is at the picture's top-right. A turn brings no
+  keyframe, no new parameter sets and no change in the RTP header extension (profile `0x9201` or
+  `0x9211`, one word whose last two bytes count up per frame; nothing in it followed the turns).
+  So the viewer turns the picture itself, and a recording gets the rotation at its start as the MP4
+  matrix (a track has one matrix; a turn during a recording plays sideways from there).
+- **`getdisplayinfo`'s `currentOrientation` is the interface orientation**, not the device's:
+  `rot0` in portrait, `rot270` and `rot90` in the two landscapes, and `rot0` on the home screen
+  while the phone was held in landscape (the home screen didn't turn; the screenshot and `ui` were
+  portrait too). It is the one signal; nothing is pushed, so the daemon polls it every 0.5 s while a
+  client is connected and sends an `orientation` event on a change.
+- **A new connection per call sometimes gets no answer.** Asked every 250 ms on a new
+  `deviceinfo` connection, 11 of about 600 calls got nothing within 2 s (and `display` through the
+  CLI hung for the 12 s step timeout in 2 of 5 tries during that time). On one kept connection,
+  about 600 calls in a row over 2.5 minutes all answered, in 6 to 12 ms. `DisplayPoller` keeps its connection, gives a call 1.5 s
+  and asks again on a new connection.
+- **Touches and `ui` frames are in the screen as the user sees it.** `ui` frames in landscape were
+  landscape points (application frame 926x428; native toolbar buttons and web content both matched
+  the screenshot), and a vertical `swipe` in landscape points turned onto the panel by
+  `Display::report_point` (the old #23 mapping) scrolled the page vertically. With a stale portrait
+  display the same swipe was clamped and did nothing, which is why the daemon follows the turns.
+- Seen in passing, not looked into: while the probe ran a media session of its own, the daemon
+  starting one stopped the probe's audio stream for good (its video went on), and a later daemon
+  restart and recording ended the probe's video too; `media status` then listed no sessions at
+  all. Measure turns through the daemon (`events --frames`) instead.

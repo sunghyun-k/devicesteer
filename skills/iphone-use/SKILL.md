@@ -20,5 +20,8 @@ The guide ends with a line starting `[iphone-use:skill] end of guide`. If that l
 output was truncated: save it to a file and read the file in parts, for example
 `iphone-use skill > "$TMPDIR/iphone-use-skill.md"`.
 
+Points (`ui` frames, `tap x,y`, `swipe`) are always screen points in the orientation the screen
+shows, portrait or landscape; the guide explains it.
+
 If `iphone-use` is not found, build it from this repository (`cargo build`, then use
 `target/debug/iphone-use`) or ask the user how it is installed.

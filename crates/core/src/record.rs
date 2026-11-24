@@ -140,6 +140,8 @@ pub struct RecordSummary {
     pub height: u32,
     pub codec: String,
     pub lost_packets: u64,
+    /// How players turn the picture: the screen's rotation when the recording started.
+    pub rotation: Rotation,
 }
 
 /// Writes frames to an MP4 as they come.
@@ -152,6 +154,7 @@ pub struct Recorder {
     keyframes: u64,
     lost_at_start: Option<u64>,
     lost: u64,
+    turn: Rotation,
 }
 
 impl Recorder {
@@ -166,7 +169,16 @@ impl Recorder {
             keyframes: 0,
             lost_at_start: None,
             lost: 0,
+            turn: Rotation::R0,
         })
+    }
+
+    /// Plays the recording turned by `turn`. The picture is the panel in its native orientation
+    /// whichever way the interface is turned (PITFALLS #27), so a recording of a landscape screen
+    /// needs this to play upright. An MP4 track has one matrix: a turn during the recording plays
+    /// sideways from there on.
+    pub fn set_rotation(&mut self, turn: Rotation) {
+        self.turn = turn;
     }
 
     /// Appends a frame. Frames before the first keyframe can't be decoded and are skipped.
@@ -210,7 +222,7 @@ impl Recorder {
         writer.set_last_duration_if_unset(ticks_from_micros(tail.as_micros() as u64));
         let path = writer.path().to_path_buf();
         let total = writer.total_ticks();
-        let bytes = writer.finish(&params, Rotation::R0)?;
+        let bytes = writer.finish(&params, self.turn)?;
         let secs = seconds(total);
         Ok(RecordSummary {
             path,
@@ -223,6 +235,7 @@ impl Recorder {
             height: params.height,
             codec: params.codec(),
             lost_packets: self.lost,
+            rotation: self.turn,
         })
     }
 }

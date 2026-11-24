@@ -7,10 +7,13 @@
 //! The answer's shape and the rotation mapping are adapted from iphone-cli
 //! `src/device/display.rs`, MIT, see THIRD_PARTY_NOTICES.md.
 
+use std::time::Duration;
+
 use anyhow::{Result, anyhow, bail};
+use idevice::{RsdService, rsd::RsdHandshake, tcp::handle::AdapterHandle};
 use serde::Serialize;
 
-use crate::coredevice::xpc_link;
+use crate::{coredevice::xpc_link, step};
 
 xpc_link!(DeviceInfoLink, "com.apple.coredevice.deviceinfo");
 
@@ -67,6 +70,13 @@ pub struct Display {
 }
 
 impl Display {
+    /// `portrait` or `landscape`: how the screen the user sees is turned, from its size. The
+    /// rotation alone doesn't say it, since it is relative to the panel's native orientation.
+    pub fn orientation(&self) -> &'static str {
+        let (w, h) = self.size();
+        if w > h { "landscape" } else { "portrait" }
+    }
+
     /// The screen's size in points as the user sees it (width and height swap at a quarter turn).
     pub fn size(&self) -> (f64, f64) {
         let (w, h) = self.panel;
@@ -143,6 +153,50 @@ fn parse(output: &plist::Value) -> Result<Display> {
     })
 }
 
+/// How long one `getdisplayinfo` may take. It answers in 10 to 50 ms, but now and then not at
+/// all: a call left waiting held the device for the 12 s connection timeout (PITFALLS #27).
+const ASK_TIMEOUT: Duration = Duration::from_millis(1500);
+/// Tries before giving up, each after a silent one on a new connection.
+const ASK_TRIES: u32 = 3;
+
+/// Asks the device for the display in use, on a connection of its own that it keeps between
+/// calls. The interface orientation is only known by asking (PITFALLS #27), so a caller that
+/// follows it polls this.
+pub struct DisplayPoller {
+    adapter: AdapterHandle,
+    rsd: RsdHandshake,
+    link: Option<DeviceInfoLink>,
+}
+
+impl DisplayPoller {
+    /// Takes the tunnel handles by value, like [`crate::Input::open`], so the daemon can spawn
+    /// the polling future.
+    pub fn new(adapter: AdapterHandle, rsd: RsdHandshake) -> Self {
+        Self { adapter, rsd, link: None }
+    }
+
+    /// The display in use now. A call that gets no answer is dropped with its connection and
+    /// tried again on a new one. The final error doesn't say "connection" when the tunnel is fine,
+    /// so the daemon keeps its session.
+    pub async fn ask(&mut self) -> Result<Display> {
+        for _ in 0..ASK_TRIES {
+            let mut link = match self.link.take() {
+                Some(l) => l,
+                None => step("display info connection", DeviceInfoLink::connect_rsd(&mut self.adapter, &mut self.rsd)).await?,
+            };
+            match tokio::time::timeout(ASK_TIMEOUT, link.active_display()).await {
+                Ok(Ok(d)) => {
+                    self.link = Some(link);
+                    return Ok(d);
+                }
+                Ok(Err(e)) => return Err(e),
+                Err(_) => tracing::debug!("display info: no answer within {ASK_TIMEOUT:?}; asking on a new link"),
+            }
+        }
+        bail!("the device did not say which display is in use ({ASK_TRIES} tries); retry")
+    }
+}
+
 impl DeviceInfoLink {
     /// The display in use now.
     pub(crate) async fn active_display(&mut self) -> Result<Display> {
@@ -185,6 +239,23 @@ mod tests {
         let d = display(Rotation::R90);
         // rot90: (u, v) lands on (v, 1 - u).
         assert_eq!(d.report_point((0.0, 0.0)), (0, 65535));
+    }
+
+    #[test]
+    fn orientation_follows_the_turned_size() {
+        assert_eq!(display(Rotation::R0).orientation(), "portrait");
+        assert_eq!(display(Rotation::R180).orientation(), "portrait");
+        assert_eq!(display(Rotation::R90).orientation(), "landscape");
+        assert_eq!(display(Rotation::R270).orientation(), "landscape");
+    }
+
+    #[test]
+    fn a_landscape_corner_lands_on_the_panel_corner_the_video_shows_it_at() {
+        // Seen on an iPhone in landscape (rot270): the screen's top-left corner was at the top
+        // right of the portrait video picture, which is the panel (PITFALLS #27).
+        let d = display(Rotation::R270);
+        assert_eq!(d.report_point((0.0, 0.0)), (65535, 0));
+        assert_eq!(d.report_point((800.0, 400.0)), (0, 65535));
     }
 
     #[test]

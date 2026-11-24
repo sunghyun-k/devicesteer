@@ -16,13 +16,25 @@ interface DeviceInfo {
   error?: string;
 }
 
+/** How the interface is turned from the panel's native orientation (`iphone_use_core::Rotation`). */
+type Rotation = "rot0" | "rot90" | "rot180" | "rot270";
+
+/** How the screen is turned: the daemon's `orientation` event, also part of `config`. */
+interface Orientation {
+  /** The video picture is the panel in its native orientation; this turns it upright. */
+  rotation: Rotation;
+  orientation: "portrait" | "landscape";
+  /** The screen as the user sees it, in points: input points and the overlay use this. */
+  screen: [number, number];
+}
+
 /** The daemon's `config` event: how to set up the decoder and where the screen is. */
-interface Config {
+interface Config extends Orientation {
   codec: string;
   description: string;
   coded: [number, number];
+  /** The panel's pixel size, native orientation: the top-left part of the coded picture. */
   display_px: [number, number];
-  screen: [number, number];
 }
 
 /** An agent session as the daemon reports it (`iphone_use_daemon::control::AgentSession`). */
@@ -221,6 +233,8 @@ const stats = {
   // Round trip of a human touch step: sent from the page until the daemon wrote the report.
   touchMs: [] as number[],
   touchErrors: 0,
+  /** `orientation` events received. */
+  orientations: 0,
   /** The first decoded frame's geometry after each config, and the part of it drawn. */
   frame: undefined as { coded: number[]; visible: number[]; display: number[]; drawn: number[] } | undefined,
 };
@@ -244,13 +258,83 @@ function b64(s: string): Uint8Array {
   return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 }
 
+const quarterTurn = (r: Rotation | undefined) => r === "rot90" || r === "rot270";
+
+/** Sizes the canvas to the screen as the user sees it: the panel's pixels, turned. */
+function sizeCanvas(): void {
+  if (!config) return;
+  const [pw, ph] = config.display_px;
+  const [w, h] = quarterTurn(config.rotation) ? [ph, pw] : [pw, ph];
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+}
+
+/** Maps the panel's pixels (the picture) onto the canvas (the screen as the user sees it), as a
+ * canvas transform. The inverse of `Rotation::turn_share` in `crates/core/src/display.rs`. */
+function panelToCanvas(r: Rotation | undefined, pw: number, ph: number): [number, number, number, number, number, number] {
+  switch (r) {
+    case "rot90":
+      return [0, 1, -1, 0, ph, 0];
+    case "rot180":
+      return [-1, 0, 0, -1, pw, ph];
+    case "rot270":
+      return [0, -1, 1, 0, 0, pw];
+    default:
+      return [1, 0, 0, 1, 0, 0];
+  }
+}
+
+/** The last picture, kept to draw again when the screen turns between frames: the device sends
+ * none while the screen is still. */
+let lastFrame: VideoFrame | undefined;
+
+function drawFrame(frame: VideoFrame): void {
+  if (!config) return;
+  // The screen is the top-left part of the coded picture; the rest is the encoder's padding
+  // to its block size, black. WebKit ignores the source rectangle when it draws a VideoFrame
+  // and squeezes the whole picture, padding included, into the destination: a black band
+  // at the right and bottom (PITFALLS #26). So the whole frame is drawn scaled up so that
+  // the panel fills the canvas, and the canvas clips the padding off. The picture is the panel
+  // in its native orientation whichever way the interface is turned (PITFALLS #27): the
+  // transform turns it upright, and the padding then lies outside the canvas on every side.
+  const [pw, ph] = config.display_px;
+  const [sx, sy, sw, sh] = screenRect(frame);
+  const kx = pw / sw;
+  const ky = ph / sh;
+  ctx.setTransform(...panelToCanvas(config.rotation, pw, ph));
+  ctx.drawImage(frame, -sx * kx, -sy * ky, frame.displayWidth * kx, frame.displayHeight * ky);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+/** The screen turned: the canvas takes the new shape, the last picture is drawn again turned,
+ * and the window follows if it was shaped for the other orientation. */
+function onOrientation(o: Orientation): void {
+  stats.orientations++;
+  if (!config) return;
+  const turned = config.rotation !== o.rotation;
+  config = { ...config, rotation: o.rotation, orientation: o.orientation, screen: o.screen };
+  if (!turned) return;
+  sizeCanvas();
+  if (lastFrame) drawFrame(lastFrame);
+  // Points of the old orientation mean nothing on the new screen.
+  hideCursor();
+  for (const d of fingers.values()) d.remove();
+  fingers.clear();
+  layout();
+  fitWindow();
+}
+
 async function configure(cfg: Config): Promise<void> {
   const gen = ++configGen;
+  // The window starts tall: reshape it for a screen that turned, or that is landscape on arrival.
+  const refit = config ? config.rotation !== cfg.rotation : cfg.orientation === "landscape";
   config = cfg;
-  canvas.width = cfg.display_px[0];
-  canvas.height = cfg.display_px[1];
+  sizeCanvas();
   stats.frame = undefined;
   layout();
+  if (refit) fitWindow();
   // A viewer joining a running stream gets the last config and then, once the stream restarts
   // for a keyframe (PITFALLS #13), a second one right before that keyframe. Same parameter sets:
   // the decoder in use takes the new keyframe. Different: the old decoder is dropped now, not
@@ -294,16 +378,9 @@ async function configure(cfg: Config): Promise<void> {
         stats.decodeMs.push(performance.now() - t);
         received.delete(frame.timestamp);
       }
-      // The screen is the top-left part of the coded picture; the rest is the encoder's padding
-      // to its block size, black. WebKit ignores the source rectangle when it draws a VideoFrame
-      // and squeezes the whole picture, padding included, into the destination: a black band
-      // at the right and bottom (PITFALLS #26). So the whole frame is drawn scaled up so that
-      // the screen fills the canvas, and the canvas clips the padding off.
-      const [sx, sy, sw, sh] = screenRect(frame);
-      const kx = canvas.width / sw;
-      const ky = canvas.height / sh;
-      ctx.drawImage(frame, -sx * kx, -sy * ky, frame.displayWidth * kx, frame.displayHeight * ky);
-      frame.close();
+      drawFrame(frame);
+      lastFrame?.close();
+      lastFrame = frame;
       if (stage.dataset.state !== "live") stageState("live");
       stats.decoded++;
       stats.fpsWindow.push(performance.now());
@@ -326,14 +403,15 @@ async function configure(cfg: Config): Promise<void> {
  * frame, in the frame's display size, which `drawImage` draws and which covers its visible rect
  * (the decoder may keep the padding in it, as WebKit's does, or scale the display size). */
 function screenRect(frame: VideoFrame): [number, number, number, number] {
+  const [pw, ph] = config?.display_px ?? [canvas.width, canvas.height];
   const v = frame.visibleRect;
-  if (!v || !v.width || !v.height) return [0, 0, canvas.width, canvas.height];
+  if (!v || !v.width || !v.height) return [0, 0, pw, ph];
   const kx = frame.displayWidth / v.width;
   const ky = frame.displayHeight / v.height;
   const x0 = Math.max(0, v.x);
   const y0 = Math.max(0, v.y);
-  const x1 = Math.min(canvas.width, v.x + v.width);
-  const y1 = Math.min(canvas.height, v.y + v.height);
+  const x1 = Math.min(pw, v.x + v.width);
+  const y1 = Math.min(ph, v.y + v.height);
   const rect: [number, number, number, number] = [(x0 - v.x) * kx, (y0 - v.y) * ky, (x1 - x0) * kx, (y1 - y0) * ky];
   if (!stats.frame) {
     stats.frame = {
@@ -704,6 +782,9 @@ function onMessage(buf: Uint8Array): void {
       case "settings":
         showSettings(ev as Partial<Settings>);
         break;
+      case "orientation":
+        onOrientation(ev as Orientation);
+        break;
     }
   } else if (kind === 1) {
     const hl = view.getUint32(5);
@@ -729,6 +810,23 @@ function layout(): void {
   placeCursor();
 }
 new ResizeObserver(layout).observe(stage);
+
+/** Reshapes the window for the screen's orientation when the stage has the other shape: a
+ * landscape screen in a tall window would be a thin strip. The screen keeps about the size it had
+ * on its long side, within the display the window is on. A window the person shaped to fit stays. */
+function fitWindow(): void {
+  if (!config || viewer.hidden) return;
+  const s = stage.getBoundingClientRect();
+  const [w, h] = config.screen;
+  if (!s.width || !s.height || w > h === s.width > s.height) return;
+  const long = Math.max(s.width, s.height);
+  const target: [number, number] = w > h ? [long, (long * h) / w] : [(long * w) / h, long];
+  const chrome = [window.innerWidth - s.width, window.innerHeight - s.height];
+  const room = [screen.availWidth - 40 - chrome[0], screen.availHeight - 60 - chrome[1]];
+  const k = Math.min(1, room[0] / target[0], room[1] / target[1]);
+  const size = { width: Math.round(chrome[0] + target[0] * k), height: Math.round(chrome[1] + target[1] * k) };
+  invoke("fit_window", size).catch((e) => (stats.lastError = String(e)));
+}
 
 // Human input is a live touch: down on pointerdown, the pointer's path as it moves (one step per
 // pointer event, with the event's time), up on release. The daemon replays the path at a steady
@@ -1033,6 +1131,9 @@ function report(): void {
       canvas: [canvas.width, canvas.height],
       screen: config?.screen ?? null,
       frame: stats.frame ?? null,
+      rotation: config?.rotation ?? null,
+      orientations: stats.orientations,
+      window: [window.innerWidth, window.innerHeight],
       visibility: document.visibilityState,
       timelineMs: document.timeline.currentTime,
       session_slot: sessionIdle.hidden ? "panel" : "idle",
@@ -1092,6 +1193,8 @@ $<HTMLButtonElement>("#back").addEventListener("click", async () => {
   received.clear();
   waitingForKey = true;
   config = undefined;
+  lastFrame?.close();
+  lastFrame = undefined;
   settings = {};
   onControl({ session: null, human_touching: false, agent_stopped: false });
   hideCursor();

@@ -19,8 +19,8 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use iphone_use_core::{
-    Button, Controller, DeviceSettings, Frame, FrameStream, MediaMode, Motion, RecordSummary, Recorder, Resampler,
-    Session, Setting, Toggle, TouchPhase,
+    Button, Controller, DeviceSettings, Display, DisplayPoller, Frame, FrameStream, MediaMode, Motion, RecordSummary,
+    Recorder, Resampler, Session, Setting, Toggle, TouchPhase,
     ax::{BuildOptions, Screen},
 };
 use serde::Deserialize;
@@ -54,6 +54,9 @@ const TOUCH_TICK: Duration = Duration::from_micros(8333);
 /// towards has arrived: the viewer's moves come ~10 to 17 ms apart. The resampler raises it for
 /// clients that send less often.
 const TOUCH_MIN_DELAY_MS: f64 = 20.0;
+/// How often the display is asked for while a client is connected: the interface orientation is
+/// only known by asking (PITFALLS #27). A call on the kept connection takes ~10 ms.
+const DISPLAY_POLL: Duration = Duration::from_millis(500);
 /// How long agent requests wait for a human's touch to end before input is refused.
 const AGENT_WAITS_FOR_TOUCH: Duration = Duration::from_secs(3);
 /// The longest `label` an input takes: it is shown next to the touch in the viewer, so it is a
@@ -87,9 +90,20 @@ struct Touch {
     path: Resampler,
 }
 
+/// A task that ends when this is dropped.
+struct TaskGuard(tokio::task::JoinHandle<()>);
+
+impl Drop for TaskGuard {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 #[derive(Default)]
 struct Device {
     controller: Option<Controller>,
+    /// Polls the controller's display while it is open.
+    display_watch: Option<TaskGuard>,
     /// The frame stream of the current media session, by that session's id.
     frames: Option<(String, FrameStream, tokio::task::JoinHandle<()>)>,
     recording: Option<Recording>,
@@ -111,6 +125,8 @@ pub struct Daemon {
     frames: broadcast::Sender<Frame>,
     /// The last `config` event, for clients that subscribe later.
     config: StdMutex<Option<Value>>,
+    /// The display as last read: its rotation turns the video and the touch points.
+    display: StdMutex<Option<Display>>,
     frame_subscribers: AtomicUsize,
     clients: AtomicUsize,
     last_client: StdMutex<Instant>,
@@ -152,6 +168,14 @@ fn point(v: &Value) -> Result<(f64, f64)> {
     }
 }
 
+/// How the screen is turned, for events: `rotation` (from the panel's native orientation: the
+/// video picture and the touch reports are in that), `orientation` and `screen`, the size in
+/// points as the user sees it, which input points and `ui` frames use.
+fn orientation_json(d: &Display) -> Value {
+    let (w, h) = d.size();
+    json!({ "rotation": d.rotation, "orientation": d.orientation(), "screen": [w, h] })
+}
+
 /// An input's optional `label`: a few words saying what it does, shown next to it in the viewer.
 fn label(a: &Value) -> Result<Option<String>> {
     let Some(l) = a.get("label").filter(|v| !v.is_null()) else { return Ok(None) };
@@ -173,6 +197,7 @@ impl Daemon {
             events,
             frames,
             config: StdMutex::new(None),
+            display: StdMutex::new(None),
             frame_subscribers: AtomicUsize::new(0),
             clients: AtomicUsize::new(0),
             last_client: StdMutex::new(Instant::now()),
@@ -195,19 +220,72 @@ impl Daemon {
         self.frame_subscribers.load(Ordering::Relaxed) > 0 || dev.recording.is_some()
     }
 
-    async fn controller<'a>(&self, dev: &'a mut Device) -> Result<&'a mut Controller> {
+    async fn controller<'a>(self: &Arc<Self>, dev: &'a mut Device) -> Result<&'a mut Controller> {
         if dev.controller.is_none() {
             let session = Session::open(Some(&self.udid)).await?;
             let mode = if self.want_video(dev) { MediaMode::Video } else { MediaMode::InputOnly };
+            let poller = DisplayPoller::new(session.adapter().clone(), session.rsd().clone());
+            dev.display_watch = Some(TaskGuard(tokio::task::spawn_local(self.clone().watch_display(poller))));
             dev.controller = Some(Controller::new(session, mode));
         }
         Ok(dev.controller.as_mut().expect("opened above"))
+    }
+
+    /// Follows the interface orientation while clients are connected. The video and the touch
+    /// reports are in the panel's orientation and the device doesn't announce a turn (PITFALLS
+    /// #27), so the display is asked for again and again, on a connection of its own and without
+    /// the device lock: a live touch or a reading isn't held up by it.
+    async fn watch_display(self: Arc<Self>, mut poller: DisplayPoller) {
+        loop {
+            tokio::time::sleep(DISPLAY_POLL).await;
+            if self.clients.load(Ordering::Relaxed) == 0 {
+                continue;
+            }
+            match poller.ask().await {
+                Ok(d) => self.display_seen(d).await,
+                Err(e) => tracing::debug!("display poll: {e:#}"),
+            }
+        }
+    }
+
+    /// Takes a display reading: on a change, the controller places touches on the new screen, the
+    /// cached `config` says how the video is turned, and subscribers get an `orientation` event.
+    async fn display_seen(&self, d: Display) {
+        if self.note_display(&d)
+            && let Some(c) = self.device.lock().await.controller.as_mut()
+        {
+            c.set_display(d);
+        }
+    }
+
+    /// The part of [`Self::display_seen`] that needs no device lock. Returns whether it changed.
+    fn note_display(&self, d: &Display) -> bool {
+        {
+            let mut cur = self.display.lock().unwrap();
+            if cur.as_ref() == Some(d) {
+                return false;
+            }
+            *cur = Some(d.clone());
+        }
+        tracing::info!("display: {:?}, screen {:?}", d.rotation, d.size());
+        let ev = orientation_json(d);
+        if let Some(config) = self.config.lock().unwrap().as_mut()
+            && let (Some(c), Some(o)) = (config.as_object_mut(), ev.as_object())
+        {
+            c.extend(o.clone());
+            c.insert("event".into(), json!("config"));
+        }
+        let mut ev = ev;
+        ev["event"] = json!("orientation");
+        self.emit(ev);
+        true
     }
 
     /// Drops the cached session after a connection error.
     async fn forget(&self, dev: &mut Device, why: &anyhow::Error) {
         tracing::warn!("dropping the device session: {why:#}");
         dev.frames = None;
+        dev.display_watch = None;
         if let Some(mut c) = dev.controller.take() {
             let _ = tokio::time::timeout(Duration::from_secs(3), c.close()).await;
         }
@@ -228,6 +306,7 @@ impl Daemon {
         let c = self.controller(dev).await?;
         c.set_mode(MediaMode::Video).await?;
         let display = c.display().await?;
+        self.display.lock().unwrap().get_or_insert_with(|| display.clone());
         let media = c.ensure_media().await?;
         let id = media.session_id();
         if existing.as_deref() == Some(id.as_str()) {
@@ -237,7 +316,6 @@ impl Daemon {
         let mut rx = stream.subscribe();
         let me = self.clone();
         let display_px = ((display.panel.0 * display.scale).round(), (display.panel.1 * display.scale).round());
-        let screen = display.size();
         let forwarder = tokio::spawn(async move {
             let mut last_params = None;
             let mut seq = 0u64;
@@ -254,15 +332,20 @@ impl Daemon {
                     && last_params.as_ref() != Some(p)
                 {
                     last_params = Some(p.clone());
-                    let ev = json!({
+                    let mut ev = json!({
                         "event": "config",
                         "codec": p.codec(),
                         "description": base64::engine::general_purpose::STANDARD.encode(p.hvcc()),
                         "coded": [p.width, p.height],
-                        // The screen is the top-left part of the coded picture (PITFALLS #11).
+                        // The panel is the top-left part of the coded picture (PITFALLS #11), in
+                        // its native orientation whichever way the interface is turned (#27).
                         "display_px": [display_px.0, display_px.1],
-                        "screen": [screen.0, screen.1],
                     });
+                    // How to turn the picture, and the screen it then shows (`screen`, points).
+                    let turned = orientation_json(&me.display.lock().unwrap().clone().unwrap_or_else(|| display.clone()));
+                    if let (Some(e), Some(t)) = (ev.as_object_mut(), turned.as_object()) {
+                        e.extend(t.clone());
+                    }
                     *me.config.lock().unwrap() = Some(ev.clone());
                     me.emit(ev);
                 }
@@ -616,7 +699,9 @@ impl Daemon {
                 let c = self.controller(dev).await?;
                 let began = Instant::now();
                 let screen: Screen = c.ui(opts, full).await?;
+                let orientation = c.display().await?.orientation();
                 let mut v = serde_json::to_value(&screen)?;
+                v["orientation"] = json!(orientation);
                 v["ms"] = json!(began.elapsed().as_millis() as u64);
                 Ok(v)
             }
@@ -667,7 +752,10 @@ impl Daemon {
             "display" => {
                 let c = self.controller(dev).await?;
                 let d = c.refresh_display().await?;
-                Ok(json!({ "display": d, "screen": d.size() }))
+                let r = json!({ "display": d, "screen": d.size(), "orientation": d.orientation() });
+                // The controller has it already; this is called with the device lock held.
+                self.note_display(&d);
+                Ok(r)
             }
             "record_start" => {
                 if dev.recording.is_some() {
@@ -675,6 +763,10 @@ impl Daemon {
                 }
                 let path = PathBuf::from(a.get("path").and_then(|v| v.as_str()).context("record_start needs a path")?);
                 let mut recorder = Recorder::create(&path)?;
+                // Asked now: the poll only runs while clients are connected (PITFALLS #27).
+                let d = self.controller(dev).await?.refresh_display().await?;
+                self.note_display(&d);
+                recorder.set_rotation(d.rotation);
                 let mut rx = self.frames.subscribe();
                 let (stop_tx, mut stop_rx) = oneshot::channel();
                 let (done_tx, done_rx) = oneshot::channel();
@@ -727,6 +819,7 @@ impl Daemon {
                     "clients": self.clients.load(Ordering::Relaxed),
                     "viewers": self.frame_subscribers.load(Ordering::Relaxed),
                     "touch": dev.touch.as_ref().map(|t| json!({ "source": t.source, "point": [t.at.0, t.at.1], "idle_ms": t.last.elapsed().as_millis() as u64 })),
+                    "display": self.display.lock().unwrap().as_ref().map(orientation_json),
                 }))
             }
             other => bail!("unknown command `{other}`"),
@@ -987,6 +1080,7 @@ impl Daemon {
             let _ = rec.done.await;
         }
         dev.frames = None;
+        dev.display_watch = None;
         if let Some(mut c) = dev.controller.take() {
             let _ = tokio::time::timeout(Duration::from_secs(6), c.close()).await;
         }

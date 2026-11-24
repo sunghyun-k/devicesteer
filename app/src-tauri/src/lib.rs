@@ -87,11 +87,32 @@ fn initial_udid() -> Option<String> {
     std::env::var("IPHONE_USE_VIEWER_UDID").ok().filter(|u| !u.is_empty())
 }
 
+/// Resizes the window (logical pixels, the page's own size) when the device's screen turns, and
+/// moves it back onto its monitor if the new size would hang off an edge.
+#[tauri::command]
+fn fit_window(window: tauri::WebviewWindow, width: f64, height: f64) -> Result<(), String> {
+    let e = |e: tauri::Error| e.to_string();
+    window.set_size(tauri::LogicalSize::new(width, height)).map_err(e)?;
+    let (Some(monitor), Ok(pos), Ok(size)) = (window.current_monitor().map_err(e)?, window.outer_position(), window.outer_size())
+    else {
+        return Ok(());
+    };
+    let area = monitor.work_area();
+    let right = area.position.x + area.size.width as i32;
+    let bottom = area.position.y + area.size.height as i32;
+    let x = pos.x.min(right - size.width as i32).max(area.position.x);
+    let y = pos.y.min(bottom - size.height as i32).max(area.position.y);
+    if (x, y) != (pos.x, pos.y) {
+        window.set_position(tauri::PhysicalPosition::new(x, y)).map_err(e)?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(Viewer::default())
-        .invoke_handler(tauri::generate_handler![list_devices, attach, detach, send, report, initial_udid])
+        .invoke_handler(tauri::generate_handler![list_devices, attach, detach, send, report, initial_udid, fit_window])
         .run(tauri::generate_context!())
         .expect("error while running the iphone-use app");
 }

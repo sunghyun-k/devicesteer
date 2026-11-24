@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::{
     devices::{Transport, mux_addr, mux_devices, transport_of},
-    display::{DeviceInfoLink, Display},
+    display::{Display, DisplayPoller},
     step,
 };
 
@@ -132,8 +132,7 @@ impl Session {
 
     /// The display in use: size in points, rotation, and the id its video streams by.
     pub async fn display(&mut self) -> Result<Display> {
-        let mut link: DeviceInfoLink = self.connect().await?;
-        step("display info", link.active_display()).await
+        DisplayPoller::new(self.adapter.clone(), self.rsd.clone()).ask().await
     }
 
     /// Launches an app by bundle id (bringing it to the front if it runs). Returns its pid.
