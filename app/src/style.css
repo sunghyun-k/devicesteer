@@ -182,6 +182,36 @@ h1 { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.01em; margin:
 #device-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #device-meta { color: var(--fg-3); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Record: a red dot and "Record"; while a recording runs (from here, the CLI or an agent) the dot
+   pulses and the label counts the time. Hovering a running one turns the dot into a stop square. */
+.record-btn {
+  display: inline-flex; align-items: center; gap: 7px; flex: none; height: 30px; padding: 0 10px 0 9px;
+  border: 1px solid transparent; border-radius: var(--r-pill); background: transparent; color: var(--fg-2);
+  font-size: var(--fs-sm); font-weight: 500; font-variant-numeric: tabular-nums; cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.record-btn:hover { background: var(--hover); color: var(--fg); }
+.record-btn:disabled { opacity: 0.5; cursor: default; }
+.rec-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); transition: border-radius 0.12s var(--ease); }
+.record-btn.recording {
+  min-width: 70px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.record-btn.recording .rec-dot { animation: rec-pulse 1.2s ease-in-out infinite; }
+.record-btn.recording:hover .rec-dot { border-radius: 2px; animation: none; }
+@keyframes rec-pulse { 50% { opacity: 0.3; } }
+
+/* Where the last recording went. */
+#record-note {
+  display: flex; align-items: center; gap: 10px; flex: none; margin: var(--s-2) var(--s-3) 0;
+  padding: 6px 6px 6px var(--s-3); border-radius: var(--r-lg); font-size: var(--fs-sm);
+  background: var(--surface); border: 1px solid var(--border-strong);
+}
+#record-note .rec-dot { background: var(--fg-3); }
+#record-note.error .rec-dot { background: var(--danger); }
+#record-note p { flex: 1; min-width: 0; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#record-note strong { color: var(--fg); font-weight: 600; }
+
 #vo-warning {
   display: flex; align-items: center; gap: 10px; flex: none; margin: var(--s-2) var(--s-3) 0;
   padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3); border-radius: var(--r-lg); font-size: var(--fs-sm);

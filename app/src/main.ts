@@ -67,6 +67,17 @@ interface InputEvent {
   label?: string | null;
 }
 
+/** The daemon's `recording` event: a recording started or stopped, from any client. */
+interface RecordingEvent {
+  recording: boolean;
+  path: string;
+  /** While it runs: seconds since it started. */
+  seconds?: number;
+  /** When it stopped (`iphone_use_core::RecordSummary`), or why it failed. */
+  summary?: { seconds: number; bytes: number; frames: number };
+  error?: string;
+}
+
 /** Mirrors `iphone_use_core::DeviceSettings`, plus the location the daemon simulated. `null`:
  * unknown or unsupported (named in `unsupported`). A `settings` event can carry only some keys. */
 interface Settings {
@@ -785,6 +796,9 @@ function onMessage(buf: Uint8Array): void {
       case "orientation":
         onOrientation(ev as Orientation);
         break;
+      case "recording":
+        onRecording(ev as RecordingEvent);
+        break;
     }
   } else if (kind === 1) {
     const hl = view.getUint32(5);
@@ -937,6 +951,108 @@ document.addEventListener("visibilitychange", () => {
 });
 
 $<HTMLButtonElement>("#home").addEventListener("click", () => void send("button", { name: "home" }));
+
+// ---------- recording ----------
+//
+// The daemon records (one recording per device); this button starts and stops it, and the
+// indicator follows the daemon's `recording` events, so a recording the CLI or an agent started
+// shows here too and can be stopped here.
+
+const recordBtn = $<HTMLButtonElement>("#record");
+const recordLabel = $<HTMLSpanElement>("#record-label");
+const recordNote = $<HTMLDivElement>("#record-note");
+const recordText = $<HTMLParagraphElement>("#record-text");
+const recordReveal = $<HTMLButtonElement>("#record-reveal");
+/** The running recording, with its start on the page's clock. */
+let recording: { path: string; since: number } | undefined;
+let recordTimer: number | undefined;
+let recordedPath: string | undefined;
+
+function clock(seconds: number): string {
+  const s = Math.floor(seconds);
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+function showRecording(): void {
+  window.clearInterval(recordTimer);
+  recordBtn.classList.toggle("recording", !!recording);
+  recordBtn.setAttribute("aria-pressed", String(!!recording));
+  if (!recording) {
+    recordLabel.textContent = "Record";
+    recordBtn.title = "Record the screen";
+    return;
+  }
+  const r = recording;
+  const tick = () => (recordLabel.textContent = clock((performance.now() - r.since) / 1000));
+  tick();
+  recordTimer = window.setInterval(tick, 500);
+  recordBtn.title = `Stop recording (${fileName(r.path)})`;
+}
+
+/** The note under the toolbar: where the recording went, or why it failed. */
+function recordMessage(text: string, path?: string, error = false): void {
+  recordedPath = path;
+  recordNote.hidden = false;
+  recordNote.classList.toggle("error", error);
+  recordText.replaceChildren();
+  if (path) {
+    const name = document.createElement("strong");
+    name.textContent = fileName(path);
+    recordText.append(`${text} `, name);
+    recordText.title = path;
+  } else {
+    recordText.textContent = text;
+    recordText.title = text;
+  }
+  recordReveal.hidden = !path;
+}
+
+function onRecording(e: RecordingEvent): void {
+  if (e.recording) {
+    recording = { path: e.path, since: performance.now() - (e.seconds ?? 0) * 1000 };
+    recordNote.hidden = true;
+  } else {
+    recording = undefined;
+    if (e.error) recordMessage(`Recording failed: ${e.error}`, undefined, true);
+    else recordMessage(`Saved ${e.summary ? clock(e.summary.seconds) : ""} to`, e.path);
+  }
+  showRecording();
+}
+
+/** A local date and time for the file name, such as 2026-11-24 18.52.07. */
+function stamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
+}
+
+recordBtn.addEventListener("click", async () => {
+  recordBtn.disabled = true;
+  try {
+    if (recording) {
+      await invoke("send", { cmd: "record_stop", args: {} });
+    } else {
+      const path = await invoke<string>("recording_path", { stamp: stamp() });
+      await invoke("send", { cmd: "record_start", args: { path } });
+    }
+  } catch (e) {
+    recordMessage(String(e), undefined, true);
+  } finally {
+    recordBtn.disabled = false;
+  }
+});
+recordReveal.textContent = navigator.userAgent.includes("Windows") ? "Show in Explorer" : "Show in Finder";
+recordReveal.addEventListener("click", () => {
+  if (recordedPath) invoke("reveal", { path: recordedPath }).catch((e) => recordMessage(String(e), undefined, true));
+});
+$<HTMLButtonElement>("#record-dismiss").addEventListener("click", () => (recordNote.hidden = true));
 sessionPrimary.addEventListener("click", () => {
   if (sessionPrimary.dataset.action) void send("control", { action: sessionPrimary.dataset.action });
 });
@@ -1137,6 +1253,8 @@ function report(): void {
       visibility: document.visibilityState,
       timelineMs: document.timeline.currentTime,
       session_slot: sessionIdle.hidden ? "panel" : "idle",
+      recording: recording ? { file: fileName(recording.path), label: recordLabel.textContent } : null,
+      recordNote: recordNote.hidden ? null : recordText.textContent,
     },
   });
 }
@@ -1192,6 +1310,9 @@ $<HTMLButtonElement>("#back").addEventListener("click", async () => {
   pending = [];
   received.clear();
   waitingForKey = true;
+  recording = undefined;
+  showRecording();
+  recordNote.hidden = true;
   config = undefined;
   lastFrame?.close();
   lastFrame = undefined;

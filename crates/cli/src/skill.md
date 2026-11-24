@@ -173,7 +173,8 @@ iphone-use record start -o /absolute/path/screen.mp4
 iphone-use record stop                                # prints the summary
 ```
 
-Record only what the task needs; a recording can contain private data. Don't keep or share it
+The viewer shows that a recording runs, and the person watching can stop it there; `record stop`
+then says no recording runs. Record only what the task needs; a recording can contain private data. Don't keep or share it
 beyond the task.
 
 ## When you finish

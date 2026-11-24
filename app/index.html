@@ -49,6 +49,10 @@
           <span id="device-meta"></span>
         </div>
         <span class="spacer"></span>
+        <button id="record" class="record-btn" type="button" aria-pressed="false" title="Record the screen">
+          <span class="rec-dot" aria-hidden="true"></span>
+          <span id="record-label">Record</span>
+        </button>
         <button id="home" class="icon-btn" type="button" aria-label="Home" title="Home button">
           <svg class="icon"><use href="#i-home" /></svg>
         </button>
@@ -60,6 +64,14 @@
         <svg class="icon"><use href="#i-alert" /></svg>
         <p><strong>VoiceOver is on.</strong> Taps select instead of activating, so agent input won't do what it expects.</p>
         <button id="vo-off" class="btn small" type="button">Turn off VoiceOver</button>
+      </div>
+      <div id="record-note" role="status" hidden>
+        <span class="rec-dot" aria-hidden="true"></span>
+        <p id="record-text"></p>
+        <button id="record-reveal" class="btn small" type="button">Show in Finder</button>
+        <button id="record-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss">
+          <svg class="icon"><use href="#i-close" /></svg>
+        </button>
       </div>
       <div id="body">
         <div id="stage" data-state="connecting">

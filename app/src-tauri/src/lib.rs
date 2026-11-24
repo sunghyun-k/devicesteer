@@ -87,6 +87,34 @@ fn initial_udid() -> Option<String> {
     std::env::var("IPHONE_USE_VIEWER_UDID").ok().filter(|u| !u.is_empty())
 }
 
+/// Where a recording started from the viewer goes: the user's videos folder (Movies on macOS),
+/// named by `stamp`, the page's local date and time.
+#[tauri::command]
+fn recording_path(app: tauri::AppHandle, stamp: String) -> Result<String, String> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .video_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| format!("no folder for recordings: {e}"))?;
+    let name: String = stamp.chars().filter(|c| c.is_ascii_alphanumeric() || " -.".contains(*c)).collect();
+    Ok(dir.join(format!("iphone-use {name}.mp4")).to_string_lossy().into_owned())
+}
+
+/// Shows a file in Finder (or Explorer), selected.
+#[tauri::command]
+fn reveal(path: String) -> Result<(), String> {
+    let spawned = if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg("-R").arg(&path).spawn()
+    } else if cfg!(windows) {
+        std::process::Command::new("explorer").arg(format!("/select,{path}")).spawn()
+    } else {
+        let dir = std::path::Path::new(&path).parent().map(|d| d.to_path_buf()).unwrap_or_default();
+        std::process::Command::new("xdg-open").arg(dir).spawn()
+    };
+    spawned.map(|_| ()).map_err(|e| format!("could not show {path}: {e}"))
+}
+
 /// Resizes the window (logical pixels, the page's own size) when the device's screen turns, and
 /// moves it back onto its monitor if the new size would hang off an edge.
 #[tauri::command]
@@ -112,7 +140,7 @@ fn fit_window(window: tauri::WebviewWindow, width: f64, height: f64) -> Result<(
 pub fn run() {
     tauri::Builder::default()
         .manage(Viewer::default())
-        .invoke_handler(tauri::generate_handler![list_devices, attach, detach, send, report, initial_udid, fit_window])
+        .invoke_handler(tauri::generate_handler![list_devices, attach, detach, send, report, initial_udid, fit_window, recording_path, reveal])
         .run(tauri::generate_context!())
         .expect("error while running the iphone-use app");
 }

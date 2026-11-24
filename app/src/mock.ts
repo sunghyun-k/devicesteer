@@ -49,6 +49,7 @@ const state = {
   },
   settingsFail: false,
   rotation: (params.get("rotation") ?? "rot0") as Rotation,
+  recording: undefined as { path: string; since: number } | undefined,
   lastReport: undefined as unknown,
   fitWindow: undefined as unknown,
 };
@@ -249,6 +250,10 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     case "report":
       state.lastReport = args.stats;
       return null;
+    case "recording_path":
+      return `/Users/me/Movies/iphone-use ${args.stamp}.mp4`;
+    case "reveal":
+      return null;
     case "fit_window":
       // A browser tab can't resize its window; the request is kept for checks.
       state.fitWindow = args;
@@ -284,6 +289,12 @@ async function send(cmd: string, a: Record<string, unknown>): Promise<unknown> {
     }
     case "button":
       return {};
+    case "record_start":
+      await sleep(200);
+      return mock.recordStart(String(a.path));
+    case "record_stop":
+      await sleep(300);
+      return mock.recordStop();
     case "control": {
       const s = state.session;
       if (!s) throw "no agent session runs";
@@ -352,6 +363,22 @@ const mock = {
     drawScreen();
     event({ event: "orientation", ...orientation() });
   },
+  /** A recording started here or, with no path, by the CLI. */
+  recordStart(path = "/Users/me/Desktop/screen.mp4") {
+    if (state.recording) throw "a recording already runs; end it with `record stop` first";
+    state.recording = { path, since: performance.now() };
+    event({ event: "recording", recording: true, path, seconds: 0 });
+    return { recording: path };
+  },
+  recordStop(fail = false) {
+    const r = state.recording;
+    if (!r) throw "no recording runs; start one with `record start`";
+    state.recording = undefined;
+    const seconds = (performance.now() - r.since) / 1000;
+    const summary = { path: r.path, seconds, bytes: 1_200_000, frames: Math.round(seconds * 30) };
+    event({ event: "recording", recording: false, path: r.path, ...(fail ? { error: "no keyframe arrived" } : { summary }) });
+    return summary;
+  },
   settingsFail(on = true) {
     state.settingsFail = on;
   },
@@ -387,6 +414,7 @@ const KEYS: [string, string, () => void][] = [
   ["u", "Unsupported settings", () => mock.unsupported()],
   ["f", "Settings fail", () => mock.settingsFail(!state.settingsFail)],
   ["r", "Turn the screen", () => mock.rotate()],
+  ["c", "CLI record start/stop", () => (state.recording ? mock.recordStop() : mock.recordStart())],
 ];
 
 function panel(): void {

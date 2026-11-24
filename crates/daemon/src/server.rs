@@ -4,8 +4,9 @@
 //! Requests are JSON `{"id", "cmd", "args", "source"}`; answers `{"id", "ok", "result"|"error"}`.
 //! An agent's request may name its session (`"session": "<id>"`, see `control`). A client that
 //! sends `subscribe` also gets events: `control` (the agent session and who drives), `input`
-//! (every gesture with its points and label, so the viewer can draw it), `config` (decoder setup)
-//! and video frames.
+//! (every gesture with its points and label, so the viewer can draw it), `config` (decoder setup),
+//! `orientation` (the screen turned), `recording` (a recording started or stopped, from any
+//! client), `settings` and video frames.
 
 use std::{
     path::PathBuf,
@@ -127,6 +128,8 @@ pub struct Daemon {
     config: StdMutex<Option<Value>>,
     /// The display as last read: its rotation turns the video and the touch points.
     display: StdMutex<Option<Display>>,
+    /// The running recording's path and start, for clients that subscribe while it runs.
+    recording: StdMutex<Option<(PathBuf, Instant)>>,
     frame_subscribers: AtomicUsize,
     clients: AtomicUsize,
     last_client: StdMutex<Instant>,
@@ -198,6 +201,7 @@ impl Daemon {
             frames,
             config: StdMutex::new(None),
             display: StdMutex::new(None),
+            recording: StdMutex::new(None),
             frame_subscribers: AtomicUsize::new(0),
             clients: AtomicUsize::new(0),
             last_client: StdMutex::new(Instant::now()),
@@ -209,6 +213,13 @@ impl Daemon {
 
     fn emit(&self, v: Value) {
         let _ = self.events.send(Arc::new(Message::Json(v)));
+    }
+
+    /// The `recording` event for the recording running now, if any.
+    fn recording_event(&self) -> Option<Value> {
+        let r = self.recording.lock().unwrap();
+        let (path, started) = r.as_ref()?;
+        Some(json!({ "event": "recording", "recording": true, "path": path, "seconds": started.elapsed().as_secs_f64() }))
     }
 
     fn emit_control(&self) {
@@ -794,12 +805,29 @@ impl Daemon {
                     };
                     let _ = done_tx.send(r.and_then(|()| recorder.finish(last.elapsed())));
                 });
+                *self.recording.lock().unwrap() = Some((path.clone(), Instant::now()));
+                // Every client shows it, whoever started it (the CLI, an agent or the viewer).
+                if let Some(ev) = self.recording_event() {
+                    self.emit(ev);
+                }
                 Ok(json!({ "recording": path }))
             }
             "record_stop" => {
                 let rec = dev.recording.take().context("no recording runs; start one with `record start`")?;
+                *self.recording.lock().unwrap() = None;
                 let _ = rec.stop.send(());
-                let summary = rec.done.await.map_err(|_| anyhow!("the recorder task ended without a summary"))??;
+                let summary = rec
+                    .done
+                    .await
+                    .map_err(|_| anyhow!("the recorder task ended without a summary"))
+                    .and_then(|r| r);
+                let mut ev = json!({ "event": "recording", "recording": false, "path": rec.path });
+                match &summary {
+                    Ok(s) => ev["summary"] = serde_json::to_value(s)?,
+                    Err(e) => ev["error"] = json!(format!("{e:#}")),
+                }
+                self.emit(ev);
+                let summary = summary?;
                 self.sync_video(dev).await?;
                 Ok(serde_json::to_value(summary)?)
             }
@@ -1001,6 +1029,9 @@ impl Daemon {
                     subscription = Some((task, frames));
                     let ev = self.control.lock().unwrap().event();
                     let _ = out_tx.send(Arc::new(Message::Json(ev))).await;
+                    if let Some(ev) = self.recording_event() {
+                        let _ = out_tx.send(Arc::new(Message::Json(ev))).await;
+                    }
                     if frames {
                         let first = self.frame_subscribers.fetch_add(1, Ordering::Relaxed) == 0;
                         let mut dev = self.device.lock().await;
