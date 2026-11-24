@@ -22,8 +22,8 @@
       <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" /><path d="M10 9v4.5M10 6.4v.1" /></symbol>
       <symbol id="i-home" viewBox="0 0 20 20"><g fill="currentColor" stroke="none"><circle cx="5.5" cy="5.5" r="1.45" /><circle cx="10" cy="5.5" r="1.45" /><circle cx="14.5" cy="5.5" r="1.45" /><circle cx="5.5" cy="10" r="1.45" /><circle cx="10" cy="10" r="1.45" /><circle cx="14.5" cy="10" r="1.45" /><circle cx="5.5" cy="14.5" r="1.45" /><circle cx="10" cy="14.5" r="1.45" /><circle cx="14.5" cy="14.5" r="1.45" /></g></symbol>
       <symbol id="i-camera" viewBox="0 0 20 20"><path d="M3 7V5.5A2.5 2.5 0 0 1 5.5 3H7M13 3h1.5A2.5 2.5 0 0 1 17 5.5V7M17 13v1.5a2.5 2.5 0 0 1-2.5 2.5H13M7 17H5.5A2.5 2.5 0 0 1 3 14.5V13" /><circle cx="10" cy="10.4" r="2.3" /><path d="M7.9 6.9h4.2" /></symbol>
-      <symbol id="i-record" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" /><circle cx="10" cy="10" r="3.4" fill="currentColor" stroke="none" /></symbol>
-      <symbol id="i-stop" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" /><rect x="7.4" y="7.4" width="5.2" height="5.2" rx="1" fill="currentColor" stroke="none" /></symbol>
+      <symbol id="i-record" viewBox="0 0 20 20"><circle cx="10" cy="10" r="5.5" fill="currentColor" stroke="none" /></symbol>
+      <symbol id="i-stop" viewBox="0 0 20 20"><rect x="5.25" y="5.25" width="9.5" height="9.5" rx="1.6" fill="currentColor" stroke="none" /></symbol>
       <symbol id="i-appearance" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.75" /><path d="M10 3.25a6.75 6.75 0 0 0 0 13.5Z" fill="currentColor" /></symbol>
       <symbol id="i-glass" viewBox="0 0 20 20"><rect x="2.75" y="4.75" width="10.5" height="8" rx="2.5" /><rect x="6.75" y="7.25" width="10.5" height="8" rx="2.5" /></symbol>
       <symbol id="i-textsize" viewBox="0 0 20 20"><path d="M2.5 15 5.4 8.2 8.3 15M3.6 12.8h3.6M9.5 15l3.9-9.5 3.9 9.5M10.9 11.8h5" /></symbol>
@@ -50,13 +50,19 @@
     </svg>
 
     <div id="app">
+      <!-- The panel toggles sit over the headers at fixed places in the window, not inside them,
+           so each stays under the pointer whether its panel is open or closed and can be clicked
+           again without moving the mouse. The headers keep room for them (style.css). -->
+      <button id="sidebar-toggle" class="icon-btn pin" type="button" aria-label="Sidebar" title="Show or hide the sidebar" aria-pressed="true" aria-controls="sidebar">
+        <svg class="icon"><use href="#i-sidebar" /></svg>
+      </button>
+      <button id="inspector-toggle" class="icon-btn pin" type="button" aria-label="Inspector" title="Show or hide the inspector" aria-pressed="true" aria-controls="inspector">
+        <svg class="icon"><use href="#i-inspector" /></svg>
+      </button>
       <!-- ---------- devices ---------- -->
       <aside id="sidebar" aria-label="Devices">
         <header class="side-head" data-tauri-drag-region>
           <span class="lights" aria-hidden="true"></span>
-          <button id="sidebar-hide" class="icon-btn" type="button" aria-label="Hide sidebar" title="Hide sidebar">
-            <svg class="icon"><use href="#i-sidebar" /></svg>
-          </button>
           <span class="grow" data-tauri-drag-region></span>
         </header>
         <div class="side-title">
@@ -91,9 +97,6 @@
       <main id="center">
         <header class="center-head" data-tauri-drag-region>
           <span class="lights" aria-hidden="true"></span>
-          <button id="sidebar-show" class="icon-btn" type="button" aria-label="Show sidebar" title="Show sidebar">
-            <svg class="icon"><use href="#i-sidebar" /></svg>
-          </button>
           <svg class="icon head-glyph" id="device-glyph" aria-hidden="true"><use href="#i-phone" /></svg>
           <div class="title" data-tauri-drag-region>
             <span id="device-name" data-tauri-drag-region></span>
@@ -116,21 +119,18 @@
                   <button id="menu-reveal" role="menuitem" type="button"><svg class="icon"><use href="#i-folder" /></svg><span>Show Last Recording</span></button>
                 </div>
               </div>
-              <button id="inspector-toggle" class="icon-btn" type="button" aria-label="Inspector" title="Show or hide the inspector" aria-pressed="true" aria-controls="inspector">
-                <svg class="icon"><use href="#i-inspector" /></svg>
-              </button>
             </div>
           </div>
         </header>
 
         <div id="banners">
           <div id="vo-warning" class="banner danger" role="alert" hidden>
-            <span class="badge"><svg class="icon"><use href="#i-alert" /></svg></span>
+            <svg class="icon"><use href="#i-alert" /></svg>
             <p><strong>VoiceOver is on.</strong> Taps select instead of activating, so agent input won't do what it expects.</p>
             <button id="vo-off" class="btn small" type="button">Turn Off</button>
           </div>
           <div id="note" class="banner" role="status" hidden>
-            <span class="badge"><svg class="icon" id="note-icon"><use href="#i-record" /></svg></span>
+            <svg class="icon" id="note-icon"><use href="#i-check" /></svg>
             <p id="note-text"></p>
             <button id="note-reveal" class="btn small" type="button">Show in Finder</button>
             <button id="note-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss">
@@ -172,30 +172,35 @@
           <!-- Always takes the same room under the screen, with or without a session. -->
           <div id="session-dock">
             <p id="session-idle"><span class="dot-idle" aria-hidden="true"></span>No agent session</p>
-            <div id="session-panel" class="surface" role="region" aria-label="Agent session" hidden>
-              <span class="badge"><span id="session-spinner" aria-hidden="true"></span></span>
+            <!-- Who controls the device, like a screen-sharing indicator: a tinted strip with a
+                 live dot, the state, the agent's goal and the actions. -->
+            <div id="session-panel" role="region" aria-label="Agent session" hidden>
+              <span id="session-dot" aria-hidden="true"></span>
               <div id="session-text">
-                <span id="session-name"></span>
                 <span id="session-state" role="status"></span>
+                <span id="session-name"></span>
               </div>
               <button id="session-stop" class="btn small ghost" type="button">Stop</button>
               <button id="session-primary" class="btn small" type="button">Take over</button>
             </div>
           </div>
           <div id="controls">
-            <!-- The hardware buttons, as controls that press them, then screenshot and record. -->
-            <div id="device-bar" class="surface">
-              <div class="hw" role="group" aria-label="Hardware buttons">
-                <button class="chip" type="button" data-button="home" title="Press the Home button"><svg class="icon"><use href="#i-home" /></svg><span>Home</span></button>
-                <button class="chip" type="button" data-button="lock" title="Press the side button (lock)"><svg class="icon"><use href="#i-power" /></svg><span>Lock</span></button>
-                <button class="chip" type="button" data-button="volume_down" title="Press Volume Down"><svg class="icon"><use href="#i-vol-down" /></svg><span>Volume −</span></button>
-                <button class="chip" type="button" data-button="volume_up" title="Press Volume Up"><svg class="icon"><use href="#i-vol-up" /></svg><span>Volume +</span></button>
+            <!-- A toolbar, not a field: the hardware buttons, a separator, then screenshot and
+                 record, all as the same plain buttons. -->
+            <div id="device-bar" role="toolbar" aria-label="Device">
+              <div class="tool-row" role="group" aria-label="Hardware buttons">
+                <button class="tool" type="button" data-button="home" title="Press the Home button"><svg class="icon"><use href="#i-home" /></svg><span>Home</span></button>
+                <button class="tool" type="button" data-button="lock" title="Press the side button (lock)"><svg class="icon"><use href="#i-power" /></svg><span>Lock</span></button>
+                <button class="tool" type="button" data-button="volume_down" title="Press Volume Down"><svg class="icon"><use href="#i-vol-down" /></svg><span>Volume −</span></button>
+                <button class="tool" type="button" data-button="volume_up" title="Press Volume Up"><svg class="icon"><use href="#i-vol-up" /></svg><span>Volume +</span></button>
               </div>
-              <span class="grow"></span>
-              <button id="shot" class="icon-btn" type="button" aria-label="Screenshot" title="Save a screenshot"><svg class="icon"><use href="#i-camera" /></svg></button>
-              <button id="record" class="icon-btn" type="button" aria-pressed="false" aria-label="Record" title="Record the screen">
-                <svg class="icon"><use href="#i-record" /></svg><span id="record-label"></span>
-              </button>
+              <span class="tool-sep" aria-hidden="true"></span>
+              <div class="tool-row" role="group" aria-label="Capture">
+                <button id="shot" class="tool" type="button" title="Save a screenshot"><svg class="icon"><use href="#i-camera" /></svg><span>Screenshot</span></button>
+                <button id="record" class="tool" type="button" aria-pressed="false" aria-label="Record" title="Record the screen">
+                  <svg class="icon"><use href="#i-record" /></svg><span id="record-label">Record</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -204,9 +209,11 @@
       <!-- ---------- inspector ---------- -->
       <aside id="inspector" aria-label="Inspector">
         <header class="insp-head" data-tauri-drag-region>
-          <div class="tabs" role="tablist" aria-label="Inspector">
-            <button id="tab-settings" role="tab" type="button" aria-selected="true" aria-controls="pane-settings" title="Device settings"><svg class="icon"><use href="#i-sliders" /></svg>Settings</button>
-            <button id="tab-info" role="tab" type="button" aria-selected="false" aria-controls="pane-info" title="Device info"><svg class="icon"><use href="#i-info" /></svg>Info</button>
+          <span class="grow" data-tauri-drag-region></span>
+          <!-- An icon-only segmented picker for the two panes, left of the inspector toggle. -->
+          <div class="tabs segmented" role="tablist" aria-label="Inspector">
+            <button id="tab-settings" role="tab" type="button" aria-selected="true" aria-controls="pane-settings" aria-label="Settings" title="Settings"><svg class="icon"><use href="#i-sliders" /></svg></button>
+            <button id="tab-info" role="tab" type="button" aria-selected="false" aria-controls="pane-info" aria-label="Info" title="Info"><svg class="icon"><use href="#i-info" /></svg></button>
           </div>
         </header>
 

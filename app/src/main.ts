@@ -172,13 +172,14 @@ if (/Mac/.test(navigator.platform) && "__TAURI_INTERNALS__" in window) root.clas
  * float over the stage there (style.css, "narrow windows"). */
 function showPanel(which: "sidebar" | "inspector", on: boolean, remember = true): void {
   app.classList.toggle(`no-${which}`, !on);
-  if (which === "inspector") $<HTMLButtonElement>("#inspector-toggle").setAttribute("aria-pressed", String(on));
+  $<HTMLButtonElement>(`#${which}-toggle`).setAttribute("aria-pressed", String(on));
   if (remember) prefs.set(which, on ? "1" : "0");
   layout();
 }
 const narrow = (px: number) => window.innerWidth <= px;
-$<HTMLButtonElement>("#sidebar-hide").addEventListener("click", () => showPanel("sidebar", false));
-$<HTMLButtonElement>("#sidebar-show").addEventListener("click", () => showPanel("sidebar", app.classList.contains("no-sidebar")));
+$<HTMLButtonElement>("#sidebar-toggle").addEventListener("click", () =>
+  showPanel("sidebar", app.classList.contains("no-sidebar")),
+);
 $<HTMLButtonElement>("#inspector-toggle").addEventListener("click", () =>
   showPanel("inspector", app.classList.contains("no-inspector")),
 );
@@ -1214,7 +1215,7 @@ function showNote(text: string, o: { path?: string; error?: boolean; icon?: stri
   notePath = o.path;
   note.hidden = false;
   note.classList.toggle("error", !!o.error);
-  $<HTMLElement>("#note-icon").querySelector("use")!.setAttribute("href", `#${o.error ? "i-alert" : (o.icon ?? "i-record")}`);
+  $<HTMLElement>("#note-icon").querySelector("use")!.setAttribute("href", `#${o.error ? "i-alert" : (o.icon ?? "i-check")}`);
   noteText.replaceChildren();
   if (o.path) {
     const name = document.createElement("strong");
@@ -1290,7 +1291,7 @@ function showRecording(): void {
   recordBtn.setAttribute("aria-pressed", String(!!recording));
   recordBtn.querySelector("use")!.setAttribute("href", recording ? "#i-stop" : "#i-record");
   if (!recording) {
-    recordLabel.textContent = "";
+    recordLabel.textContent = "Record";
     recordBtn.title = "Record the screen";
     recordBtn.setAttribute("aria-label", "Record");
     return;
