@@ -51,7 +51,6 @@ const state = {
   rotation: (params.get("rotation") ?? "rot0") as Rotation,
   recording: undefined as { path: string; since: number } | undefined,
   lastReport: undefined as unknown,
-  fitWindow: undefined as unknown,
 };
 
 // ---------- placeholder screen ----------
@@ -254,10 +253,6 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       return `/Users/me/Movies/iphone-use ${args.stamp}.mp4`;
     case "reveal":
       return null;
-    case "fit_window":
-      // A browser tab can't resize its window; the request is kept for checks.
-      state.fitWindow = args;
-      return null;
     case "send":
       return send(String(args.cmd), (args.args ?? {}) as Record<string, unknown>);
   }
@@ -389,7 +384,6 @@ const mock = {
     state.attach = kind;
   },
   report: () => state.lastReport,
-  fitWindow: () => state.fitWindow,
 };
 
 declare global {

@@ -384,8 +384,11 @@ input[type="range"]:disabled { cursor: default; }
   border-radius: 50%; background: var(--c);
 }
 .label-bubble.bottom { transform: translate(-50%, -100%); }
+/* No room on the right in a narrow window: on the left of the point (fitsRight in main.ts). */
+.label-bubble.left { transform: translate(calc(-100% - 14px), -50%); }
 /* Hangs off the cursor's lower right, clear of the arrow. */
 .label-bubble.at-cursor { left: 16px; top: 22px; transform: none; width: max-content; }
+.label-bubble.at-cursor.left { left: auto; right: 4px; }
 
 /* The agent's cursor: its element's origin is the arrow's tip, moved by transform. */
 .agent-cursor { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }

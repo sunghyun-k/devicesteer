@@ -319,13 +319,12 @@ function drawFrame(frame: VideoFrame): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
-/** The screen turned: the canvas takes the new shape, the last picture is drawn again turned,
- * and the window follows if it was shaped for the other orientation. */
+/** The screen turned: the canvas takes the new shape and the last picture is drawn again turned,
+ * scaled to fit the window as it is (the window itself never changes size, PITFALLS #29). */
 function onOrientation(o: Orientation): void {
   stats.orientations++;
   if (!config) return;
   const turned = config.rotation !== o.rotation;
-  const from = config.orientation;
   config = { ...config, rotation: o.rotation, orientation: o.orientation, screen: o.screen };
   if (!turned) return;
   sizeCanvas();
@@ -335,21 +334,16 @@ function onOrientation(o: Orientation): void {
   for (const d of fingers.values()) d.remove();
   fingers.clear();
   layout();
-  fitWindow(from);
   // Reported at once too: the timer that reports stops while the window is hidden.
   window.setTimeout(report, 300);
 }
 
 async function configure(cfg: Config): Promise<void> {
   const gen = ++configGen;
-  // The window starts tall: reshape it for a screen that turned, or that is landscape on arrival.
-  const refit = config ? config.rotation !== cfg.rotation : cfg.orientation === "landscape";
-  const from = config?.orientation;
   config = cfg;
   sizeCanvas();
   stats.frame = undefined;
   layout();
-  if (refit) fitWindow(from);
   // A viewer joining a running stream gets the last config and then, once the stream restarts
   // for a keyframe (PITFALLS #13), a second one right before that keyframe. Same parameter sets:
   // the decoder in use takes the new keyframe. Different: the old decoder is dropped now, not
@@ -504,6 +498,13 @@ function toOverlay(p: [number, number], screen: [number, number]): [number, numb
   return [(p[0] / screen[0]) * overlay.clientWidth, (p[1] / screen[1]) * overlay.clientHeight];
 }
 
+/** Whether a label that starts `offset` px right of overlay point `x` stays inside the window. The
+ * window keeps whatever size the user gave it (PITFALLS #29), so in a narrow one a label beside a
+ * point near the right edge would be cut off: it goes on the left of the point instead. */
+function fitsRight(label: HTMLElement, x: number, offset: number): boolean {
+  return overlay.getBoundingClientRect().left + x + offset + label.offsetWidth <= window.innerWidth - 8;
+}
+
 /** Shows an input's label next to where it happened (or at the bottom, for a button) for a
  * moment. */
 function showLabel(text: string | null | undefined, at: [number, number] | undefined, color: string): void {
@@ -517,6 +518,7 @@ function showLabel(text: string | null | undefined, at: [number, number] | undef
   b.style.left = `${x}px`;
   b.style.top = `${y}px`;
   overlay.append(b);
+  if (at && !fitsRight(b, x, 14)) b.classList.add("left");
   labelsShown++;
   b.addEventListener("animationend", () => b.remove());
 }
@@ -675,13 +677,18 @@ function pressBriefly(): void {
 
 /** Puts the label next to the cursor, replacing the one before. It fades after a few seconds;
  * the cursor stays. */
-function labelCursor(text: string): void {
+function labelCursor(text: string, at: [number, number], screen: [number, number]): void {
   cursorLabel?.remove();
   const b = document.createElement("div");
   b.className = "label-bubble at-cursor";
   b.textContent = text;
   b.style.setProperty("--c", AGENT_COLOR);
   cursor.append(b);
+  // The first input's label comes before the cursor shows, and a hidden one measures no width.
+  const hidden = cursor.hidden;
+  cursor.hidden = false;
+  if (!fitsRight(b, toOverlay(at, screen)[0], 16)) b.classList.add("left");
+  cursor.hidden = hidden;
   cursorLabel = b;
   cursorLastLabel = text;
   labelsShown++;
@@ -715,7 +722,7 @@ function onAgentInput(e: InputEvent): void {
     if (e.label) showLabel(e.label, undefined, AGENT_COLOR);
     return;
   }
-  if (e.label) labelCursor(e.label);
+  if (e.label) labelCursor(e.label, p, screen);
   if (e.kind === "tap") {
     void moveCursor([p], screen, GLIDE_MS).then(() => {
       if (cursorAt?.p === p) pressBriefly();
@@ -828,33 +835,6 @@ function layout(): void {
   placeCursor();
 }
 new ResizeObserver(layout).observe(stage);
-
-/** Reshapes the window for the screen's orientation when the stage has the other shape: a
- * landscape screen in a tall window would be a thin strip. `from` is the orientation the window
- * was shaped for: the shell keeps its size for the way back and restores the size it kept for the
- * new one. Otherwise the screen keeps about the size it had on its long side, within the display
- * the window is on. A window already shaped to fit stays. */
-function fitWindow(from?: Orientation["orientation"]): void {
-  if (!config || viewer.hidden) return;
-  const s = stage.getBoundingClientRect();
-  if (!s.width || !s.height) return;
-  const wide = s.width > s.height;
-  const [w, h] = config.screen;
-  if (w > h === wide) return;
-  const long = Math.max(s.width, s.height);
-  const target: [number, number] = w > h ? [long, (long * h) / w] : [(long * w) / h, long];
-  const chrome = [window.innerWidth - s.width, window.innerHeight - s.height];
-  const room = [screen.availWidth - 40 - chrome[0], screen.availHeight - 60 - chrome[1]];
-  const k = Math.min(1, room[0] / target[0], room[1] / target[1]);
-  invoke("fit_window", {
-    // Only a window that was shaped for `from` is worth going back to.
-    from: from && (from === "landscape") === wide ? from : null,
-    to: config.orientation,
-    width: Math.round(chrome[0] + target[0] * k),
-    height: Math.round(chrome[1] + target[1] * k),
-    page: [window.innerWidth, window.innerHeight],
-  }).catch((e) => (stats.lastError = String(e)));
-}
 
 // Human input is a live touch: down on pointerdown, the pointer's path as it moves (one step per
 // pointer event, with the event's time), up on release. The daemon replays the path at a steady

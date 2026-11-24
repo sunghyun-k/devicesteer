@@ -555,15 +555,16 @@ errors.
 
 Seen while the viewer followed turns (#27) on macOS, Tauri dev build:
 
-- **A size worked out from the page drifts.** The page asked for its own size plus the window's
-  frame, and the page came out 32 px shorter than asked; each turn there and back lost that again
-  (473, 422, 390, 358 px tall). The shell now keeps each orientation's window size as the window
-  reports it (`inner_size`) and restores exactly that; a size worked out from the page is only used
-  the first time, corrected by what the page measures against `inner_size`. Back and forth three
-  times: 796x527 and 381x950 every time.
+- **The window no longer changes size, by the user's preference.** The viewer used to reshape its
+  window when the screen turned (and for a landscape screen on arrival), remembering a size per
+  orientation. That code is gone: the window keeps whatever size the user gave it, and the screen
+  is scaled to fit inside it, centered, in either orientation. What was learned while it existed,
+  in case it comes back: a size worked out from the page drifted (the page came out 32 px shorter
+  than asked, on every turn: 473, 422, 390, 358 px tall), so sizes had to be kept as the window
+  reported them (`inner_size`) and restored exactly; and window calls from a Tauri command must
+  run in an async command, since a sync one runs on the main thread, which the window calls wait
+  for.
 - **A hidden window stops its timers.** A viewer on another Space (or fully covered) stopped
   sending its 2-second reports to `viewer.log` a few seconds after it opened, while it still took
-  events (it reshaped its window at each turn). The page also reports right after a turn and a
-  recording event, so a check doesn't depend on the timer.
-- **Window calls from a command.** `fit_window` is async: a sync command runs on the main thread,
-  which the window calls wait for.
+  events. The page also reports right after a turn and a recording event, so a check doesn't
+  depend on the timer.
