@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <main>
+    <main id="picker">
       <header>
         <h1>Devices</h1>
         <button id="refresh" type="button">Refresh</button>
@@ -15,6 +15,22 @@
       <p id="status" role="status"></p>
       <ul id="devices"></ul>
     </main>
+    <section id="viewer" hidden>
+      <header class="bar">
+        <button id="back" type="button" aria-label="Back to devices">‹</button>
+        <span id="device-name"></span>
+        <span id="agent-badge" hidden>Agent is driving</span>
+        <span class="spacer"></span>
+        <button id="home" type="button">Home</button>
+        <button id="take-over" type="button">Take over</button>
+        <button id="stop-agent" type="button">Stop agent</button>
+      </header>
+      <div id="stage">
+        <canvas id="screen"></canvas>
+        <div id="overlay"></div>
+      </div>
+      <p id="viewer-status" role="status"></p>
+    </section>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

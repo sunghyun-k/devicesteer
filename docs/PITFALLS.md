@@ -21,6 +21,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Display info | #9 |
 | Accessibility tree | #10, #12 |
 | Daemon | #14 |
+| Viewer | #15 |
 
 ## Entries
 
@@ -211,3 +212,21 @@ Measured through the daemon on the test iPhone (USB): first command after start 
 start, tunnel, first accessibility dump); then `ui` 1.6 s, home button 0.1 to 0.7 s, coordinate
 tap ~0.05 s on the device side, label tap after navigation 2.1 to 2.5 s; a viewer's first frame
 0.31 s after subscribing.
+
+### 15. The viewer decodes HEVC with WebCodecs in WKWebView
+
+On macOS (Apple silicon, the Tauri dev build), `VideoDecoder.isConfigSupported` accepted
+`hvc1.1.6.L150.B0` with the `hvcC` record as `description`, and the stream decoded with no errors:
+22 to 26 frames per second on a mostly still screen, 6 to 13 ms on average from a frame reaching
+the page to its picture (worst 116 ms, the first keyframe). The page reports these numbers to
+`viewer.log` in the state directory.
+
+- `isConfigSupported` is asynchronous, and the stream's only keyframe (#11) arrived while it
+  ran. Frames that arrive before the decoder is configured are kept from the last keyframe on
+  and fed to it afterwards; dropping them meant nothing ever decoded.
+- The page draws only the top-left `display_px` of each picture (the padding of #11).
+- A tap sent by the agent reached the viewer as an `input` event, and the next video frame came
+  ~50 ms later (that includes the 50 ms tap hold; the time to the glass was not measured).
+- Windows (WebView2) is untested. If a web view lacks HEVC in WebCodecs, the fallback is to
+  decode in the Tauri process (VideoToolbox / Media Foundation) and send pictures, or to have the
+  daemon send JPEG snapshots.

@@ -1751,10 +1751,12 @@ name = "iphone-use-app"
 version = "0.1.0"
 dependencies = [
  "iphone-use-core",
+ "iphone-use-daemon",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
 ]
 
 [[package]]
