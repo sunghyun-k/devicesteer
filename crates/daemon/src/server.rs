@@ -127,6 +127,10 @@ struct Device {
     voiceover: Option<(bool, Instant)>,
     /// Keys a client holds down (the viewer's keyboard).
     keys: Option<HeldKeys>,
+    /// The client whose hardware keyboard is attached only while it stays connected
+    /// (`keyboard_connect` with `while_connected`: the viewer's "Type from Mac Keyboard"), and
+    /// whether it is the human or an agent.
+    keyboard_holder: Option<(u64, Source)>,
     /// The clipboard's contents from before a paste the device asked to allow, until
     /// `paste --restore`. Never sent to a client.
     clipboard: Option<Clipboard>,
@@ -341,7 +345,13 @@ impl Daemon {
         dev.frames = None;
         dev.display_watch = None;
         if let Some(mut c) = dev.controller.take() {
+            let had_keyboard = c.keyboard_state().0;
             let _ = tokio::time::timeout(Duration::from_secs(3), c.close()).await;
+            // The next controller starts without one: say so, so the viewer asks again.
+            dev.keyboard_holder = None;
+            if had_keyboard {
+                self.emit(json!({ "event": "keyboard", "hardware": false, "attached": false }));
+            }
         }
     }
 
@@ -491,6 +501,23 @@ impl Daemon {
         {
             tracing::warn!("could not release the held keys ({why}): {e:#}");
         }
+    }
+
+    /// Removes the hardware keyboard a client attached `while_connected`, if `which` picks that
+    /// client: when it goes away, or when the agent gets the device from the human.
+    async fn drop_held_keyboard(&self, dev: &mut Device, which: impl Fn(u64, Source) -> bool, why: &str) {
+        if !dev.keyboard_holder.is_some_and(|(conn, source)| which(conn, source)) {
+            return;
+        }
+        dev.keyboard_holder = None;
+        self.release_keys(dev, |_| true, why).await;
+        let Some(c) = dev.controller.as_mut() else { return };
+        tracing::info!("removing the hardware keyboard: {why}");
+        if let Err(e) = c.set_keyboard(false).await {
+            tracing::warn!("could not remove the hardware keyboard ({why}): {e:#}");
+        }
+        let ev = keyboard_event(c);
+        self.emit(ev);
     }
 
     /// Lifts the live touch's finger, if one is down and `which` picks it. The `input` event
@@ -827,8 +854,14 @@ impl Daemon {
                     self.release_keys(dev, |_| true, "the hardware keyboard changed").await;
                     let c = self.controller(dev).await?;
                     sync?;
-                    c.set_keyboard(req.cmd == "keyboard_connect").await?;
+                    let connect = req.cmd == "keyboard_connect";
+                    c.set_keyboard(connect).await?;
                     dev.last_input = Some(Instant::now());
+                    // A keyboard left attached keeps the on-screen keyboard hidden for whoever
+                    // uses the device next (PITFALLS #36): one asked for `while_connected` goes
+                    // with its client. Any other connect or disconnect makes it nobody's.
+                    let held = connect && a.get("while_connected").and_then(Value::as_bool).unwrap_or(false);
+                    dev.keyboard_holder = held.then_some((req.conn, req.source));
                 }
                 let ev = keyboard_event(self.controller(dev).await?);
                 self.emit(ev.clone());
@@ -1133,6 +1166,13 @@ impl Daemon {
             }
             self.emit_control();
         }
+        if matches!(action, "start" | "resume") {
+            // The agent has the device now: the human's keyboard would hide the on-screen keys
+            // it reads and taps, and its `type` attaches one of its own. After the control event,
+            // so the viewer doesn't ask for it again.
+            let mut dev = self.device.lock().await;
+            self.drop_held_keyboard(&mut dev, |_, s| s == Source::Human, "an agent session took the device").await;
+        }
         Ok(r)
     }
 
@@ -1237,6 +1277,12 @@ impl Daemon {
                                     self.release_keys(&mut dev, |k| k.source == losing, "control changed").await;
                                 }
                                 self.emit_control();
+                                // After the control event: a viewer that saw its keyboard go
+                                // while it still had the device would ask for it again.
+                                if let Some(losing) = losing {
+                                    let mut dev = self.device.lock().await;
+                                    self.drop_held_keyboard(&mut dev, |_, s| s == losing, "control changed").await;
+                                }
                                 Ok(self.control.lock().unwrap().event())
                             }
                             Err(e) => Err(anyhow!(e)),
@@ -1263,6 +1309,7 @@ impl Daemon {
             let mut dev = self.device.lock().await;
             self.lift_touch(&mut dev, |t| t.conn == conn, "its client disconnected").await;
             self.release_keys(&mut dev, |k| k.conn == conn, "its client disconnected").await;
+            self.drop_held_keyboard(&mut dev, |c, _| c == conn, "its client disconnected").await;
         }
         if let Some((task, frames)) = subscription.take() {
             task.abort();

@@ -693,7 +693,9 @@ Consequences:
 - To put a device back after testing: `keyboard connect`, `key lang2` (Latin), `keyboard
   disconnect`. A probe key into an empty field shows which source is active.
 - The viewer's "Type from Mac Keyboard" sends physical key positions (DOM `code`), so what comes
-  out is whatever this source makes of them, like on a real keyboard.
+  out is whatever this source makes of them, like on a real keyboard. Through the surface alone
+  the source is stuck and Control-Space doesn't switch it, so turning it on attaches a hardware
+  keyboard (#36) for as long as it is on and the viewer has the device.
 
 ### 36. A hardware keyboard: attach, detach and what the device does
 

@@ -286,9 +286,14 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .menu button span { flex: 1; }
 .menu kbd { font: inherit; font-size: 12px; color: var(--fg-3); }
 
-/* The keyboard button while keys go to the device. */
-#keyboard[data-forwarding="true"] { color: var(--accent); }
-#keyboard[data-forwarding="true"] .icon { color: var(--accent); }
+/* The keyboard button while keys go to the device; dimmed while the hardware keyboard is
+   being connected or an agent has the device (forwarding stays on, but keys don't go). */
+#keyboard[data-forwarding="on"],
+#keyboard[data-forwarding="on"] .icon { color: var(--accent); }
+#keyboard[data-forwarding="connecting"],
+#keyboard[data-forwarding="connecting"] .icon,
+#keyboard[data-forwarding="paused"],
+#keyboard[data-forwarding="paused"] .icon { color: var(--accent); opacity: 0.45; }
 #center:not(.live) #keyboard-group { display: none; }
 
 /* The type-text field: a slim card under the header, like a find bar. */

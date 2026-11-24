@@ -116,12 +116,11 @@
                  menu like Device Hub's (main.ts "keyboard"). -->
             <div class="tool-group" id="keyboard-group">
               <div class="menu-anchor">
-                <button id="keyboard" class="icon-btn" type="button" aria-label="Keyboard" title="Keyboard" aria-haspopup="menu" aria-expanded="false" aria-controls="keyboard-menu" data-forwarding="false">
+                <button id="keyboard" class="icon-btn" type="button" aria-label="Keyboard" title="Keyboard" aria-haspopup="menu" aria-expanded="false" aria-controls="keyboard-menu" data-forwarding="off">
                   <svg class="icon"><use href="#i-keyboard" /></svg>
                 </button>
                 <div id="keyboard-menu" class="menu" role="menu" hidden>
-                  <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="While the pointer is over the screen, keys go to the device"><svg class="icon check"><use href="#i-check" /></svg><span>Type from Mac Keyboard</span><kbd>⌘K</kbd></button>
-                  <button id="kb-hardware" role="menuitemcheckbox" aria-checked="false" type="button" title="The device takes the keys for a hardware keyboard: the on-screen keyboard hides, and the keys follow the device's input source (Control-Space switches it)"><svg class="icon check"><use href="#i-check" /></svg><span>Connect Hardware Keyboard</span></button>
+                  <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. The device's input source decides what they type (Control-Space switches it)"><svg class="icon check"><use href="#i-check" /></svg><span>Type from Mac Keyboard</span><kbd>⌘K</kbd></button>
                   <button id="kb-software" role="menuitem" type="button" title="Show or hide the on-screen keyboard while a hardware keyboard is connected"><svg class="icon"><use href="#i-keyboard-down" /></svg><span>Toggle Software Keyboard</span><kbd>⌥⌘K</kbd></button>
                   <button id="kb-text" role="menuitem" type="button" title="Type text composed on the Mac (Hangul and other input methods) into the field that has focus"><svg class="icon"><use href="#i-text-cursor" /></svg><span>Type Text…</span></button>
                 </div>

@@ -57,6 +57,8 @@ const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];
 const state = {
   /** Our hardware keyboard, and what the viewer sent: key steps and typed text, for scripts. */
   hardwareKeyboard: false,
+  /** The viewer asked for it `while_connected`: it goes when the viewer detaches or the agent gets the device. */
+  keyboardHeld: false,
   keyLog: [] as [string, boolean][],
   typed: [] as string[],
   devices: params.get("devices") ?? "normal",
@@ -235,6 +237,13 @@ function frame(keyframe: boolean): void {
 
 function control(): void {
   event({ event: "control", session: state.session, human_touching: false, agent_stopped: false });
+  // As the daemon does: after the control event, the agent getting the device removes the
+  // viewer's keyboard.
+  if (state.session?.owner === "agent" && state.keyboardHeld) {
+    state.keyboardHeld = false;
+    state.hardwareKeyboard = false;
+    event({ event: "keyboard", hardware: false, attached: false });
+  }
 }
 
 function settingsEvent(): void {
@@ -384,6 +393,7 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       state.setupGen++;
       return null;
     case "detach":
+      if (state.keyboardHeld) state.keyboardHeld = state.hardwareKeyboard = false;
       stopStream();
       state.channel = undefined;
       return null;
@@ -434,6 +444,7 @@ async function send(cmd: string, a: Record<string, unknown>): Promise<unknown> {
     case "keyboard_disconnect":
       await sleep(300);
       state.hardwareKeyboard = cmd === "keyboard_connect";
+      state.keyboardHeld = state.hardwareKeyboard && a.while_connected === true;
       return { event: "keyboard", hardware: state.hardwareKeyboard, attached: state.hardwareKeyboard };
     case "keyboard_status":
       return { event: "keyboard", hardware: state.hardwareKeyboard, attached: state.hardwareKeyboard };

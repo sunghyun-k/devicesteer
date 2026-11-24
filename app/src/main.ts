@@ -362,6 +362,7 @@ function stageState(state: StageState, text = ""): void {
   $<HTMLParagraphElement>("#intro-reason").textContent = state === "error" || state === "unavailable" ? text : "";
   updateMenu();
   if (state === "live") layout();
+  syncKeyboard();
 }
 
 function showDeviceText(): void {
@@ -651,6 +652,7 @@ function onControl(c: ControlEvent): void {
   sessionIdle.hidden = !!s;
   glow.hidden = !s;
   markSelection();
+  syncKeyboard();
   if (!s) return;
   if (s.id !== was && !wantView && attachedUdid) void view();
   const human = s.owner !== "agent";
@@ -1216,13 +1218,18 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("#device-bar [data-
 // so the device's layout and input source decide what it types (PITFALLS #35). Never while a
 // field of the viewer has focus, and never the viewer's own shortcuts. Text composed with a Mac
 // input method (Hangul) goes through "Type Text…", the `type` command, instead.
+//
+// Turning it on attaches a hardware keyboard too: without one, the keys go through the
+// keyboard surface, whose input source is stuck (PITFALLS #35), and Control-Space can't switch
+// it. The viewer asks for it `while_connected`, so the daemon removes it when the viewer goes
+// away or an agent gets the device; the viewer removes it when forwarding stops or the screen
+// isn't live. Either way the on-screen keyboard comes back (PITFALLS #36).
 
 type KeyboardState = { hardware: boolean; attached: boolean };
 
 const kbButton = $<HTMLButtonElement>("#keyboard");
 const kbMenu = $<HTMLDivElement>("#keyboard-menu");
 const kbForward = $<HTMLButtonElement>("#kb-forward");
-const kbHardware = $<HTMLButtonElement>("#kb-hardware");
 const kbSoftware = $<HTMLButtonElement>("#kb-software");
 const typeForm = $<HTMLFormElement>("#type-text");
 const typeInput = $<HTMLInputElement>("#type-text-input");
@@ -1230,7 +1237,12 @@ const typeSend = $<HTMLButtonElement>("#type-text-send");
 menu(kbButton, kbMenu);
 
 let forwarding = prefs.get("keyboard-forwarding") === "1";
+/** Whether a hardware keyboard is attached (anyone's), as the daemon last said. */
 let hardwareKeyboard = false;
+/** The attached keyboard is the one this viewer asked for. */
+let kbOurs = false;
+/** A connect or disconnect is on its way. */
+let kbBusy = false;
 let overScreen = false;
 /** Keys sent down, by code, so every one is let go again. */
 const keysDown = new Set<string>();
@@ -1250,25 +1262,88 @@ function releaseKeys(): void {
   keysDown.clear();
 }
 
+/** The human may send input: no agent session, or one that gave the device to the human. */
+const humanHasDevice = (): boolean => activeSession()?.owner !== "agent";
+
+/** Forwarding is on and can work now: the screen is live and no agent holds the device. */
+const forwardingActive = (): boolean => forwarding && stage.dataset.state === "live" && humanHasDevice();
+
 function showKeyboardState(): void {
-  kbButton.dataset.forwarding = String(forwarding);
-  kbButton.title = forwarding
-    ? "Keyboard: keys go to the device while the pointer is over the screen (⌘K to stop)"
-    : "Keyboard";
+  // on: keys go, with the hardware keyboard attached; connecting: it is being attached;
+  // paused: on, but an agent has the device; off.
+  const state = !forwarding
+    ? "off"
+    : !humanHasDevice()
+      ? "paused"
+      : hardwareKeyboard
+        ? "on"
+        : "connecting";
+  kbButton.dataset.forwarding = state;
+  kbButton.title = {
+    on: "Keyboard: a hardware keyboard is connected and keys go to the device while the pointer is over the screen (⌘K to stop)",
+    connecting: "Keyboard: connecting the hardware keyboard…",
+    paused: "Keyboard: paused while the agent is in control (⌘K to turn off)",
+    off: "Keyboard",
+  }[state];
+  kbButton.setAttribute("aria-label", kbButton.title);
   kbForward.setAttribute("aria-checked", String(forwarding));
-  kbHardware.setAttribute("aria-checked", String(hardwareKeyboard));
   kbSoftware.disabled = !hardwareKeyboard;
+}
+
+/** Attaches the hardware keyboard while forwarding is active, and removes the one this viewer
+ * attached when it isn't. Called whenever any of that changes; the daemon's `keyboard` event
+ * brings the result back here. */
+function syncKeyboard(): void {
+  showKeyboardState();
+  if (kbBusy || !attachedUdid) return;
+  const want = forwardingActive();
+  let cmd: string;
+  if (want && !hardwareKeyboard) cmd = "keyboard_connect";
+  else if (!want && kbOurs && hardwareKeyboard) cmd = "keyboard_disconnect";
+  else return;
+  kbBusy = true;
+  releaseKeys();
+  const udid = attachedUdid;
+  void invoke("send", { cmd, args: cmd === "keyboard_connect" ? { while_connected: true } : {} })
+    .then((r) => {
+      if (udid !== attachedUdid) return;
+      kbOurs = cmd === "keyboard_connect";
+      kbBusy = false;
+      onKeyboard(r as KeyboardState);
+    })
+    .catch((e) => {
+      kbBusy = false;
+      if (udid !== attachedUdid) return;
+      // Not again until something changes: a connect that fails would fail in a loop.
+      if (cmd === "keyboard_connect") {
+        forwarding = false;
+        showKeyboardState();
+        showNote(`Couldn't connect the hardware keyboard: ${e}`, { error: true });
+      }
+    });
 }
 
 function setForwarding(on: boolean): void {
   forwarding = on;
   prefs.set("keyboard-forwarding", on ? "1" : "0");
   if (!on) releaseKeys();
-  showKeyboardState();
+  syncKeyboard();
 }
 
 function onKeyboard(k: Partial<KeyboardState>): void {
   hardwareKeyboard = !!k.hardware;
+  // Someone removed it (the daemon on a control change, or `keyboard disconnect`): not ours now.
+  if (!hardwareKeyboard) kbOurs = false;
+  syncKeyboard();
+}
+
+/** The device is gone from this viewer: its keyboard went with the connection (the daemon
+ * removes one asked for `while_connected`). */
+function forgetKeyboard(): void {
+  hardwareKeyboard = false;
+  kbOurs = false;
+  kbBusy = false;
+  keysDown.clear();
   showKeyboardState();
 }
 
@@ -1293,8 +1368,8 @@ function viewerShortcut(e: KeyboardEvent): boolean {
 
 function keysGo(): boolean {
   return (
-    forwarding &&
-    stage.dataset.state === "live" &&
+    forwardingActive() &&
+    hardwareKeyboard &&
     !editing() &&
     (overScreen || document.activeElement === canvas) &&
     kbMenu.hidden &&
@@ -1358,17 +1433,10 @@ canvas.addEventListener("pointerdown", () => {
 });
 
 kbForward.addEventListener("click", () => setForwarding(!forwarding));
-kbHardware.addEventListener("click", () => {
-  const cmd = hardwareKeyboard ? "keyboard_disconnect" : "keyboard_connect";
-  releaseKeys();
-  void send(cmd)
-    .then((r) => onKeyboard(r as KeyboardState))
-    .catch(() => {});
-});
 
 function toggleSoftwareKeyboard(): void {
   if (!hardwareKeyboard) {
-    showNote("The on-screen keyboard shows by itself while no hardware keyboard is connected.", { icon: "i-keyboard" });
+    showNote("The on-screen keyboard shows by itself while no hardware keyboard is connected (⌘K connects one).", { icon: "i-keyboard" });
     return;
   }
   // The Eject key: with a hardware keyboard attached, iOS shows or hides the on-screen keyboard
@@ -2070,6 +2138,7 @@ async function detach(): Promise<void> {
   wantView = false;
   const was = attachedUdid;
   attachedUdid = undefined;
+  forgetKeyboard();
   resetScreen();
   recording = undefined;
   showRecording();
