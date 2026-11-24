@@ -334,16 +334,7 @@ input[type="range"]:disabled { cursor: default; }
   -webkit-mask-composite: xor; mask-composite: exclude;
   filter: blur(6px); opacity: 0.95; animation: glow-turn 6s linear infinite;
 }
-#glow::after {
-  /* A very faint dot pattern in the band around the screen. */
-  content: ""; position: absolute; inset: -22px; border-radius: calc(var(--screen-r) + 16px); padding: 22px;
-  background: radial-gradient(circle, #64d2ff 1px, transparent 1.4px) 0 0 / 8px 8px;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor; mask-composite: exclude;
-  opacity: 0.18;
-}
 #glow.human::before { animation-play-state: paused; opacity: 0.45; filter: blur(9px) saturate(0.6); }
-#glow.human::after { opacity: 0.08; }
 @property --glow-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 @keyframes glow-turn { to { --glow-angle: 360deg; } }
 
