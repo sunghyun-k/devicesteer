@@ -1023,8 +1023,12 @@ impl Daemon {
                     let frames = req.args.get("frames").and_then(|v| v.as_bool()).unwrap_or(false);
                     if let Some((task, had_frames)) = subscription.take() {
                         task.abort();
-                        if had_frames {
-                            self.frame_subscribers.fetch_sub(1, Ordering::Relaxed);
+                        // A viewer that stops watching the screen but stays attached (for settings
+                        // and the session panel) was the last one: the stream stops, as it would on
+                        // disconnect, instead of running for nobody.
+                        if had_frames && self.frame_subscribers.fetch_sub(1, Ordering::Relaxed) == 1 && !frames {
+                            let mut dev = self.device.lock().await;
+                            let _ = self.sync_video(&mut dev).await;
                         }
                     }
                     let mut rx = self.events.subscribe();
