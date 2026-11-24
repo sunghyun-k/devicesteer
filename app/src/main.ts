@@ -325,6 +325,7 @@ function onOrientation(o: Orientation): void {
   stats.orientations++;
   if (!config) return;
   const turned = config.rotation !== o.rotation;
+  const from = config.orientation;
   config = { ...config, rotation: o.rotation, orientation: o.orientation, screen: o.screen };
   if (!turned) return;
   sizeCanvas();
@@ -334,18 +335,21 @@ function onOrientation(o: Orientation): void {
   for (const d of fingers.values()) d.remove();
   fingers.clear();
   layout();
-  fitWindow();
+  fitWindow(from);
+  // Reported at once too: the timer that reports stops while the window is hidden.
+  window.setTimeout(report, 300);
 }
 
 async function configure(cfg: Config): Promise<void> {
   const gen = ++configGen;
   // The window starts tall: reshape it for a screen that turned, or that is landscape on arrival.
   const refit = config ? config.rotation !== cfg.rotation : cfg.orientation === "landscape";
+  const from = config?.orientation;
   config = cfg;
   sizeCanvas();
   stats.frame = undefined;
   layout();
-  if (refit) fitWindow();
+  if (refit) fitWindow(from);
   // A viewer joining a running stream gets the last config and then, once the stream restarts
   // for a keyframe (PITFALLS #13), a second one right before that keyframe. Same parameter sets:
   // the decoder in use takes the new keyframe. Different: the old decoder is dropped now, not
@@ -826,20 +830,30 @@ function layout(): void {
 new ResizeObserver(layout).observe(stage);
 
 /** Reshapes the window for the screen's orientation when the stage has the other shape: a
- * landscape screen in a tall window would be a thin strip. The screen keeps about the size it had
- * on its long side, within the display the window is on. A window the person shaped to fit stays. */
-function fitWindow(): void {
+ * landscape screen in a tall window would be a thin strip. `from` is the orientation the window
+ * was shaped for: the shell keeps its size for the way back and restores the size it kept for the
+ * new one. Otherwise the screen keeps about the size it had on its long side, within the display
+ * the window is on. A window already shaped to fit stays. */
+function fitWindow(from?: Orientation["orientation"]): void {
   if (!config || viewer.hidden) return;
   const s = stage.getBoundingClientRect();
+  if (!s.width || !s.height) return;
+  const wide = s.width > s.height;
   const [w, h] = config.screen;
-  if (!s.width || !s.height || w > h === s.width > s.height) return;
+  if (w > h === wide) return;
   const long = Math.max(s.width, s.height);
   const target: [number, number] = w > h ? [long, (long * h) / w] : [(long * w) / h, long];
   const chrome = [window.innerWidth - s.width, window.innerHeight - s.height];
   const room = [screen.availWidth - 40 - chrome[0], screen.availHeight - 60 - chrome[1]];
   const k = Math.min(1, room[0] / target[0], room[1] / target[1]);
-  const size = { width: Math.round(chrome[0] + target[0] * k), height: Math.round(chrome[1] + target[1] * k) };
-  invoke("fit_window", size).catch((e) => (stats.lastError = String(e)));
+  invoke("fit_window", {
+    // Only a window that was shaped for `from` is worth going back to.
+    from: from && (from === "landscape") === wide ? from : null,
+    to: config.orientation,
+    width: Math.round(chrome[0] + target[0] * k),
+    height: Math.round(chrome[1] + target[1] * k),
+    page: [window.innerWidth, window.innerHeight],
+  }).catch((e) => (stats.lastError = String(e)));
 }
 
 // Human input is a live touch: down on pointerdown, the pointer's path as it moves (one step per
@@ -1024,6 +1038,7 @@ function onRecording(e: RecordingEvent): void {
     else recordMessage(`Saved ${e.summary ? clock(e.summary.seconds) : ""} to`, e.path);
   }
   showRecording();
+  report();
 }
 
 /** A local date and time for the file name, such as 2026-11-24 18.52.07. */

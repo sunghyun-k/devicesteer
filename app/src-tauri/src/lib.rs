@@ -115,12 +115,45 @@ fn reveal(path: String) -> Result<(), String> {
     spawned.map(|_| ()).map_err(|e| format!("could not show {path}: {e}"))
 }
 
-/// Resizes the window (logical pixels, the page's own size) when the device's screen turns, and
-/// moves it back onto its monitor if the new size would hang off an edge.
+/// The window's inner size the last time it was shaped for each orientation, so turning back
+/// and forth returns to exactly that size (sizes worked out from the page drifted, PITFALLS #29).
+#[derive(Default)]
+struct WindowSizes(std::sync::Mutex<std::collections::HashMap<String, tauri::PhysicalSize<u32>>>);
+
+/// Reshapes the window when the device's screen turns. `from` is the orientation the window was
+/// shaped for (its size is kept for the way back); `to` the new one. A size kept for `to` is
+/// restored; otherwise the page asks for `width` x `height`, its own size in CSS pixels (`page` is
+/// what it measures now, so the frame and anything else around the page are added). The window is
+/// then moved back onto its monitor if it hangs off an edge.
+///
+/// Async so it runs off the main thread, which the window calls below wait for.
 #[tauri::command]
-fn fit_window(window: tauri::WebviewWindow, width: f64, height: f64) -> Result<(), String> {
+async fn fit_window(
+    window: tauri::WebviewWindow,
+    sizes: State<'_, WindowSizes>,
+    from: Option<String>,
+    to: String,
+    width: f64,
+    height: f64,
+    page: (f64, f64),
+) -> Result<(), String> {
     let e = |e: tauri::Error| e.to_string();
-    window.set_size(tauri::LogicalSize::new(width, height)).map_err(e)?;
+    let inner = window.inner_size().map_err(e)?;
+    let kept = {
+        let mut sizes = sizes.0.lock().unwrap();
+        if let Some(from) = from {
+            sizes.insert(from, inner);
+        }
+        sizes.get(&to).copied()
+    };
+    match kept {
+        Some(size) => window.set_size(size).map_err(e)?,
+        None => {
+            let k = window.scale_factor().map_err(e)?;
+            let (dw, dh) = (f64::from(inner.width) / k - page.0, f64::from(inner.height) / k - page.1);
+            window.set_size(tauri::LogicalSize::new(width + dw.max(0.0), height + dh.max(0.0))).map_err(e)?;
+        }
+    }
     let (Some(monitor), Ok(pos), Ok(size)) = (window.current_monitor().map_err(e)?, window.outer_position(), window.outer_size())
     else {
         return Ok(());
@@ -140,6 +173,7 @@ fn fit_window(window: tauri::WebviewWindow, width: f64, height: f64) -> Result<(
 pub fn run() {
     tauri::Builder::default()
         .manage(Viewer::default())
+        .manage(WindowSizes::default())
         .invoke_handler(tauri::generate_handler![list_devices, attach, detach, send, report, initial_udid, fit_window, recording_path, reveal])
         .run(tauri::generate_context!())
         .expect("error while running the iphone-use app");

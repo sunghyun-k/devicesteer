@@ -14,7 +14,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 
 | Topic | Entries |
 |---|---|
-| Screen streams (displayservice) | #1, #2, #7, #11, #13, #27 |
+| Screen streams (displayservice) | #1, #2, #7, #11, #13, #27, #28 |
 | Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8, #17, #18, #27 |
@@ -22,7 +22,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23, #26, #27 |
+| Viewer | #15, #18, #23, #26, #27, #29 |
 
 ## Entries
 
@@ -516,6 +516,14 @@ polled `getdisplayinfo`.
   while the phone was held in landscape (the home screen didn't turn; the screenshot and `ui` were
   portrait too). It is the one signal; nothing is pushed, so the daemon polls it every 0.5 s while a
   client is connected and sends an `orientation` event on a change.
+- **When it changes.** Switching between Safari (landscape) and the home screen (portrait) with
+  `button home` and `launch`, and recording through the daemon: the picture started to turn ~1.4 s
+  after a home press and ~0.4 s after a launch (the app's zoom animation, drawn turned inside the
+  portrait picture), and `getdisplayinfo` changed at about the end of that animation. Polling every
+  0.5 s, the `orientation` event came 0.1 to 0.4 s after the picture had turned, so the viewer showed
+  the new screen sideways for that long. The daemon now polls every 0.1 s for 3 s after input; the
+  event then came 0.05 to 0.15 s after the animation ended. A turn by hand still waits for the 0.5 s
+  poll.
 - **A new connection per call sometimes gets no answer.** Asked every 250 ms on a new
   `deviceinfo` connection, 11 of about 600 calls got nothing within 2 s (and `display` through the
   CLI hung for the 12 s step timeout in 2 of 5 tries during that time). On one kept connection,
@@ -530,3 +538,30 @@ polled `getdisplayinfo`.
   starting one stopped the probe's audio stream for good (its video went on), and a later daemon
   restart and recording ended the probe's video too; `media status` then listed no sessions at
   all. Measure turns through the daemon (`events --frames`) instead.
+
+### 28. A recording started while a viewer watches got no keyframe
+
+`record start` with the viewer open failed at `record stop` with "no keyframe arrived": the
+recorder joined a running stream, whose only keyframe had gone out when the viewer subscribed
+(#11), and keyframe requests are ignored (#13). Recordings had only been tried with no viewer, when
+`record start` starts the stream itself. The daemon now restarts a running stream when a recording
+starts; viewers take the new `config` and keyframe as on any restart (#23). Measured with the viewer
+open (iPhone, iOS 27.2.1, USB): the recording got its keyframe, and the viewer kept decoding with no
+errors.
+
+### 29. The viewer's window: sizes and hidden windows
+
+Seen while the viewer followed turns (#27) on macOS, Tauri dev build:
+
+- **A size worked out from the page drifts.** The page asked for its own size plus the window's
+  frame, and the page came out 32 px shorter than asked; each turn there and back lost that again
+  (473, 422, 390, 358 px tall). The shell now keeps each orientation's window size as the window
+  reports it (`inner_size`) and restores exactly that; a size worked out from the page is only used
+  the first time, corrected by what the page measures against `inner_size`. Back and forth three
+  times: 796x527 and 381x950 every time.
+- **A hidden window stops its timers.** A viewer on another Space (or fully covered) stopped
+  sending its 2-second reports to `viewer.log` a few seconds after it opened, while it still took
+  events (it reshaped its window at each turn). The page also reports right after a turn and a
+  recording event, so a check doesn't depend on the timer.
+- **Window calls from a command.** `fit_window` is async: a sync command runs on the main thread,
+  which the window calls wait for.

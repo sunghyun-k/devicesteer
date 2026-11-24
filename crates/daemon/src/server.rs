@@ -58,6 +58,10 @@ const TOUCH_MIN_DELAY_MS: f64 = 20.0;
 /// How often the display is asked for while a client is connected: the interface orientation is
 /// only known by asking (PITFALLS #27). A call on the kept connection takes ~10 ms.
 const DISPLAY_POLL: Duration = Duration::from_millis(500);
+/// Polled this often for a while after input: a home press or a launch turns the screen ~1.4 s
+/// later, and at 0.5 s the viewer showed the turned picture sideways for up to 0.4 s (PITFALLS #27).
+const DISPLAY_POLL_AFTER_INPUT: Duration = Duration::from_millis(100);
+const FAST_POLL_FOR: Duration = Duration::from_secs(3);
 /// How long agent requests wait for a human's touch to end before input is refused.
 const AGENT_WAITS_FOR_TOUCH: Duration = Duration::from_secs(3);
 /// The longest `label` an input takes: it is shown next to the touch in the viewer, so it is a
@@ -128,6 +132,8 @@ pub struct Daemon {
     config: StdMutex<Option<Value>>,
     /// The display as last read: its rotation turns the video and the touch points.
     display: StdMutex<Option<Display>>,
+    /// Until when the display is polled fast, after input.
+    fast_poll_until: StdMutex<Instant>,
     /// The running recording's path and start, for clients that subscribe while it runs.
     recording: StdMutex<Option<(PathBuf, Instant)>>,
     frame_subscribers: AtomicUsize,
@@ -202,6 +208,7 @@ impl Daemon {
             config: StdMutex::new(None),
             display: StdMutex::new(None),
             recording: StdMutex::new(None),
+            fast_poll_until: StdMutex::new(Instant::now()),
             frame_subscribers: AtomicUsize::new(0),
             clients: AtomicUsize::new(0),
             last_client: StdMutex::new(Instant::now()),
@@ -248,7 +255,8 @@ impl Daemon {
     /// the device lock: a live touch or a reading isn't held up by it.
     async fn watch_display(self: Arc<Self>, mut poller: DisplayPoller) {
         loop {
-            tokio::time::sleep(DISPLAY_POLL).await;
+            let fast = Instant::now() < *self.fast_poll_until.lock().unwrap();
+            tokio::time::sleep(if fast { DISPLAY_POLL_AFTER_INPUT } else { DISPLAY_POLL }).await;
             if self.clients.load(Ordering::Relaxed) == 0 {
                 continue;
             }
@@ -621,6 +629,9 @@ impl Daemon {
         if req.source == Source::Agent {
             self.wait_for_human_touch().await;
         }
+        if INPUT_COMMANDS.contains(&req.cmd.as_str()) {
+            *self.fast_poll_until.lock().unwrap() = Instant::now() + FAST_POLL_FOR;
+        }
         let mut dev = self.device.lock().await;
         // After the lock: the human may have touched or taken over while this waited for it.
         let note = self.check_agent(req)?;
@@ -781,8 +792,18 @@ impl Daemon {
                 let mut rx = self.frames.subscribe();
                 let (stop_tx, mut stop_rx) = oneshot::channel();
                 let (done_tx, done_rx) = oneshot::channel();
+                // A stream that already runs (a viewer watches) sent its only keyframe long ago and
+                // ignores requests for another (PITFALLS #11, #13, #28): restart it, or the recording
+                // has nothing to start from. Viewers take the new stream's config and keyframe.
+                let running = dev.frames.is_some();
                 dev.recording = Some(Recording { path: path.clone(), stop: stop_tx, done: done_rx, started: Instant::now() });
-                if let Err(e) = self.sync_video(dev).await {
+                let started = async {
+                    if running && let Some(c) = dev.controller.as_mut() {
+                        c.restart_media().await?;
+                    }
+                    self.sync_video(dev).await
+                };
+                if let Err(e) = started.await {
                     dev.recording = None;
                     return Err(e);
                 }
