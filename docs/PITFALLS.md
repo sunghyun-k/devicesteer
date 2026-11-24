@@ -514,8 +514,10 @@ polled `getdisplayinfo`.
 - **`getdisplayinfo`'s `currentOrientation` is the interface orientation**, not the device's:
   `rot0` in portrait, `rot270` and `rot90` in the two landscapes, and `rot0` on the home screen
   while the phone was held in landscape (the home screen didn't turn; the screenshot and `ui` were
-  portrait too). It is the one signal; nothing is pushed, so the daemon polls it every 0.5 s while a
-  client is connected and sends an `orientation` event on a change.
+  portrait too). It is the one signal; nothing is pushed, so the daemon polls it every 0.5 s while its
+  device session is open (not only while a client is connected: the CLI connects per command, and
+  `ui` right after `button home` still said `landscape` on the portrait home screen, so a `tap`
+  would have been turned wrongly) and sends an `orientation` event on a change.
 - **When it changes.** Switching between Safari (landscape) and the home screen (portrait) with
   `button home` and `launch`, and recording through the daemon: the picture started to turn ~1.4 s
   after a home press and ~0.4 s after a launch (the app's zoom animation, drawn turned inside the

@@ -55,8 +55,8 @@ const TOUCH_TICK: Duration = Duration::from_micros(8333);
 /// towards has arrived: the viewer's moves come ~10 to 17 ms apart. The resampler raises it for
 /// clients that send less often.
 const TOUCH_MIN_DELAY_MS: f64 = 20.0;
-/// How often the display is asked for while a client is connected: the interface orientation is
-/// only known by asking (PITFALLS #27). A call on the kept connection takes ~10 ms.
+/// How often the display is asked for while the device session is open: the interface orientation
+/// is only known by asking (PITFALLS #27). A call on the kept connection takes ~10 ms.
 const DISPLAY_POLL: Duration = Duration::from_millis(500);
 /// Polled this often for a while after input: a home press or a launch turns the screen ~1.4 s
 /// later, and at 0.5 s the viewer showed the turned picture sideways for up to 0.4 s (PITFALLS #27).
@@ -249,7 +249,9 @@ impl Daemon {
         Ok(dev.controller.as_mut().expect("opened above"))
     }
 
-    /// Follows the interface orientation while clients are connected. The video and the touch
+    /// Follows the interface orientation while the device session is open, also between the CLI's
+    /// commands (each its own connection: a `tap` right after `button home` would otherwise be
+    /// placed on the screen as it was before the home screen came up). The video and the touch
     /// reports are in the panel's orientation and the device doesn't announce a turn (PITFALLS
     /// #27), so the display is asked for again and again, on a connection of its own and without
     /// the device lock: a live touch or a reading isn't held up by it.
@@ -257,9 +259,6 @@ impl Daemon {
         loop {
             let fast = Instant::now() < *self.fast_poll_until.lock().unwrap();
             tokio::time::sleep(if fast { DISPLAY_POLL_AFTER_INPUT } else { DISPLAY_POLL }).await;
-            if self.clients.load(Ordering::Relaxed) == 0 {
-                continue;
-            }
             match poller.ask().await {
                 Ok(d) => self.display_seen(d).await,
                 Err(e) => tracing::debug!("display poll: {e:#}"),
@@ -785,7 +784,7 @@ impl Daemon {
                 }
                 let path = PathBuf::from(a.get("path").and_then(|v| v.as_str()).context("record_start needs a path")?);
                 let mut recorder = Recorder::create(&path)?;
-                // Asked now: the poll only runs while clients are connected (PITFALLS #27).
+                // Asked now, not up to a poll old: the MP4 keeps this for the whole recording.
                 let d = self.controller(dev).await?.refresh_display().await?;
                 self.note_display(&d);
                 recorder.set_rotation(d.rotation);
