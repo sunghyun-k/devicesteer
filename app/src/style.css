@@ -322,6 +322,39 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 #intro-card { width: 100%; max-width: 440px; margin-top: 24px; padding: 14px 16px; border-radius: var(--r-lg); text-align: left; }
 #intro-card:empty { display: none; }
 
+/* Setup, while the device isn't ready: the card takes View Screen's place. Steps are a numbered
+   list like a settings page: hairlines between them, the current one opened with what to do and
+   one small button; done steps get a check and gray text, later ones wait in gray. */
+#stage[data-state="setup"] #view-screen { display: none; }
+.setup-head h3 { font-size: var(--fs-md); font-weight: 600; }
+.setup-head p { margin-top: 2px; color: var(--fg-3); font-size: var(--fs-sm); }
+.setup-steps { list-style: none; margin: 10px 0 0; padding: 0; }
+.setup-step { display: flex; gap: 12px; padding: 12px 0; }
+.setup-step + .setup-step { border-top: 1px solid var(--hairline); }
+.setup-step:last-child { padding-bottom: 2px; }
+.setup-step .mark {
+  display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid var(--line); color: var(--fg-3); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.setup-step .mark .icon { width: 15px; height: 15px; stroke-width: 2; }
+.setup-step .mark .spinner { width: 14px; height: 14px; }
+.setup-step.done .mark { border-color: transparent; background: var(--tile); color: var(--fg-2); }
+.setup-step.needed .mark { border-color: var(--fg); color: var(--fg); }
+.setup-step.running .mark { border-color: transparent; }
+.setup-step .body { flex: 1; min-width: 0; }
+.setup-step .title { line-height: 22px; font-size: var(--fs-md); }
+.setup-step.done .title, .setup-step.blocked .title { color: var(--fg-3); }
+.setup-step.needed .title { font-weight: 600; }
+.setup-step .desc { margin-top: 2px; color: var(--fg-2); font-size: var(--fs-sm); }
+.setup-step .progress { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; font-size: var(--fs-sm); color: var(--fg-2); }
+.setup-step .bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.setup-step .bar::before {
+  content: ""; display: block; height: 100%; width: calc(var(--f) * 100%); border-radius: inherit; background: var(--accent);
+  transition: width 0.2s var(--ease);
+}
+.setup-step .error { margin-top: 8px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.setup-step .actions { display: flex; gap: 8px; margin-top: 10px; }
+
 #scroller {
   position: absolute; inset: 0; overflow: auto; display: flex; padding: 20px 28px 16px;
   scrollbar-width: thin;

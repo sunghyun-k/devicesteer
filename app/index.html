@@ -45,6 +45,7 @@
       <symbol id="i-power" viewBox="0 0 20 20"><path d="M10 3v6.5M6.2 5.6a6 6 0 1 0 7.6 0" /></symbol>
       <symbol id="i-vol-down" viewBox="0 0 20 20"><path d="M3 8v4h3l4 3.5v-11L6 8Z" /><path d="M13 10h4.5" /></symbol>
       <symbol id="i-vol-up" viewBox="0 0 20 20"><path d="M3 8v4h3l4 3.5v-11L6 8Z" /><path d="M13 10h4.5M15.25 7.75v4.5" /></symbol>
+      <symbol id="i-check" viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 6.8" /></symbol>
       <symbol id="i-plug" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="12" rx="2.2" /><path d="M10 14v4M7.5 18h5" /></symbol>
     </svg>
 
@@ -150,8 +151,8 @@
             <div id="intro-buttons">
               <button id="intro-retry" class="btn primary" type="button">Try Again</button>
             </div>
-            <!-- Room for more about the selected device (setup steps, say): a bordered card under
-                 the buttons, shown only when something is put in it. -->
+            <!-- More about the selected device: the setup steps while it isn't ready (main.ts
+                 `renderSetup`). A bordered card under the buttons, shown only when filled. -->
             <div id="intro-card" class="surface"></div>
           </div>
           <div id="scroller">

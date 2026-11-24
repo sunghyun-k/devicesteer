@@ -15,7 +15,30 @@ interface DeviceInfo {
   device_class?: string;
   os_version?: string;
   build_version?: string;
+  /** The first setup step the device still needs; absent when it is ready. */
+  setup?: SetupStep;
   error?: string;
+}
+
+/** Mirrors `iphone_use_core::setup`: the steps that make a device ready, in order. */
+type SetupStep = "trust" | "developer_mode" | "disk_image";
+
+interface SetupStatus {
+  udid: string;
+  transports: ("usb" | "wifi")[];
+  ready: boolean;
+  step: SetupStep | null;
+  steps: { step: SetupStep; state: "done" | "needed" | "blocked"; detail?: string }[];
+  next: string;
+}
+
+/** What a running setup step reports (`iphone_use_core::setup::Progress`). */
+interface SetupProgress {
+  step: SetupStep;
+  /** The device waits for the person holding it. */
+  waiting_for_user: boolean;
+  message: string;
+  fraction?: number;
 }
 
 /** How the interface is turned from the panel's native orientation (`iphone_use_core::Rotation`). */
@@ -196,11 +219,13 @@ function row(d: DeviceInfo): HTMLLIElement {
   // it can't be used. Other states (setting a device up, say) belong in the status too.
   const status = d.error
     ? "Unavailable"
-    : [d.name ? modelName(d) : undefined, d.transports.includes("usb") ? "USB" : d.transports.length ? "Wi-Fi" : undefined].filter(Boolean).join(" · ");
+    : d.setup
+      ? `Needs setup: ${SETUP_SHORT[d.setup]}`
+      : [d.name ? modelName(d) : undefined, d.transports.includes("usb") ? "USB" : d.transports.length ? "Wi-Fi" : undefined].filter(Boolean).join(" · ");
   const text = el("div", "text");
   text.append(el("span", "name", deviceName(d)), el("span", "status", status));
   li.append(icon(isTablet(d) ? "i-tablet" : "i-phone", "icon glyph"), text);
-  li.title = d.error ?? [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · ");
+  li.title = d.error ?? (d.setup ? `Needs setup: ${SETUP_TITLE[d.setup]}` : [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · "));
   if (d.error) li.classList.add("unavailable");
   li.addEventListener("click", () => void select(d));
   li.addEventListener("keydown", (e) => {
@@ -282,9 +307,11 @@ async function loadDevices(): Promise<void> {
   const now = selected && devices.find((d) => d.udid === selected!.udid);
   if (now && selected) {
     const wasError = !!selected.error;
+    const wasSetup = !!selected.setup;
     selected = now;
     showDeviceText();
-    if (wasError && !now.error) {
+    if (now.setup && !setupRun) showSetup(now);
+    if ((wasError || wasSetup) && !now.error && !now.setup && !setupRun) {
       // It became usable: attach now, as if just picked.
       const d = now;
       selected = undefined;
@@ -324,7 +351,7 @@ const viewBtn = $<HTMLButtonElement>("#view-screen");
 
 /** What the stage shows: nothing selected; the selected device with View Screen; one that can't
  * be used; connecting; an error; or the live screen once a frame drew. */
-type StageState = "none" | "intro" | "unavailable" | "connecting" | "error" | "live";
+type StageState = "none" | "intro" | "setup" | "unavailable" | "connecting" | "error" | "live";
 
 function stageState(state: StageState, text = ""): void {
   stage.dataset.state = state;
@@ -1532,6 +1559,7 @@ function showInfo(): void {
   const states: Record<string, string> = {
     none: "",
     intro: "Not shown",
+    setup: "Needs setup",
     unavailable: "Unavailable",
     connecting: "Connecting…",
     error: "Error",
@@ -1546,6 +1574,244 @@ function showInfo(): void {
   out("decode", live && dm.length ? `${avg(dm).toFixed(1)} ms` : "");
   out("touch", stats.touchMs.length ? `${avg(stats.touchMs).toFixed(0)} ms` : "");
   $<HTMLParagraphElement>("#info-error").textContent = stats.lastError;
+}
+
+// ---------- setup: a device that isn't ready ----------
+
+/** Step names in the setup card, and short ones for a sidebar row's status. */
+const SETUP_TITLE: Record<SetupStep, string> = {
+  trust: "Trust this computer",
+  developer_mode: "Developer Mode",
+  disk_image: "Prepare developer tools",
+};
+/** Short, and different in their first letters: a narrow sidebar cuts the status off. */
+const SETUP_SHORT: Record<SetupStep, string> = {
+  trust: "Trust",
+  developer_mode: "Dev Mode",
+  disk_image: "Tools",
+};
+const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];
+
+const introCard = $<HTMLDivElement>("#intro-card");
+/** The device the card is for. */
+let setupFor: DeviceInfo | undefined;
+/** The last state read for it (`setup_status`, or a step's result). */
+let setupStatus: SetupStatus | undefined;
+/** The step running now, with its latest progress. */
+let setupRun: { step: SetupStep; progress?: SetupProgress } | undefined;
+let setupError: { step: SetupStep; text: string } | undefined;
+let setupTimer: number | undefined;
+/** Bumped when the card is put away, so a late reply doesn't redraw it. */
+let setupGen = 0;
+/** Re-read the state this often while the card shows: the person may have done a step on the
+ * device by themselves (trusted it in Finder, turned Developer Mode on). */
+const SETUP_POLL_MS = 3000;
+
+/** What each step asks of the person, and the button that starts it. */
+function setupText(step: SetupStep, d: DeviceInfo): { text: string; button?: string; cancel?: boolean } {
+  switch (step) {
+    case "trust":
+      if (!d.transports.includes("usb")) return { text: "Connect the device with a USB cable: it can only be paired over USB." };
+      return {
+        text: "Unlock the device and press Pair. When it asks “Trust This Computer?”, tap Trust and enter the passcode.",
+        button: "Pair",
+        cancel: true,
+      };
+    case "developer_mode":
+      return {
+        text: "Press Show Switch, then on the device open Settings › Privacy & Security › Developer Mode, turn it on and tap Restart. After the restart, unlock it, tap Turn On and enter the passcode.",
+        button: "Show Switch",
+        cancel: true,
+      };
+    case "disk_image":
+      return {
+        text: "Installs Apple’s developer tools on the device, downloading them once if Xcode isn’t installed. Nothing to do on the device; needed again after some restarts.",
+        button: "Prepare",
+      };
+  }
+}
+
+/** Each step's state: from the last reading, or before there is one, from the device list. */
+function setupStates(d: DeviceInfo): Record<SetupStep, "done" | "needed" | "blocked"> {
+  const out = {} as Record<SetupStep, "done" | "needed" | "blocked">;
+  if (setupStatus) {
+    for (const s of setupStatus.steps) out[s.step] = s.state;
+    return out;
+  }
+  const at = SETUP_ORDER.indexOf(d.setup ?? "disk_image");
+  SETUP_ORDER.forEach((s, i) => (out[s] = i < at ? "done" : i === at ? "needed" : "blocked"));
+  return out;
+}
+
+/** Shows the setup card for `d` and keeps it current. */
+function showSetup(d: DeviceInfo): void {
+  if (setupFor?.udid !== d.udid) {
+    hideSetup();
+    setupFor = d;
+    setupTimer = window.setInterval(() => void pollSetup(), SETUP_POLL_MS);
+    void pollSetup();
+  }
+  setupFor = d;
+  renderSetup();
+}
+
+/** Puts the card away and cancels a step still running (pairing waits minutes for a tap). */
+function hideSetup(): void {
+  if (setupRun) void invoke("setup_cancel").catch(() => {});
+  setupGen++;
+  window.clearInterval(setupTimer);
+  setupTimer = undefined;
+  setupFor = undefined;
+  setupStatus = undefined;
+  setupRun = undefined;
+  setupError = undefined;
+  introCard.replaceChildren();
+}
+
+async function pollSetup(): Promise<void> {
+  const d = setupFor;
+  // A running step reads the device itself; a second reading meanwhile could get in its way.
+  if (!d || setupRun || document.hidden) return;
+  const gen = setupGen;
+  try {
+    const st = await invoke<SetupStatus>("setup_status", { udid: d.udid });
+    if (gen === setupGen && !setupRun) onSetupStatus(st);
+  } catch {
+    // Unplugged or restarting: the device list says so; the card keeps its last state.
+  }
+}
+
+/** Takes a new reading: redraws, mirrors it in the sidebar row, and leaves setup once ready. */
+function onSetupStatus(st: SetupStatus): void {
+  const d = setupFor;
+  if (!d) return;
+  setupStatus = st;
+  const listed = devices.find((x) => x.udid === d.udid);
+  for (const x of [d, listed, selected?.udid === d.udid ? selected : undefined]) {
+    if (x) x.setup = st.step ?? undefined;
+  }
+  renderList();
+  if (st.ready) {
+    // Ready: the usual intro with View Screen, attached as if just picked.
+    hideSetup();
+    const now = selected;
+    selected = undefined;
+    if (now) void select(now);
+    return;
+  }
+  renderSetup();
+}
+
+async function runSetup(step: SetupStep): Promise<void> {
+  const d = setupFor;
+  if (!d || setupRun) return;
+  const gen = setupGen;
+  const channel = new Channel<SetupProgress>();
+  channel.onmessage = (p) => {
+    if (gen !== setupGen || !setupRun) return;
+    setupRun.progress = p;
+    renderSetup();
+  };
+  setupRun = { step };
+  setupError = undefined;
+  renderSetup();
+  try {
+    const st = await invoke<SetupStatus>("setup_run", { udid: d.udid, step, channel });
+    if (gen !== setupGen) return;
+    setupRun = undefined;
+    onSetupStatus(st);
+  } catch (e) {
+    if (gen !== setupGen) return;
+    setupRun = undefined;
+    if (String(e) !== "cancelled") setupError = { step, text: setupErrorText(e) };
+    renderSetup();
+    void pollSetup();
+  }
+}
+
+/** A setup error as the viewer shows it: the core writes for agents ("run `iphone-use setup
+ * trust` again"); here the step's own button does that. */
+function setupErrorText(e: unknown): string {
+  const t = String(e)
+    .replace(/:? run `iphone-use setup[^`]*` first/g, "")
+    .replace(/,? (?:then )?run `iphone-use setup(?: [\w-]+)?`( again)?/g, (_m, again) => (again ? ", then press Try Again" : ""))
+    .replace(/`([^`]+)`/g, "$1");
+  return t.charAt(0).toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? "" : ".");
+}
+
+function cancelSetup(): void {
+  void invoke("setup_cancel").catch(() => {});
+}
+
+/** The card: the three steps in order, the current one with what to do and its button. */
+function renderSetup(): void {
+  const d = setupFor;
+  if (!d) return;
+  const states = setupStates(d);
+  const card = el("div", "setup");
+  const head = el("div", "setup-head");
+  head.append(el("h3", "", "Set up this device"), el("p", "", "The screen can be shown once these steps are done."));
+  const list = el("ol", "setup-steps");
+  SETUP_ORDER.forEach((step, i) => {
+    const state = states[step] ?? "blocked";
+    const running = setupRun?.step === step;
+    const li = el("li", `setup-step ${state}${running ? " running" : ""}`);
+    const mark = el("span", "mark");
+    if (running) mark.append(el("span", "spinner"));
+    else if (state === "done") mark.append(icon("i-check"));
+    else mark.textContent = String(i + 1);
+    const body = el("div", "body");
+    body.append(el("div", "title", SETUP_TITLE[step]));
+    if (state === "needed") {
+      const t = setupText(step, d);
+      const p = running ? setupRun?.progress : undefined;
+      // While it runs, the step's own progress says what to do now (it repeats the description
+      // at first, then follows the device: restarting, confirm after the restart).
+      if (!running) body.append(el("p", "desc", t.text));
+      if (running) {
+        const line = el("div", "progress");
+        line.append(el("span", "msg", p?.message ?? "Starting…"));
+        if (p?.fraction !== undefined) {
+          const bar = el("div", "bar");
+          bar.style.setProperty("--f", String(Math.max(0, Math.min(1, p.fraction))));
+          line.append(bar);
+        }
+        body.append(line);
+      }
+      if (setupError?.step === step) body.append(el("p", "error", setupError.text));
+      const actions = el("div", "actions");
+      if (running && t.cancel) {
+        const b = el("button", "btn small", "Cancel");
+        b.type = "button";
+        b.addEventListener("click", cancelSetup);
+        actions.append(b);
+      } else if (!running && t.button) {
+        const b = el("button", "btn small", setupError?.step === step ? "Try Again" : t.button);
+        b.type = "button";
+        b.addEventListener("click", () => void runSetup(step));
+        actions.append(b);
+      }
+      if (actions.childElementCount) body.append(actions);
+    }
+    li.append(mark, body);
+    list.append(li);
+  });
+  card.append(head, list);
+  // Keep focus on the step's button across redraws (progress redraws often).
+  const hadFocus = introCard.contains(document.activeElement);
+  introCard.replaceChildren(card);
+  if (hadFocus) introCard.querySelector<HTMLButtonElement>(".actions .btn")?.focus();
+}
+
+/** The card's state, for the report. */
+function setupReport(): unknown {
+  if (!setupFor) return null;
+  return {
+    steps: [...introCard.querySelectorAll(".setup-step")].map((li) => li.className.replace("setup-step ", "")),
+    running: setupRun ? { step: setupRun.step, message: setupRun.progress?.message ?? null } : null,
+    error: setupError?.text ?? null,
+    button: introCard.querySelector(".actions .btn")?.textContent ?? null,
+  };
 }
 
 // ---------- attaching, viewing ----------
@@ -1584,6 +1850,7 @@ function resetScreen(): void {
 
 /** Leaves the attached device: everything about it goes. */
 async function detach(): Promise<void> {
+  hideSetup();
   window.clearInterval(statsTimer);
   viewerGen++;
   wantView = false;
@@ -1613,10 +1880,17 @@ async function select(d: DeviceInfo, opts: { view?: boolean } = {}): Promise<voi
   showDeviceText();
   renderList();
   if (narrow(720)) showPanel("sidebar", false, false);
-  settingsPane.classList.toggle("disabled", !!d.error);
+  settingsPane.classList.toggle("disabled", !!d.error || !!d.setup);
   if (d.error) {
     settingsMessage("Settings show once the device is available.");
     stageState("unavailable", d.error);
+    return;
+  }
+  if (d.setup) {
+    // Nothing to attach to yet: the daemon needs a device that is set up.
+    settingsMessage("Settings show once the device is set up.");
+    stageState("setup");
+    showSetup(d);
     return;
   }
   stageState(opts.view ? "connecting" : "intro");
@@ -1651,7 +1925,7 @@ async function attach(d: DeviceInfo): Promise<void> {
 }
 
 async function view(): Promise<void> {
-  if (!selected || selected.error) return;
+  if (!selected || selected.error || selected.setup) return;
   wantView = true;
   if (stage.dataset.state !== "live") stageState("connecting", "Starting the screen…");
   if (!attachedUdid) {
@@ -1711,6 +1985,7 @@ function report(): void {
       control,
       // What the window shows, so a check of the viewer doesn't need anyone to look.
       stage: stage.dataset.state,
+      setup: setupReport(),
       wantView,
       zoom: zoom === "fit" ? "fit" : zoom,
       scale: Math.round(scale * 1000) / 1000,

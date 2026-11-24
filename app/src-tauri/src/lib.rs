@@ -17,12 +17,65 @@ use tokio::sync::Mutex;
 struct Viewer {
     client: Mutex<Option<Arc<Client>>>,
     forwarder: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The setup step running now (pairing waits minutes for a tap), so Cancel can end it.
+    setup: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 /// Lists the devices usbmuxd sees. Errors come back to the page as strings.
 #[tauri::command]
 async fn list_devices() -> Result<Vec<DeviceInfo>, String> {
     iphone_use_core::list_devices().await.map_err(|e| format!("{e:#}"))
+}
+
+/// Which setup steps `udid` still needs (see `iphone_use_core::setup`). Reads only.
+#[tauri::command]
+async fn setup_status(udid: String) -> Result<iphone_use_core::SetupStatus, String> {
+    iphone_use_core::setup::status(Some(&udid)).await.map_err(|e| format!("{e:#}"))
+}
+
+/// How long a step waits for the person holding the device (tap Trust; turn on Developer Mode,
+/// restart and confirm). Long: the card stays up and Cancel ends it sooner.
+const SETUP_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Runs one setup step (`trust`, `developer_mode`, `disk_image`) on `udid`, sending its progress
+/// to `channel`, and returns the state afterwards. A step started earlier is cancelled first.
+#[tauri::command]
+async fn setup_run(
+    udid: String,
+    step: String,
+    channel: Channel<iphone_use_core::setup::Progress>,
+    viewer: State<'_, Viewer>,
+) -> Result<iphone_use_core::SetupStatus, String> {
+    use iphone_use_core::setup::{self, SetupStep};
+    let step = SetupStep::parse(&step).map_err(|e| format!("{e:#}"))?;
+    let progress: setup::ProgressFn = Arc::new(move |p| {
+        let _ = channel.send(p);
+    });
+    let task = tokio::spawn(async move {
+        let u = Some(udid.as_str());
+        match step {
+            SetupStep::Trust => setup::trust(u, SETUP_WAIT, progress).await,
+            SetupStep::DeveloperMode => setup::developer_mode(u, Some(SETUP_WAIT), progress).await,
+            SetupStep::DiskImage => setup::disk_image(u, None, progress).await,
+        }
+    });
+    if let Some(old) = viewer.setup.lock().await.replace(task.abort_handle()) {
+        old.abort();
+    }
+    match task.await {
+        Ok(r) => r.map_err(|e| format!("{e:#}")),
+        Err(e) if e.is_cancelled() => Err("cancelled".into()),
+        Err(e) => Err(format!("the setup step failed: {e}")),
+    }
+}
+
+/// Ends the running setup step, if any. Pairing that the device already accepted stays.
+#[tauri::command]
+async fn setup_cancel(viewer: State<'_, Viewer>) -> Result<(), String> {
+    if let Some(task) = viewer.setup.lock().await.take() {
+        task.abort();
+    }
+    Ok(())
 }
 
 /// Attaches to `udid`'s daemon (starting it if needed) and streams its events, and its video
@@ -152,7 +205,7 @@ fn reveal(path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(Viewer::default())
-        .invoke_handler(tauri::generate_handler![list_devices, attach, watch, detach, send, report, initial_udid, recording_path, save_screenshot, reveal])
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, report, initial_udid, recording_path, save_screenshot, reveal])
         .run(tauri::generate_context!())
         .expect("error while running the iphone-use app");
 }

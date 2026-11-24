@@ -11,7 +11,9 @@
 // once, as IPHONE_USE_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
 // (no floating panel, for screenshots), `rotation=rot270` (start turned), `theme=light|dark`,
 // `session=agent|delegated_to_user|user` (a session already runs when the device is attached),
-// `lights=0` (no stand-in for the macOS traffic lights).
+// `lights=0` (no stand-in for the macOS traffic lights), `setup=ok|deny|fail` (how the setup
+// steps end: done, the user taps Don't Trust, or an error), `select=<udid suffix>` (pick that
+// device first, such as `select=6` for the one that needs Trust).
 
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
@@ -23,14 +25,34 @@ const params = new URLSearchParams(location.search);
 const SCREEN: Point = [428, 926];
 const PX: Point = [1284, 2778];
 
+type SetupStep = "trust" | "developer_mode" | "disk_image";
+interface MockDevice {
+  udid: string;
+  transports: string[];
+  name?: string;
+  product_type?: string;
+  model_name?: string;
+  device_class?: string;
+  os_version?: string;
+  build_version?: string;
+  setup?: SetupStep;
+  error?: string;
+}
+
 // Made-up names only: nothing from a real device.
-const DEVICES = [
+const DEVICES: MockDevice[] = [
   { udid: "00000000-0000000000000001", transports: ["usb", "wifi"], name: "Test iPhone", product_type: "iPhone13,4", model_name: "iPhone 12 Pro Max", device_class: "iPhone", os_version: "26.1", build_version: "23B85" },
   { udid: "00000000-0000000000000002", transports: ["wifi"], name: "Test iPad", product_type: "iPad14,3", model_name: "iPad Pro 11-inch (4th generation)", device_class: "iPad", os_version: "26.0" },
   { udid: "00000000-0000000000000004", transports: ["usb"], name: "QA iPhone", product_type: "iPhone17,2", model_name: "iPhone 16 Pro Max", device_class: "iPhone", os_version: "26.2" },
   { udid: "00000000-0000000000000005", transports: ["wifi"], name: "Old iPhone", product_type: "iPhone12,8", model_name: "iPhone SE (2nd generation)", device_class: "iPhone", os_version: "18.7" },
   { udid: "00000000-0000000000000003", transports: ["usb"], product_type: "iPhone15,2", model_name: "iPhone 14 Pro", error: "The device is locked. Unlock it and trust this computer, then refresh." },
+  // One device per setup step. An untrusted device tells no name, only its model and OS.
+  { udid: "00000000-0000000000000006", transports: ["usb"], product_type: "iPhone16,1", model_name: "iPhone 15 Pro", device_class: "iPhone", os_version: "26.1", setup: "trust" },
+  { udid: "00000000-0000000000000007", transports: ["usb"], name: "Lab iPhone", product_type: "iPhone14,5", model_name: "iPhone 13", device_class: "iPhone", os_version: "26.0", setup: "developer_mode" },
+  { udid: "00000000-0000000000000008", transports: ["usb", "wifi"], name: "Spare iPad", product_type: "iPad13,18", model_name: "iPad (10th generation)", device_class: "iPad", os_version: "26.1", setup: "disk_image" },
 ];
+
+const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];
 
 const state = {
   devices: params.get("devices") ?? "normal",
@@ -60,6 +82,10 @@ const state = {
   rotation: (params.get("rotation") ?? "rot0") as Rotation,
   recording: undefined as { path: string; since: number } | undefined,
   lastReport: undefined as unknown,
+  /** How setup steps end (`setup=` in the URL). */
+  setupEnd: (params.get("setup") ?? "ok") as "ok" | "deny" | "fail",
+  /** Bumped by `setup_cancel`: a running step sees it and stops. */
+  setupGen: 0,
 };
 
 // ---------- placeholder screen ----------
@@ -239,11 +265,81 @@ function input(source: "agent" | "human", kind: string, points: Point[], extra: 
 
 const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
+// ---------- setup ----------
+
+function setupStatus(d: MockDevice) {
+  const at = d.setup ? SETUP_ORDER.indexOf(d.setup) : SETUP_ORDER.length;
+  const next: Record<SetupStep, string> = {
+    trust: `run \`iphone-use setup trust --udid ${d.udid}\` and ask the user to unlock the device, tap Trust and enter its passcode`,
+    developer_mode: `run \`iphone-use setup developer-mode --udid ${d.udid}\`, then ask the user to turn on Developer Mode`,
+    disk_image: `run \`iphone-use setup disk-image --udid ${d.udid}\` (no action on the device is needed)`,
+  };
+  return {
+    udid: d.udid,
+    transports: d.transports,
+    ready: !d.setup,
+    step: d.setup ?? null,
+    steps: SETUP_ORDER.map((step, i) => ({ step, state: i < at ? "done" : i === at ? "needed" : "blocked" })),
+    next: d.setup ? next[d.setup] : "the device is ready",
+  };
+}
+
+/** Plays one setup step the way the core reports it, then moves the device to the next step. */
+async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number }): Promise<unknown> {
+  const gen = ++state.setupGen;
+  let index = 0;
+  const say = (message: string, waiting = false, fraction?: number) => {
+    if (gen !== state.setupGen) throw "cancelled";
+    window.__TAURI_INTERNALS__.runCallback(channel.id, { index: index++, message: { step, waiting_for_user: waiting, message, fraction } });
+  };
+  const wait = async (ms: number) => {
+    await sleep(ms);
+    if (gen !== state.setupGen) throw "cancelled";
+  };
+  const fail = (text: string) => {
+    if (state.setupEnd === "fail") throw text;
+  };
+  if (step === "trust") {
+    say("Unlock the device, then tap Trust and enter its passcode", true);
+    await wait(2500);
+    if (state.setupEnd === "deny")
+      throw "the user tapped Don't Trust. Unplug the cable and plug it back in so the device asks again, then run `iphone-use setup trust` again";
+    fail("pairing failed (connection error: the device closed the connection)");
+    say("Trusted. Saving the pair record");
+    await wait(500);
+  } else if (step === "developer_mode") {
+    say("On the device: Settings > Privacy & Security > Developer Mode, turn it on and tap Restart. After the restart, unlock it, tap Turn On and enter the passcode", true);
+    await wait(2500);
+    fail("revealing the Developer Mode switch failed (connection error: no such service)");
+    say("The device is restarting", true);
+    await wait(2500);
+    say("Unlock the device, tap Turn On and enter the passcode", true);
+    await wait(2000);
+  } else {
+    for (let i = 0; i < 3; i++) {
+      say(`Downloading the developer disk image (${["BuildManifest.plist", "Image.dmg", "Image.dmg.trustcache"][i]})`, false, i / 3);
+      await wait(600);
+    }
+    say("Using the developer disk image from the downloaded developer disk image");
+    say("Asking Apple to sign the disk image for this device");
+    await wait(800);
+    fail("mounting the developer disk image failed: TSS server responded with non-success status (STATUS=94)");
+    for (let f = 0; f <= 1.0001; f += 0.1) {
+      say("Uploading the disk image", false, f);
+      await wait(150);
+    }
+    say("Mounted");
+  }
+  d.setup = SETUP_ORDER[SETUP_ORDER.indexOf(step) + 1];
+  return setupStatus(d);
+}
+
 // ---------- commands ----------
 
 async function handle(cmd: string, args: Record<string, unknown>): Promise<unknown> {
   switch (cmd) {
     case "initial_udid":
+      if (params.get("select")) return DEVICES.find((d) => d.udid.endsWith(params.get("select")!))?.udid ?? null;
       return params.get("open") ? DEVICES[0].udid : null;
     case "list_devices":
       if (state.devices === "slow") await sleep(2500);
@@ -269,6 +365,20 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
         startStream();
       } else stopStream();
       return {};
+    case "setup_status": {
+      await sleep(150);
+      const d = DEVICES.find((x) => x.udid === args.udid);
+      if (!d) throw `device ${args.udid} is not connected (no usbmuxd connection). Run \`devices\` to see what is`;
+      return setupStatus(d);
+    }
+    case "setup_run": {
+      const d = DEVICES.find((x) => x.udid === args.udid);
+      if (!d) throw "the device is not connected";
+      return setupRun(d, args.step as SetupStep, args.channel as { id: number });
+    }
+    case "setup_cancel":
+      state.setupGen++;
+      return null;
     case "detach":
       stopStream();
       state.channel = undefined;
@@ -413,6 +523,14 @@ const mock = {
     state.attach = kind;
   },
   report: () => state.lastReport,
+  /** Puts a device at a setup step (or ready with null), as if the person did steps elsewhere. */
+  setup(udidSuffix: string, step: SetupStep | null) {
+    const d = DEVICES.find((x) => x.udid.endsWith(udidSuffix));
+    if (d) d.setup = step ?? undefined;
+  },
+  setupEnd(end: "ok" | "deny" | "fail") {
+    state.setupEnd = end;
+  },
 };
 
 declare global {
@@ -438,6 +556,7 @@ const KEYS: [string, string, () => void][] = [
   ["f", "Settings fail", () => mock.settingsFail(!state.settingsFail)],
   ["r", "Turn the screen", () => mock.rotate()],
   ["c", "CLI record start/stop", () => (state.recording ? mock.recordStop() : mock.recordStart())],
+  ["e", "Setup steps end: ok/deny/fail", () => mock.setupEnd(state.setupEnd === "ok" ? "deny" : state.setupEnd === "deny" ? "fail" : "ok")],
 ];
 
 function panel(): void {

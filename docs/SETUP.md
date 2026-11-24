@@ -9,6 +9,12 @@
 | Developer tools | `disk_image` | the personalized Developer Disk Image (DDI) is signed for the device by Apple's TSS server, uploaded and mounted | nobody; may be needed again after a restart (PITFALLS #32) |
 
 Code: `crates/core/src/setup.rs`. CLI: `iphone-use setup [status|trust|developer-mode|disk-image]`.
+Viewer: a device that isn't ready is listed with "Needs setup: <step>", and selecting it shows a
+card with the three steps instead of View Screen (`renderSetup` in `app/src/main.ts`, Tauri
+commands `setup_status`, `setup_run` with progress, `setup_cancel`). The card re-reads the state
+every 3 s, so steps done elsewhere (Finder, Settings) show up, and attaches the device once it is
+ready. `?mock&select=6` (Trust), `7` (Developer Mode), `8` (developer tools) show each step in a
+browser; `setup=deny|fail` makes the steps end badly.
 `devices` lists a device that isn't ready with `setup: <first step left>`. Observations behind the
 code: `docs/PITFALLS.md` #30 and #31.
 
