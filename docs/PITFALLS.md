@@ -20,8 +20,8 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Touch and HID input | #6, #7, #8, #17, #18 |
 | Display info | #9 |
 | Accessibility tree | #10, #12, #19, #20, #21, #22 |
-| Daemon | #14 |
-| Viewer | #15, #18 |
+| Daemon | #14, #23 |
+| Viewer | #15, #18, #23 |
 
 ## Entries
 
@@ -394,3 +394,25 @@ not kept in the repository.
   installation_proxy's `Browse` with four attributes listed 260 apps in 0.19 s, with localized
   display names. SpringBoard is not in that list.
 
+### 23. A viewer that came back saw a black screen
+
+Back in the viewer, then the same device again: input worked but nothing was drawn (iPhone, iOS
+27.2.1, USB). Two faults, either enough for it:
+
+- **The old connection never closed.** Dropping a daemon `Client` dropped its tasks' handles,
+  which doesn't end tasks; the reader held the socket's read half, so the daemon kept counting the
+  viewer (`daemon status` showed `viewers` 1 after Back, 2 after coming back). The returning
+  viewer was then a late joiner to a running stream (#11): it got the cached `config`, the
+  keyframe request went unanswered (#13), and the stream restarted with a second `config` before
+  its keyframe. `Client` now aborts its tasks on drop.
+- **The page swapped decoders too late for that second `config`.** `configure` awaited
+  `isConfigSupported` with the old decoder still in place; the restarted stream's only keyframe
+  arrived meanwhile and went to the old decoder, which was closed right after, and the new one
+  dropped every frame waiting for a keyframe. Now a `config` with the same parameter sets keeps
+  the decoder, a different one drops it at once (later frames queue from their keyframe), and a
+  setup that a newer `config` or Back overtook gives way.
+
+Checked after the fix: Back and back again four times, the same with another frame subscriber
+keeping the stream running (each return dropped ~17 frames before the restart's keyframe), and a
+viewer process started and killed three times; the first frame came every time and `viewers`
+went back to 0.

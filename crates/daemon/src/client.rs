@@ -157,3 +157,13 @@ impl Client {
         self.events.take()
     }
 }
+
+impl Drop for Client {
+    /// Closes the connection. Dropping a task's handle doesn't end the task, and the reader holds
+    /// the socket's read half: without this a dropped client stayed connected, and the daemon
+    /// kept counting a viewer that was gone (PITFALLS #23).
+    fn drop(&mut self) {
+        self._reader.abort();
+        self._writer.abort();
+    }
+}

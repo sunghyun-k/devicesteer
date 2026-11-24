@@ -130,6 +130,10 @@ const received = new Map<number, number>();
 /** Frames that arrive while the decoder is being set up, from the last keyframe on: the device
  * sends one keyframe per stream, so dropping it means nothing decodes. */
 let pending: { header: { keyframe: boolean; pts_us: number }; data: Uint8Array }[] = [];
+/** Bumped by every `config` and by leaving the viewer, so a setup that finishes late gives way. */
+let configGen = 0;
+/** Codec and parameter sets the current decoder was set up with. */
+let decoderKey = "";
 
 function send(cmd: string, args: unknown = {}): Promise<unknown> {
   return invoke("send", { cmd, args }).catch((e) => {
@@ -143,10 +147,22 @@ function b64(s: string): Uint8Array {
 }
 
 async function configure(cfg: Config): Promise<void> {
+  const gen = ++configGen;
   config = cfg;
   canvas.width = cfg.display_px[0];
   canvas.height = cfg.display_px[1];
   layout();
+  // A viewer joining a running stream gets the last config and then, once the stream restarts
+  // for a keyframe (PITFALLS #13), a second one right before that keyframe. Same parameter sets:
+  // the decoder in use takes the new keyframe. Different: the old decoder is dropped now, not
+  // after the support check below, or it swallows the stream's only keyframe while the check
+  // runs and the new decoder never sees one (PITFALLS #23).
+  const key = `${cfg.codec}|${cfg.description}`;
+  if (decoder?.state === "configured" && key === decoderKey) return;
+  decoder?.close();
+  decoder = undefined;
+  decoderKey = "";
+  pending = [];
   if (typeof VideoDecoder === "undefined") {
     stats.supported = false;
     stats.lastError = "WebCodecs VideoDecoder is not available in this web view";
@@ -171,7 +187,7 @@ async function configure(cfg: Config): Promise<void> {
     stats.lastError = String(e);
     return;
   }
-  decoder?.close();
+  if (gen !== configGen) return;
   decoder = new VideoDecoder({
     output: (frame) => {
       const t = received.get(frame.timestamp);
@@ -192,6 +208,7 @@ async function configure(cfg: Config): Promise<void> {
     },
   });
   decoder.configure(decoderConfig);
+  decoderKey = key;
   waitingForKey = true;
   const queued = pending;
   pending = [];
@@ -463,6 +480,8 @@ stopAgentBtn.addEventListener("click", () =>
 );
 
 let statsTimer: number | undefined;
+/** Which visit to the viewer the channel's messages belong to. */
+let viewerGen = 0;
 
 function showStats(): void {
   const now = performance.now();
@@ -516,7 +535,11 @@ async function openViewer(d: DeviceInfo): Promise<void> {
   $<HTMLSpanElement>("#device-name").textContent = d.name ?? d.product_type ?? d.udid;
   viewerStatus.textContent = "Connecting…";
   const channel = new Channel<ArrayBuffer | number[]>();
-  channel.onmessage = (m) => onMessage(m instanceof ArrayBuffer ? new Uint8Array(m) : Uint8Array.from(m));
+  const gen = ++viewerGen;
+  channel.onmessage = (m) => {
+    // Messages of an earlier visit can still be in flight after Back.
+    if (gen === viewerGen) onMessage(m instanceof ArrayBuffer ? new Uint8Array(m) : Uint8Array.from(m));
+  };
   try {
     await invoke("attach", { udid: d.udid, channel });
   } catch (e) {
@@ -532,9 +555,15 @@ async function openViewer(d: DeviceInfo): Promise<void> {
 $<HTMLButtonElement>("#back").addEventListener("click", async () => {
   endPress();
   window.clearInterval(statsTimer);
+  viewerGen++;
   await invoke("detach");
+  configGen++;
   decoder?.close();
   decoder = undefined;
+  decoderKey = "";
+  pending = [];
+  received.clear();
+  waitingForKey = true;
   config = undefined;
   viewer.hidden = true;
   picker.hidden = false;
