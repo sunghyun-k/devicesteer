@@ -7,74 +7,128 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <!-- Icons, drawn once and used by reference. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-back" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v3h-3" /></symbol>
+      <symbol id="i-home" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" /><rect x="6" y="6" width="4" height="4" rx="1.2" /></symbol>
+      <symbol id="i-sliders" viewBox="0 0 16 16"><path d="M2.5 5h6M11.5 5h2M2.5 11h2M7.5 11h6" /><circle cx="10" cy="5" r="1.5" /><circle cx="6" cy="11" r="1.5" /></symbol>
+      <symbol id="i-close" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8" /></symbol>
+      <symbol id="i-phone" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="16" rx="2.2" /><path d="M8.8 15.6h2.4" /></symbol>
+      <symbol id="i-tablet" viewBox="0 0 20 20"><rect x="3" y="2.5" width="14" height="15" rx="2" /><path d="M8.8 15.2h2.4" /></symbol>
+      <symbol id="i-cable" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="12" rx="2.2" /><path d="M10 14v4M7.5 18h5" /></symbol>
+      <symbol id="i-alert" viewBox="0 0 16 16"><path d="M8 2.2 14.3 13H1.7Z" /><path d="M8 6.5v3M8 11.4v.1" /></symbol>
+      <symbol id="i-hand" viewBox="0 0 16 16"><path d="M5.5 8V3.8a1 1 0 0 1 2 0V7.5m0-.5V2.8a1 1 0 0 1 2 0V7.5m0-.5V3.8a1 1 0 0 1 2 0v5c0 2.8-1.7 4.7-4.2 4.7-1.6 0-2.6-.8-3.4-2.1L2.6 8.8a1 1 0 0 1 1.7-1Z" /></symbol>
+    </svg>
+
     <main id="picker">
-      <header>
-        <h1>Devices</h1>
-        <button id="refresh" type="button">Refresh</button>
+      <header class="picker-head">
+        <div>
+          <h1>Devices</h1>
+          <p id="status" role="status"></p>
+        </div>
+        <button id="refresh" class="btn" type="button"><svg class="icon"><use href="#i-refresh" /></svg>Refresh</button>
       </header>
-      <p id="status" role="status"></p>
       <ul id="devices"></ul>
+      <div id="picker-empty" class="empty" hidden>
+        <div class="empty-icon"><svg><use href="#i-cable" /></svg></div>
+        <p class="empty-title"></p>
+        <p class="empty-detail"></p>
+        <button id="picker-retry" class="btn" type="button">Try again</button>
+      </div>
     </main>
+
     <section id="viewer" hidden>
       <header class="bar">
-        <button id="back" type="button" aria-label="Back to devices">‹</button>
-        <span id="device-name"></span>
+        <button id="back" class="icon-btn" type="button" aria-label="Back to devices" title="Back to devices">
+          <svg class="icon"><use href="#i-back" /></svg>
+        </button>
+        <div class="title">
+          <span id="device-name"></span>
+          <span id="device-meta"></span>
+        </div>
         <span class="spacer"></span>
-        <button id="home" type="button">Home</button>
-        <button id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings">Settings</button>
+        <button id="home" class="icon-btn" type="button" aria-label="Home" title="Home button">
+          <svg class="icon"><use href="#i-home" /></svg>
+        </button>
+        <button id="settings-toggle" class="icon-btn" type="button" aria-label="Settings" title="Device settings" aria-expanded="false" aria-controls="settings">
+          <svg class="icon"><use href="#i-sliders" /></svg>
+        </button>
       </header>
-      <p id="vo-warning" role="alert" hidden>
-        VoiceOver is on. Taps select instead of activating, so agent input won't do what it expects.
-        <button id="vo-off" type="button">Turn off VoiceOver</button>
-      </p>
+      <div id="vo-warning" role="alert" hidden>
+        <svg class="icon"><use href="#i-alert" /></svg>
+        <p><strong>VoiceOver is on.</strong> Taps select instead of activating, so agent input won't do what it expects.</p>
+        <button id="vo-off" class="btn small" type="button">Turn off VoiceOver</button>
+      </div>
       <div id="body">
-        <div id="stage">
+        <div id="stage" data-state="connecting">
           <div id="glow" hidden></div>
           <canvas id="screen"></canvas>
           <div id="overlay"></div>
-        </div>
-        <aside id="settings" hidden aria-label="Device settings">
-          <h2>Device settings</h2>
-          <div class="field" data-item="appearance">
-            <span class="label">Appearance</span>
-            <div class="segmented" role="radiogroup" aria-label="Appearance">
-              <label><input type="radio" name="appearance" value="light" /><span>Light</span></label>
-              <label><input type="radio" name="appearance" value="dark" /><span>Dark</span></label>
+          <div id="stage-message" role="status">
+            <span class="spinner" aria-hidden="true"></span>
+            <div class="empty-icon"><svg><use href="#i-alert" /></svg></div>
+            <p class="empty-title"></p>
+            <p class="empty-detail"></p>
+            <div class="buttons">
+              <button id="stage-retry" class="btn primary" type="button">Try again</button>
+              <button id="stage-back" class="btn" type="button">Back to devices</button>
             </div>
           </div>
-          <div class="field" data-item="liquid_glass">
-            <label class="label" for="liquid-glass">Liquid Glass <output id="liquid-glass-value"></output></label>
-            <input id="liquid-glass" type="range" min="0" max="1" step="0.05" />
-            <div class="ends"><span>Clear</span><span>Tinted</span></div>
-          </div>
-          <div class="field" data-item="text_size">
-            <label class="label" for="text-size">Text Size <output id="text-size-value"></output></label>
-            <input id="text-size" type="range" min="0" max="11" step="1" />
-            <div class="ends"><span>xs</span><span>ax5</span></div>
-          </div>
-          <div class="toggles">
+        </div>
+        <aside id="settings" hidden aria-label="Device settings">
+          <header>
+            <h2>Device settings</h2>
+            <button id="settings-close" class="icon-btn small" type="button" aria-label="Close settings">
+              <svg class="icon"><use href="#i-close" /></svg>
+            </button>
+          </header>
+          <section class="group">
+            <div class="field" data-item="appearance">
+              <span class="label">Appearance</span>
+              <div class="segmented" role="radiogroup" aria-label="Appearance">
+                <label><input type="radio" name="appearance" value="light" /><span>Light</span></label>
+                <label><input type="radio" name="appearance" value="dark" /><span>Dark</span></label>
+              </div>
+            </div>
+            <div class="field" data-item="liquid_glass">
+              <label class="label" for="liquid-glass">Liquid Glass <output id="liquid-glass-value"></output></label>
+              <input id="liquid-glass" type="range" min="0" max="1" step="0.05" />
+              <div class="ends"><span>Clear</span><span>Tinted</span></div>
+            </div>
+            <div class="field" data-item="text_size">
+              <label class="label" for="text-size">Text Size <output id="text-size-value"></output></label>
+              <input id="text-size" type="range" min="0" max="11" step="1" />
+              <div class="ends"><span>xs</span><span>ax5</span></div>
+            </div>
+          </section>
+          <section class="group toggles">
+            <h3>Accessibility</h3>
             <label class="toggle" data-item="reduce_motion"><span>Reduce Motion</span><input type="checkbox" role="switch" /></label>
             <label class="toggle" data-item="increase_contrast"><span>Increase Contrast</span><input type="checkbox" role="switch" /></label>
             <label class="toggle" data-item="show_borders"><span>Button Shapes</span><input type="checkbox" role="switch" /></label>
             <label class="toggle" data-item="reduce_transparency"><span>Reduce Transparency</span><input type="checkbox" role="switch" /></label>
             <label class="toggle" data-item="voiceover"><span>VoiceOver</span><input type="checkbox" role="switch" /></label>
-          </div>
-          <div class="field" data-item="location">
-            <span class="label">Location <output id="location-value"></output></span>
-            <div class="coords">
-              <input id="latitude" type="text" inputmode="decimal" placeholder="Latitude" aria-label="Latitude" />
-              <input id="longitude" type="text" inputmode="decimal" placeholder="Longitude" aria-label="Longitude" />
+          </section>
+          <section class="group">
+            <div class="field" data-item="location">
+              <span class="label">Location <output id="location-value"></output></span>
+              <div class="coords">
+                <input id="latitude" type="text" inputmode="decimal" placeholder="Latitude" aria-label="Latitude" />
+                <input id="longitude" type="text" inputmode="decimal" placeholder="Longitude" aria-label="Longitude" />
+              </div>
+              <div class="buttons">
+                <button id="location-set" class="btn" type="button">Simulate</button>
+                <button id="location-clear" class="btn" type="button">Clear</button>
+              </div>
             </div>
-            <div class="buttons">
-              <button id="location-set" type="button">Simulate</button>
-              <button id="location-clear" type="button">Clear</button>
-            </div>
-          </div>
+          </section>
           <p id="settings-status" role="status"></p>
         </aside>
       </div>
       <div id="session-dock">
-        <p id="session-idle">No agent session</p>
+        <p id="session-idle"><span class="dot-idle" aria-hidden="true"></span>No agent session</p>
         <div id="session-panel" role="region" aria-label="Agent session" hidden>
           <span id="session-spinner" aria-hidden="true"></span>
           <div id="session-text">

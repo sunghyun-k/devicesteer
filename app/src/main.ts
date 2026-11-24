@@ -79,28 +79,74 @@ const list = $<HTMLUListElement>("#devices");
 const status = $<HTMLParagraphElement>("#status");
 const refresh = $<HTMLButtonElement>("#refresh");
 
+const pickerEmpty = $<HTMLDivElement>("#picker-empty");
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  e.className = className;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function icon(name: string, className = "icon"): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", className);
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#${name}`);
+  svg.append(use);
+  return svg;
+}
+
+/** "iPhone 26.1" and the like, when the device said. */
+function osLabel(d: DeviceInfo): string | undefined {
+  return d.os_version ? `${d.device_class ?? "iOS"} ${d.os_version}` : undefined;
+}
+
 function row(d: DeviceInfo): HTMLLIElement {
   const li = document.createElement("li");
-  const name = document.createElement("div");
-  name.className = "name";
-  name.textContent = d.name ?? d.product_type ?? "Unknown device";
-  const meta = document.createElement("div");
-  meta.className = "meta";
-  const os = d.os_version ? `${d.device_class ?? "iOS"} ${d.os_version}` : undefined;
-  meta.textContent = [d.product_type, os, d.transports.join(" + ").toUpperCase(), d.udid]
-    .filter(Boolean)
-    .join(" · ");
-  li.append(name, meta);
+  const glyph = el("div", "device-icon");
+  glyph.append(icon(d.device_class === "iPad" ? "i-tablet" : "i-phone", ""));
+  const text = el("div", "device-text");
+  text.append(el("div", "name", d.name ?? d.product_type ?? "Unknown device"));
+  const meta = el("div", "meta");
+  for (const part of [d.product_type, osLabel(d)].filter(Boolean) as string[]) {
+    if (meta.childElementCount) meta.append(el("span", "sep", "·"));
+    meta.append(el("span", "", part));
+  }
+  for (const t of d.transports) meta.append(el("span", "chip", t === "wifi" ? "Wi-Fi" : t.toUpperCase()));
+  text.append(meta);
+  const udid = el("div", "udid", d.udid);
+  udid.title = d.udid;
+  text.append(udid);
+  li.append(glyph, text);
   if (d.error) {
-    const err = document.createElement("div");
-    err.className = "error";
-    err.textContent = d.error;
-    li.append(err);
+    li.classList.add("unavailable");
+    text.append(el("div", "error", d.error));
   } else {
     li.classList.add("pickable");
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.append(icon("i-chevron", "icon chevron"));
     li.addEventListener("click", () => openViewer(d));
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        void openViewer(d);
+      }
+    });
   }
   return li;
+}
+
+/** The picker's empty or error state, or none. */
+function pickerMessage(m: { title: string; detail: string; error?: boolean } | null): void {
+  pickerEmpty.hidden = !m;
+  if (!m) return;
+  pickerEmpty.classList.toggle("is-error", !!m.error);
+  pickerEmpty.querySelector("use")!.setAttribute("href", m.error ? "#i-alert" : "#i-cable");
+  pickerEmpty.querySelector(".empty-title")!.textContent = m.title;
+  pickerEmpty.querySelector(".empty-detail")!.textContent = m.detail;
 }
 
 async function load(): Promise<void> {
@@ -111,16 +157,21 @@ async function load(): Promise<void> {
     list.replaceChildren(...devices.map(row));
     status.textContent = devices.length
       ? `${devices.length} device${devices.length > 1 ? "s" : ""}. Click one to view it.`
-      : "No devices. Connect an iPhone or iPad over USB.";
+      : "";
+    pickerMessage(
+      devices.length ? null : { title: "No devices", detail: "Connect an iPhone or iPad over USB, then refresh." },
+    );
   } catch (e) {
     list.replaceChildren();
-    status.textContent = String(e);
+    status.textContent = "";
+    pickerMessage({ title: "Couldn't list devices", detail: String(e), error: true });
   } finally {
     refresh.disabled = false;
   }
 }
 
 refresh.addEventListener("click", load);
+$<HTMLButtonElement>("#picker-retry").addEventListener("click", load);
 
 // ---------- viewer ----------
 
@@ -137,6 +188,14 @@ const sessionState = $<HTMLSpanElement>("#session-state");
 const sessionPrimary = $<HTMLButtonElement>("#session-primary");
 const sessionStop = $<HTMLButtonElement>("#session-stop");
 const ctx = canvas.getContext("2d")!;
+const stageMessage = $<HTMLDivElement>("#stage-message");
+
+/** What the stage shows: a spinner while connecting, an error, or the screen once a frame drew. */
+function stageState(state: "connecting" | "error" | "live", title = "", detail = ""): void {
+  stage.dataset.state = state;
+  stageMessage.querySelector(".empty-title")!.textContent = title;
+  stageMessage.querySelector(".empty-detail")!.textContent = detail;
+}
 
 let config: Config | undefined;
 let decoder: VideoDecoder | undefined;
@@ -235,6 +294,7 @@ async function configure(cfg: Config): Promise<void> {
       // The screen is the top-left part of the coded picture; the rest is padding.
       ctx.drawImage(frame, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
       frame.close();
+      if (stage.dataset.state !== "live") stageState("live");
       stats.decoded++;
       stats.fpsWindow.push(performance.now());
     },
@@ -334,49 +394,65 @@ function showLabel(text: string | null | undefined, at: [number, number] | undef
   b.addEventListener("animationend", () => b.remove());
 }
 
-function ripple(at: [number, number], color: string): HTMLDivElement {
-  const r = document.createElement("div");
-  r.className = "ripple";
-  r.style.setProperty("--c", color);
-  r.style.left = `${at[0]}px`;
-  r.style.top = `${at[1]}px`;
-  overlay.append(r);
-  r.addEventListener("animationend", () => r.remove());
-  return r;
+// ---------- touch indicators ----------
+//
+// A finger on the glass shows as a translucent white disc the size of a fingertip (56 points, so
+// it scales with the screen), as iOS touch indicators in screen recordings look. Every touch has
+// two sequences: the start, where the disc appears at once where the finger lands, and the end,
+// where it grows a little and fades where the finger lifts. A tap plays both in place; a drag
+// plays the start, follows the finger while it is held, and plays the end only at the release
+// point, so nothing at the start of a drag looks like a release.
+
+/** How long the end sequence takes. */
+const RELEASE_MS = 350;
+
+function touchDot(at: [number, number]): HTMLDivElement {
+  const d = document.createElement("div");
+  d.className = "touch-dot";
+  d.style.left = `${at[0]}px`;
+  d.style.top = `${at[1]}px`;
+  overlay.append(d);
+  return d;
 }
 
-/** The finger of a live touch on the overlay, by source, while it is down. */
+/** The end sequence: the disc grows as it fades, then goes. */
+function releaseDot(d: HTMLDivElement): void {
+  d.classList.add("released");
+  d.animate(
+    [
+      { opacity: 1, transform: "scale(1)" },
+      { opacity: 0, transform: "scale(1.4)" },
+    ],
+    { duration: RELEASE_MS, easing: "ease-out", fill: "forwards" },
+  );
+  // A timer, not the animation's finish: WebKit holds animations while the window is hidden.
+  window.setTimeout(() => d.remove(), RELEASE_MS + 30);
+}
+
+/** The disc of a live touch on the overlay, by source, while the finger is down. */
 const fingers = new Map<string, HTMLDivElement>();
 
-function onTouch(e: InputEvent, color: string): void {
+function onTouch(e: InputEvent): void {
   const p = e.points[0];
+  const dot = fingers.get(e.source);
   if (!p || !e.screen[0]) {
-    fingers.get(e.source)?.remove();
+    // Lifted by the daemon without a point: end where the disc is.
+    if (dot) releaseDot(dot);
     fingers.delete(e.source);
     return;
   }
   const at = toOverlay(p, e.screen);
-  let dot = fingers.get(e.source);
-  if (e.phase === "down") {
-    ripple(at, color);
+  if (e.phase === "down" || !dot) {
     dot?.remove();
-    dot = undefined;
-  }
-  if (e.phase === "up") {
-    dot?.remove();
-    fingers.delete(e.source);
-    ripple(at, color);
+    fingers.set(e.source, touchDot(at));
     return;
-  }
-  if (!dot) {
-    dot = document.createElement("div");
-    dot.className = "dot";
-    dot.style.setProperty("--c", color);
-    overlay.append(dot);
-    fingers.set(e.source, dot);
   }
   dot.style.left = `${at[0]}px`;
   dot.style.top = `${at[1]}px`;
+  if (e.phase === "up") {
+    releaseDot(dot);
+    fingers.delete(e.source);
+  }
 }
 
 // ---------- agent cursor ----------
@@ -458,15 +534,15 @@ function moveCursor(path: Point[], screen: [number, number], ms: number, easing 
   );
 }
 
+/** Puts the finger down at the tip (the start sequence) or lifts it (the end sequence). */
 function setPressed(on: boolean): void {
   window.clearTimeout(cursorPressTimer);
   cursor.classList.toggle("pressing", on);
 }
 
-/** A short press at the tip, for a tap or the ends of a swipe. */
+/** A short press at the tip, for a tap. */
 function pressBriefly(): void {
   setPressed(true);
-  if (cursorAt) ripple(toOverlay(cursorAt.p, cursorAt.screen), AGENT_COLOR);
   cursorPressTimer = window.setTimeout(() => setPressed(false), TAP_PRESS_MS);
 }
 
@@ -521,28 +597,22 @@ function onAgentInput(e: InputEvent): void {
     void moveCursor([p], screen, GLIDE_MS).then(() => {
       if (cursorAt?.p !== p) return;
       setPressed(true);
-      ripple(toOverlay(p, screen), AGENT_COLOR);
       return moveCursor([q], screen, e.duration_ms ?? 300, "ease-in-out");
     }).then(() => {
       if (cursorAt?.p !== q) return; // Overtaken by a newer input.
       setPressed(false);
-      ripple(toOverlay(q, screen), AGENT_COLOR);
     });
   } else if (e.kind === "touch") {
     if (e.phase === "down") {
       void moveCursor([p], screen, GLIDE_MS).then(() => {
         if (cursorAt?.p !== p) return;
         setPressed(true);
-        ripple(toOverlay(p, screen), AGENT_COLOR);
       });
     } else if (e.phase === "move") {
       setPressed(true);
       void moveCursor([p], screen, STEP_GLIDE_MS, "linear");
     } else {
-      void moveCursor([p], screen, STEP_GLIDE_MS, "linear").then(() => {
-        setPressed(false);
-        ripple(toOverlay(p, screen), AGENT_COLOR);
-      });
+      void moveCursor([p], screen, STEP_GLIDE_MS, "linear").then(() => setPressed(false));
     }
   }
 }
@@ -556,32 +626,27 @@ function onInput(e: InputEvent): void {
     onAgentInput(e);
     return;
   }
-  const color = HUMAN_COLOR;
   if (e.label) {
     const p = e.points[0];
-    showLabel(e.label, p && e.screen[0] ? toOverlay(p, e.screen) : undefined, color);
+    showLabel(e.label, p && e.screen[0] ? toOverlay(p, e.screen) : undefined, HUMAN_COLOR);
   }
   if (e.kind === "touch") {
-    onTouch(e, color);
+    onTouch(e);
   } else if (e.kind === "tap" && e.points[0]) {
-    ripple(toOverlay(e.points[0], e.screen), color);
+    const d = touchDot(toOverlay(e.points[0], e.screen));
+    window.setTimeout(() => releaseDot(d), TAP_PRESS_MS);
   } else if (e.kind === "swipe" && e.points.length === 2) {
     const [a, b] = [toOverlay(e.points[0], e.screen), toOverlay(e.points[1], e.screen)];
-    ripple(a, color);
-    const dot = document.createElement("div");
-    dot.className = "dot";
-    dot.style.setProperty("--c", color);
-    overlay.append(dot);
-    dot.animate(
+    const d = touchDot(b);
+    const ms = e.duration_ms ?? 300;
+    d.animate(
       [
         { left: `${a[0]}px`, top: `${a[1]}px` },
         { left: `${b[0]}px`, top: `${b[1]}px` },
       ],
-      { duration: e.duration_ms ?? 300, easing: "ease-out", fill: "forwards" },
-    ).onfinish = () => {
-      dot.remove();
-      ripple(b, color);
-    };
+      { duration: ms, easing: "ease-in-out" },
+    );
+    window.setTimeout(() => releaseDot(d), ms);
   }
 }
 
@@ -617,12 +682,16 @@ function onMessage(buf: Uint8Array): void {
 function layout(): void {
   const r = canvas.getBoundingClientRect();
   const s = stage.getBoundingClientRect();
-  for (const el of [overlay, glow]) {
-    el.style.left = `${r.left - s.left}px`;
-    el.style.top = `${r.top - s.top}px`;
-    el.style.width = `${r.width}px`;
-    el.style.height = `${r.height}px`;
+  for (const e of [overlay, glow]) {
+    e.style.left = `${r.left - s.left}px`;
+    e.style.top = `${r.top - s.top}px`;
+    e.style.width = `${r.width}px`;
+    e.style.height = `${r.height}px`;
   }
+  // Round the picture's corners about as much as the display's, and size touch discs as a
+  // fingertip on it (56 points).
+  stage.style.setProperty("--screen-r", `${Math.round(Math.min(r.width, r.height) * 0.085)}px`);
+  if (config) overlay.style.setProperty("--touch", `${Math.max(20, (56 / config.screen[0]) * r.width)}px`);
   placeCursor();
 }
 new ResizeObserver(layout).observe(stage);
@@ -837,6 +906,7 @@ settingsToggle.addEventListener("click", () => {
   layout();
   if (open) void readSettings();
 });
+$<HTMLButtonElement>("#settings-close").addEventListener("click", () => settingsToggle.click());
 for (const radio of settingsPanel.querySelectorAll<HTMLInputElement>('input[name="appearance"]')) {
   radio.addEventListener("change", () => void setSetting("appearance", [radio.value]));
 }
@@ -912,7 +982,7 @@ function report(): void {
         : { name: sessionName.textContent, state: sessionState.textContent, button: sessionPrimary.textContent },
       glow: glow.hidden ? null : glow.classList.contains("human") ? "human" : "agent",
       labelsShown,
-      ripplesOnScreen: overlay.querySelectorAll(".ripple").length,
+      touchDotsOnScreen: overlay.querySelectorAll(".touch-dot").length,
       agentCursor: cursor.hidden
         ? null
         : {
@@ -932,11 +1002,20 @@ function report(): void {
   });
 }
 
+/** The device the viewer shows, for Try again. */
+let lastDevice: DeviceInfo | undefined;
+
 async function openViewer(d: DeviceInfo): Promise<void> {
   picker.hidden = true;
   viewer.hidden = false;
-  $<HTMLSpanElement>("#device-name").textContent = d.name ?? d.product_type ?? d.udid;
-  viewerStatus.textContent = "Connecting…";
+  const name = d.name ?? d.product_type ?? d.udid;
+  $<HTMLSpanElement>("#device-name").textContent = name;
+  $<HTMLSpanElement>("#device-meta").textContent = [d.name ? d.product_type : undefined, osLabel(d)]
+    .filter(Boolean)
+    .join(" · ");
+  lastDevice = d;
+  stageState("connecting", `Connecting to ${name}…`);
+  viewerStatus.textContent = "";
   const channel = new Channel<ArrayBuffer | number[]>();
   const gen = ++viewerGen;
   channel.onmessage = (m) => {
@@ -946,7 +1025,7 @@ async function openViewer(d: DeviceInfo): Promise<void> {
   try {
     await invoke("attach", { udid: d.udid, channel });
   } catch (e) {
-    viewerStatus.textContent = String(e);
+    if (gen === viewerGen) stageState("error", `Couldn't connect to ${name}`, String(e));
     return;
   }
   // VoiceOver changes what taps do, so its warning shows whether or not the panel is open.
@@ -956,6 +1035,11 @@ async function openViewer(d: DeviceInfo): Promise<void> {
     if (Math.round(performance.now() / 1000) % 2 === 0) report();
   }, 1000);
 }
+
+$<HTMLButtonElement>("#stage-retry").addEventListener("click", () => {
+  if (lastDevice) void openViewer(lastDevice);
+});
+$<HTMLButtonElement>("#stage-back").addEventListener("click", () => $<HTMLButtonElement>("#back").click());
 
 $<HTMLButtonElement>("#back").addEventListener("click", async () => {
   endPress();
@@ -975,6 +1059,7 @@ $<HTMLButtonElement>("#back").addEventListener("click", async () => {
   hideCursor();
   voWarning.hidden = true;
   settingsMessage("");
+  stageState("connecting");
   viewer.hidden = true;
   picker.hidden = false;
 });
