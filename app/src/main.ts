@@ -21,10 +21,20 @@ interface Config {
   screen: [number, number];
 }
 
+/** An agent session as the daemon reports it (`iphone_use_daemon::control::AgentSession`). */
+interface AgentSession {
+  id: string;
+  name: string;
+  owner: "agent" | "delegated_to_user" | "user" | "finished";
+  /** Why the agent handed off, while `delegated_to_user`. */
+  reason: string | null;
+}
+
 interface ControlEvent {
-  owner: "shared" | "human";
+  /** The session using the device; null when none runs. */
+  session: AgentSession | null;
+  human_touching: boolean;
   agent_stopped: boolean;
-  agent_active: boolean;
 }
 
 interface InputEvent {
@@ -37,6 +47,8 @@ interface InputEvent {
   phase?: "down" | "move" | "up";
   /** For a `touch` up the daemon did itself: why (timeout, disconnect, control change). */
   lifted?: string;
+  /** What the input is for, in a few words (`--label`), shown next to it. */
+  label?: string | null;
 }
 
 /** Mirrors `iphone_use_core::DeviceSettings`, plus the location the daemon simulated. `null`:
@@ -113,15 +125,21 @@ const canvas = $<HTMLCanvasElement>("#screen");
 const overlay = $<HTMLDivElement>("#overlay");
 const stage = $<HTMLDivElement>("#stage");
 const viewerStatus = $<HTMLParagraphElement>("#viewer-status");
-const badge = $<HTMLSpanElement>("#agent-badge");
-const takeOverBtn = $<HTMLButtonElement>("#take-over");
-const stopAgentBtn = $<HTMLButtonElement>("#stop-agent");
+const glow = $<HTMLDivElement>("#glow");
+const sessionDock = $<HTMLDivElement>("#session-dock");
+const sessionPanel = $<HTMLDivElement>("#session-panel");
+const sessionName = $<HTMLSpanElement>("#session-name");
+const sessionState = $<HTMLSpanElement>("#session-state");
+const sessionPrimary = $<HTMLButtonElement>("#session-primary");
+const sessionStop = $<HTMLButtonElement>("#session-stop");
 const ctx = canvas.getContext("2d")!;
 
 let config: Config | undefined;
 let decoder: VideoDecoder | undefined;
 let waitingForKey = true;
-let control: ControlEvent = { owner: "shared", agent_stopped: false, agent_active: false };
+let control: ControlEvent = { session: null, human_touching: false, agent_stopped: false };
+/** Labels shown so far, for the report. */
+let labelsShown = 0;
 
 /** Decoder numbers, shown under the screen and reported to the backend's log. */
 const stats = {
@@ -253,18 +271,58 @@ function onFrame(header: { keyframe: boolean; pts_us: number }, data: Uint8Array
   }
 }
 
+/** What the panel says and does for each owner: status text, the main button and its action. */
+function panelFor(s: AgentSession): { state: string; button: string; action: string } {
+  switch (s.owner) {
+    case "delegated_to_user":
+      return { state: `Waiting for you: ${s.reason ?? ""}`, button: "Done", action: "done" };
+    case "user":
+      return { state: "You are in control", button: "Hand back", action: "hand_back" };
+    default:
+      return { state: "Agent is in control", button: "Take over", action: "take_over" };
+  }
+}
+
+/** The session's glow and panel stay up for as long as the session runs, not only while input
+ * arrives, so the person watching always knows an agent holds the device. */
 function onControl(c: ControlEvent): void {
   control = c;
-  badge.hidden = !c.agent_active;
-  stage.classList.toggle("agent", c.agent_active && c.owner !== "human");
-  stage.classList.toggle("human", c.owner === "human");
-  takeOverBtn.textContent = c.owner === "human" ? "Hand back" : "Take over";
-  stopAgentBtn.textContent = c.agent_stopped ? "Resume agent" : "Stop agent";
+  const s = c.session && c.session.owner !== "finished" ? c.session : null;
+  sessionDock.hidden = !s;
+  glow.hidden = !s;
+  if (!s) return;
+  const human = s.owner !== "agent";
+  glow.classList.toggle("human", human);
+  sessionPanel.classList.toggle("human", human);
+  const p = panelFor(s);
+  sessionName.textContent = s.name;
+  sessionState.textContent = p.state;
+  sessionState.title = p.state;
+  sessionPrimary.textContent = p.button;
+  sessionPrimary.dataset.action = p.action;
+  layout();
 }
 
 /** Where a point of the screen (in points) is on the overlay, in CSS pixels. */
 function toOverlay(p: [number, number], screen: [number, number]): [number, number] {
   return [(p[0] / screen[0]) * overlay.clientWidth, (p[1] / screen[1]) * overlay.clientHeight];
+}
+
+/** Shows an input's label next to where it happened (or at the bottom, for a button) for a
+ * moment. */
+function showLabel(text: string | null | undefined, at: [number, number] | undefined, color: string): void {
+  if (!text) return;
+  const b = document.createElement("div");
+  b.className = "label-bubble";
+  b.textContent = text;
+  b.style.setProperty("--c", color);
+  const [x, y] = at ?? [overlay.clientWidth / 2, overlay.clientHeight - 24];
+  if (!at) b.classList.add("bottom");
+  b.style.left = `${x}px`;
+  b.style.top = `${y}px`;
+  overlay.append(b);
+  labelsShown++;
+  b.addEventListener("animationend", () => b.remove());
 }
 
 function ripple(at: [number, number], color: string): HTMLDivElement {
@@ -318,6 +376,10 @@ function onInput(e: InputEvent): void {
     stats.lastInput = `${e.source} ${e.kind}${e.phase ? ` ${e.phase}` : ""} ${JSON.stringify(e.points)}`;
   }
   const color = e.source === "agent" ? "#ff9f0a" : "#0a84ff";
+  if (e.label) {
+    const p = e.points[0];
+    showLabel(e.label, p && e.screen[0] ? toOverlay(p, e.screen) : undefined, color);
+  }
   if (e.kind === "touch") {
     onTouch(e, color);
   } else if (e.kind === "tap" && e.points[0]) {
@@ -374,10 +436,12 @@ function onMessage(buf: Uint8Array): void {
 function layout(): void {
   const r = canvas.getBoundingClientRect();
   const s = stage.getBoundingClientRect();
-  overlay.style.left = `${r.left - s.left}px`;
-  overlay.style.top = `${r.top - s.top}px`;
-  overlay.style.width = `${r.width}px`;
-  overlay.style.height = `${r.height}px`;
+  for (const el of [overlay, glow]) {
+    el.style.left = `${r.left - s.left}px`;
+    el.style.top = `${r.top - s.top}px`;
+    el.style.width = `${r.width}px`;
+    el.style.height = `${r.height}px`;
+  }
 }
 new ResizeObserver(layout).observe(stage);
 
@@ -490,12 +554,10 @@ document.addEventListener("visibilitychange", () => {
 });
 
 $<HTMLButtonElement>("#home").addEventListener("click", () => void send("button", { name: "home" }));
-takeOverBtn.addEventListener("click", () =>
-  void send("control", { action: control.owner === "human" ? "release" : "take_over" }),
-);
-stopAgentBtn.addEventListener("click", () =>
-  void send("control", { action: control.agent_stopped ? "resume_agent" : "stop_agent" }),
-);
+sessionPrimary.addEventListener("click", () => {
+  if (sessionPrimary.dataset.action) void send("control", { action: sessionPrimary.dataset.action });
+});
+sessionStop.addEventListener("click", () => void send("control", { action: "stop" }));
 
 // ---------- device settings ----------
 
@@ -662,7 +724,12 @@ function report(): void {
       touchMsMax: stats.touchMs.length ? Math.max(...stats.touchMs) : null,
       touchErrors: stats.touchErrors,
       control,
-      badgeVisible: !badge.hidden,
+      // What the session panel shows, so a check of the viewer doesn't need anyone to look.
+      panel: sessionDock.hidden
+        ? null
+        : { name: sessionName.textContent, state: sessionState.textContent, button: sessionPrimary.textContent },
+      glow: glow.hidden ? null : glow.classList.contains("human") ? "human" : "agent",
+      labelsShown,
       ripplesOnScreen: overlay.childElementCount,
       overlay: [overlay.clientWidth, overlay.clientHeight],
     },
@@ -708,6 +775,7 @@ $<HTMLButtonElement>("#back").addEventListener("click", async () => {
   waitingForKey = true;
   config = undefined;
   settings = {};
+  onControl({ session: null, human_touching: false, agent_stopped: false });
   voWarning.hidden = true;
   settingsMessage("");
   viewer.hidden = true;

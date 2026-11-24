@@ -19,11 +19,8 @@
       <header class="bar">
         <button id="back" type="button" aria-label="Back to devices">‹</button>
         <span id="device-name"></span>
-        <span id="agent-badge" hidden>Agent is driving</span>
         <span class="spacer"></span>
         <button id="home" type="button">Home</button>
-        <button id="take-over" type="button">Take over</button>
-        <button id="stop-agent" type="button">Stop agent</button>
         <button id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings">Settings</button>
       </header>
       <p id="vo-warning" role="alert" hidden>
@@ -32,6 +29,7 @@
       </p>
       <div id="body">
         <div id="stage">
+          <div id="glow" hidden></div>
           <canvas id="screen"></canvas>
           <div id="overlay"></div>
         </div>
@@ -74,6 +72,17 @@
           </div>
           <p id="settings-status" role="status"></p>
         </aside>
+      </div>
+      <div id="session-dock" hidden>
+        <div id="session-panel" role="region" aria-label="Agent session">
+          <span id="session-spinner" aria-hidden="true"></span>
+          <div id="session-text">
+            <span id="session-name"></span>
+            <span id="session-state" role="status"></span>
+          </div>
+          <button id="session-primary" type="button">Take over</button>
+          <button id="session-stop" type="button">Stop</button>
+        </div>
       </div>
       <p id="viewer-status" role="status"></p>
     </section>
