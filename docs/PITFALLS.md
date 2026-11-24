@@ -22,7 +22,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23, #26, #27, #29 |
+| Viewer | #15, #18, #23, #26, #27, #29, #33 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
 
 ## Entries
@@ -630,3 +630,13 @@ on a device without the MobileAsset image (one Xcode 27 never prepared, or after
 the TSS signature it was checked on this device without changing it (Xcode's copy and the
 download both got a ticket).
 
+### 33. `trafficLightPosition` doesn't place the buttons' top edge at `y`
+
+Observed on macOS with Tauri 2 (`titleBarStyle: Overlay`), measuring the window's Close button
+through the accessibility tree: `y: 15` put the 16-point buttons' top 5 points down (their middle at
+13), and `y: 25` put it 15 points down (middle at 23). `x` matched the left edge. So `y` is 10
+points more than the top edge it gives.
+
+The viewer's headers are 46 points tall (`--head-h` in `app/src/style.css`) and the buttons sit in
+their middle, so the config has `y: 25`. Change both together, and measure again: the offset may
+change with Tauri or macOS.

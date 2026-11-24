@@ -25,11 +25,11 @@ const PX: Point = [1284, 2778];
 
 // Made-up names only: nothing from a real device.
 const DEVICES = [
-  { udid: "00000000-0000000000000001", transports: ["usb", "wifi"], name: "Test iPhone", product_type: "iPhone13,4", device_class: "iPhone", os_version: "26.1", build_version: "23B85" },
-  { udid: "00000000-0000000000000002", transports: ["wifi"], name: "Test iPad", product_type: "iPad14,3", device_class: "iPad", os_version: "26.0" },
-  { udid: "00000000-0000000000000004", transports: ["usb"], name: "QA iPhone", product_type: "iPhone17,2", device_class: "iPhone", os_version: "26.2" },
-  { udid: "00000000-0000000000000005", transports: ["wifi"], name: "Old iPhone", product_type: "iPhone12,8", device_class: "iPhone", os_version: "18.7" },
-  { udid: "00000000-0000000000000003", transports: ["usb"], product_type: "iPhone15,2", error: "The device is locked. Unlock it and trust this computer, then refresh." },
+  { udid: "00000000-0000000000000001", transports: ["usb", "wifi"], name: "Test iPhone", product_type: "iPhone13,4", model_name: "iPhone 12 Pro Max", device_class: "iPhone", os_version: "26.1", build_version: "23B85" },
+  { udid: "00000000-0000000000000002", transports: ["wifi"], name: "Test iPad", product_type: "iPad14,3", model_name: "iPad Pro 11-inch (4th generation)", device_class: "iPad", os_version: "26.0" },
+  { udid: "00000000-0000000000000004", transports: ["usb"], name: "QA iPhone", product_type: "iPhone17,2", model_name: "iPhone 16 Pro Max", device_class: "iPhone", os_version: "26.2" },
+  { udid: "00000000-0000000000000005", transports: ["wifi"], name: "Old iPhone", product_type: "iPhone12,8", model_name: "iPhone SE (2nd generation)", device_class: "iPhone", os_version: "18.7" },
+  { udid: "00000000-0000000000000003", transports: ["usb"], product_type: "iPhone15,2", model_name: "iPhone 14 Pro", error: "The device is locked. Unlock it and trust this computer, then refresh." },
 ];
 
 const state = {
@@ -455,12 +455,13 @@ function panel(): void {
   });
 }
 
-/** Three gray dots where macOS draws the traffic lights, so the header's room for them reads. */
+/** The three dots where macOS draws the traffic lights (trafficLightPosition in tauri.conf.json),
+ * so the headers' room for them reads. */
 function lights(): void {
   const style = document.createElement("style");
   style.textContent =
-    ":root.mac .lights{position:relative}:root.mac .lights::before{content:'';position:absolute;left:6px;top:50%;" +
-    "width:12px;height:12px;margin-top:-6px;border-radius:50%;background:#ff5f57;box-shadow:20px 0 #febc2e,40px 0 #28c840}";
+    ":root.mac body::after{content:'';position:fixed;z-index:50;left:17px;top:16px;pointer-events:none;" +
+    "width:14px;height:14px;border-radius:50%;background:#ff5f57;box-shadow:23px 0 #febc2e,46px 0 #28c840}";
   document.head.append(style);
 }
 

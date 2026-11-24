@@ -19,6 +19,7 @@ mod devices;
 mod display;
 mod input;
 mod media;
+mod models;
 mod mp4;
 pub mod paths;
 mod record;

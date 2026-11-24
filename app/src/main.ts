@@ -10,6 +10,8 @@ interface DeviceInfo {
   transports: ("usb" | "wifi")[];
   name?: string;
   product_type?: string;
+  /** "iPhone 12 Pro Max", when the core knows the product type. */
+  model_name?: string;
   device_class?: string;
   os_version?: string;
   build_version?: string;
@@ -142,11 +144,6 @@ const root = document.documentElement;
 // On macOS the window has no title bar (titleBarStyle Overlay) and the traffic lights sit over
 // the top-left corner; the headers keep room for them. Elsewhere the window keeps its frame.
 if (/Mac/.test(navigator.platform) && "__TAURI_INTERNALS__" in window) root.classList.add("mac");
-// The selected device shows in the accent color while the window has focus, gray otherwise.
-const focused = () => root.classList.toggle("focused", document.hasFocus());
-window.addEventListener("focus", focused);
-window.addEventListener("blur", focused);
-focused();
 
 /** Sidebar and inspector, each shown or hidden. Narrow windows start with them hidden: they
  * float over the stage there (style.css, "narrow windows"). */
@@ -182,8 +179,11 @@ function osLabel(d: DeviceInfo): string | undefined {
 }
 
 function deviceName(d: DeviceInfo): string {
-  return d.name ?? d.product_type ?? "Unknown device";
+  return d.name ?? modelName(d) ?? "Unknown device";
 }
+
+/** What Apple calls the model, or its identifier when the core doesn't know it. */
+const modelName = (d: DeviceInfo) => d.model_name ?? d.product_type;
 
 const isTablet = (d: DeviceInfo | undefined) => d?.device_class === "iPad" || !!d?.product_type?.startsWith("iPad");
 
@@ -192,20 +192,16 @@ function row(d: DeviceInfo): HTMLLIElement {
   li.dataset.udid = d.udid;
   li.setAttribute("role", "option");
   li.tabIndex = 0;
-  const glyph = el("div", "glyph");
-  glyph.append(icon(isTablet(d) ? "i-tablet" : "i-phone"));
+  // One line: the name, then its status in gray: the OS version and how it is connected, or why
+  // it can't be used. Other states (setting a device up, say) belong in the status too.
+  const status = d.error
+    ? "Unavailable"
+    : [d.name ? modelName(d) : undefined, d.transports.includes("usb") ? "USB" : d.transports.length ? "Wi-Fi" : undefined].filter(Boolean).join(" · ");
   const text = el("div", "text");
-  text.append(el("span", "name", deviceName(d)));
-  // The model identifier, or why the device can't be used.
-  const sub = d.error ? "Unavailable" : [d.name ? d.product_type : undefined, d.transports.includes("usb") ? "USB" : d.transports.length ? "Wi-Fi" : undefined]
-    .filter(Boolean)
-    .join(" · ");
-  text.append(el("span", "model", sub));
-  li.append(glyph, text, el("span", "ver", d.os_version ?? ""));
-  if (d.error) {
-    li.classList.add("unavailable");
-    li.title = d.error;
-  }
+  text.append(el("span", "name", deviceName(d)), el("span", "status", status));
+  li.append(icon(isTablet(d) ? "i-tablet" : "i-phone", "icon glyph"), text);
+  li.title = d.error ?? [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · ");
+  if (d.error) li.classList.add("unavailable");
   li.addEventListener("click", () => void select(d));
   li.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -224,7 +220,7 @@ function row(d: DeviceInfo): HTMLLIElement {
 function renderList(): void {
   const q = search.value.trim().toLowerCase();
   const match = (d: DeviceInfo) =>
-    !q || [d.name, d.product_type, d.os_version, d.udid].some((s) => s?.toLowerCase().includes(q));
+    !q || [d.name, d.model_name, d.product_type, d.os_version, d.udid].some((s) => s?.toLowerCase().includes(q));
   const shown = devices.filter(match);
   // The selected device stays listed while it is unplugged, so its view doesn't lose its row.
   if (selected && !devices.some((d) => d.udid === selected!.udid) && match(selected)) shown.unshift(selected);
@@ -253,12 +249,12 @@ function markSelection(): void {
   for (const li of document.querySelectorAll<HTMLLIElement>(".dev")) {
     const on = li.dataset.udid === selected?.udid;
     li.setAttribute("aria-selected", String(on));
-    const glyph = li.querySelector(".glyph")!;
-    glyph.querySelector(".busy")?.remove();
+    li.querySelector(".busy")?.remove();
     if (on && busy) {
+      // A blue dot at the row's end, like an unread mark.
       const dot = el("span", "busy");
       dot.title = "An agent session runs on this device";
-      glyph.append(dot);
+      li.append(dot);
     }
   }
 }
@@ -342,12 +338,13 @@ function stageState(state: StageState, text = ""): void {
 function showDeviceText(): void {
   const d = selected;
   const name = d ? deviceName(d) : "";
-  const meta = d ? [osLabel(d), d.name ? d.product_type : undefined].filter(Boolean).join(" · ") : "";
+  const meta = d ? [d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ") : "";
   $<HTMLSpanElement>("#device-name").textContent = d ? name : "No device";
   $<HTMLSpanElement>("#device-meta").textContent = d ? meta : listed && !devices.length ? "Connect a device to begin" : "Choose a device";
   $<HTMLHeadingElement>("#intro-name").textContent = name;
-  $<HTMLParagraphElement>("#intro-meta").textContent = d ? (osLabel(d) ?? d.product_type ?? "") : "";
+  $<HTMLParagraphElement>("#intro-meta").textContent = d ? ([d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ")) : "";
   introArt.classList.toggle("tablet", isTablet(d));
+  $("#device-glyph use").setAttribute("href", isTablet(d) ? "#i-tablet" : "#i-phone");
   introArt.classList.toggle("unavailable", !!d?.error);
   showInfo();
 }
@@ -970,11 +967,10 @@ function onMessage(buf: Uint8Array): void {
 
 // ---------- the device frame and zoom ----------
 //
-// The screen is drawn inside a hardware frame sized from the screen itself, so it fits any model
-// without a table of devices: a thin even bezel and round corners for Face ID phones, a thick
-// top and bottom with a home button for the older 16:9 ones, and square-ish corners for iPads.
-// The zoom is the size of one screen point in CSS pixels: "fit" works it out from the room the
-// stage has; "actual size" is one point per CSS pixel.
+// The screen is drawn as it is, with rounded corners and no hardware around it: round corners for
+// Face ID phones, nearly square ones for the older 16:9 phones and for iPads. Hardware buttons are
+// real controls in the device bar, not pictures. The zoom is the size of one screen point in CSS
+// pixels: "fit" works it out from the room the stage has; "actual size" is one point per CSS pixel.
 
 type Zoom = "fit" | number;
 let zoom: Zoom = "fit";
@@ -983,29 +979,15 @@ let scale = 1;
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 3;
 
-/** The frame around a screen of `w` by `h` points, in points. */
+/** The kind of screen and its corner radius, in points. `pad` and `rim` stay for the layout: the
+ * screen has no frame, so they are zero. */
 function frameFor(w: number, h: number) {
   const m = Math.min(w, h);
   const long = Math.max(w, h) / m;
   const kind = isTablet(selected) || long < 1.6 ? "tablet" : long < 1.9 ? "classic" : "modern";
   const portrait = h >= w;
-  let side: number, end: number, screenR: number, outerR: number;
-  if (kind === "tablet") {
-    side = end = 0.045 * m;
-    screenR = 0.024 * m;
-    outerR = screenR + side;
-  } else if (kind === "classic") {
-    side = 0.075 * m;
-    end = 0.29 * m;
-    screenR = 0.006 * m;
-    outerR = 0.17 * m;
-  } else {
-    side = end = 0.042 * m;
-    screenR = 0.125 * m;
-    outerR = screenR + side;
-  }
-  const [t, r, b, l] = portrait ? [end, side, end, side] : [side, end, side, end];
-  return { kind, portrait, pad: [t, r, b, l], rim: 0.011 * m, screenR, outerR, home: 0.16 * m };
+  const screenR = (kind === "tablet" ? 0.03 : kind === "classic" ? 0.025 : 0.125) * m;
+  return { kind, portrait, pad: [0, 0, 0, 0], rim: 0, screenR, outerR: screenR };
 }
 
 /** Sizes the device to the zoom and keeps the overlay on the screen. */
@@ -1025,19 +1007,12 @@ function layout(): void {
   deviceEl.dataset.kind = f.kind;
   deviceEl.dataset.orient = f.portrait ? "portrait" : "landscape";
   const px = (n: number) => `${n * s}px`;
-  // The rim and side buttons are drawn outside the element, inside the scroller's padding.
   deviceEl.style.width = px(w + l + r);
   deviceEl.style.height = px(h + t + b);
   const set = (k: string, v: string) => deviceEl.style.setProperty(k, v);
-  set("--pad-t", px(t));
-  set("--pad-r", px(r));
-  set("--pad-b", px(b));
-  set("--pad-l", px(l));
   set("--rim", `${Math.max(1.5, f.rim * s)}px`);
   set("--outer-r", px(f.outerR));
   set("--screen-r", px(f.screenR));
-  set("--home", px(f.home));
-  set("--h", px(h + t + b));
   // Touch discs are a fingertip on the screen (56 points).
   overlay.style.setProperty("--touch", `${Math.max(20, 56 * s)}px`);
   placeCursor();
@@ -1191,7 +1166,8 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) endPress();
 });
 
-$<HTMLButtonElement>("#home").addEventListener("click", () => void send("button", { name: "home" }).catch(() => {}));
+for (const b of document.querySelectorAll<HTMLButtonElement>("#device-bar [data-button]"))
+  b.addEventListener("click", () => void send("button", { name: b.dataset.button }).catch(() => {}));
 
 // ---------- notes: where a file went, or what failed ----------
 
@@ -1333,43 +1309,46 @@ recordBtn.addEventListener("click", async () => {
   }
 });
 
-// ---------- More menu ----------
+// ---------- menus ----------
 
-const moreBtn = $<HTMLButtonElement>("#more");
-const moreMenu = $<HTMLDivElement>("#more-menu");
-
-function openMenu(open: boolean): void {
-  moreMenu.hidden = !open;
-  moreBtn.setAttribute("aria-expanded", String(open));
-  if (open) moreMenu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+/** A button that opens a menu under it: Escape and a click elsewhere close it, the arrow keys move
+ * through its items. Returns the opener. */
+function menu(btn: HTMLButtonElement, list: HTMLElement): (open: boolean) => void {
+  const open = (on: boolean) => {
+    list.hidden = !on;
+    btn.setAttribute("aria-expanded", String(on));
+    if (on) list.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  };
+  btn.addEventListener("click", () => open(list.hidden));
+  document.addEventListener("pointerdown", (e) => {
+    if (!list.hidden && (e.target as Element).closest(".menu-anchor") !== btn.parentElement) open(false);
+  });
+  list.addEventListener("keydown", (e) => {
+    const items = [...list.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === "Escape") {
+      open(false);
+      btn.focus();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+    }
+  });
+  list.addEventListener("click", (e) => {
+    if ((e.target as Element).closest("button")) open(false);
+  });
+  return open;
 }
+
+menu($<HTMLButtonElement>("#more"), $<HTMLDivElement>("#more-menu"));
 
 function updateMenu(): void {
   $<HTMLButtonElement>("#menu-stop-view").disabled = !wantView;
   $<HTMLButtonElement>("#menu-reveal").disabled = !recordedPath;
 }
 
-moreBtn.addEventListener("click", () => openMenu(moreMenu.hidden));
-document.addEventListener("pointerdown", (e) => {
-  if (!moreMenu.hidden && !(e.target as Element).closest(".menu-anchor")) openMenu(false);
-});
-moreMenu.addEventListener("keydown", (e) => {
-  const items = [...moreMenu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-  const i = items.indexOf(document.activeElement as HTMLButtonElement);
-  if (e.key === "Escape") {
-    openMenu(false);
-    moreBtn.focus();
-  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    e.preventDefault();
-    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
-  }
-});
-moreMenu.addEventListener("click", (e) => {
-  if ((e.target as Element).closest("button")) openMenu(false);
-});
 $<HTMLButtonElement>("#menu-stop-view").addEventListener("click", () => void stopView());
 $<HTMLButtonElement>("#menu-reveal").addEventListener("click", () => reveal(recordedPath));
-$<HTMLButtonElement>("#menu-refresh").addEventListener("click", () => void loadDevices());
 
 // ---------- inspector: settings ----------
 
@@ -1538,7 +1517,12 @@ const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.le
 function showInfo(): void {
   const d = selected;
   out("name", d?.name ?? "");
-  out("model", d?.product_type ?? "");
+  // The model's name, and its identifier in small gray text when the two differ.
+  out("model", d ? (modelName(d) ?? "") : "");
+  if (d?.model_name && d.product_type) {
+    const code = el("small", "code", d.product_type);
+    $<HTMLOutputElement>("#info-model").append(" ", code);
+  }
   out("os", d ? [osLabel(d), d.build_version ? `(${d.build_version})` : ""].filter(Boolean).join(" ") : "");
   out("connection", d ? d.transports.map((t) => (t === "wifi" ? "Wi-Fi" : "USB")).join(", ") : "");
   out("udid", d?.udid ?? "");

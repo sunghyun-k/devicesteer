@@ -27,6 +27,10 @@ pub struct DeviceInfo {
     /// Hardware model identifier, such as `iPhone17,1`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub product_type: Option<String>,
+    /// What Apple calls the model, such as `iPhone 16 Pro Max`, when `product_type` is one the
+    /// table in `models.rs` knows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_class: Option<String>,
     /// iOS / iPadOS version.
@@ -84,6 +88,7 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
                     transports: vec![t],
                     name: None,
                     product_type: None,
+                    model_name: None,
                     device_class: None,
                     os_version: None,
                     build_version: None,
@@ -105,6 +110,7 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
                 let s = |k: &str| values.get(k).and_then(|v| v.as_string()).map(str::to_owned);
                 info.name = s("DeviceName");
                 info.product_type = s("ProductType");
+                info.model_name = info.product_type.as_deref().and_then(crate::models::marketing_name).map(str::to_owned);
                 info.device_class = s("DeviceClass");
                 info.os_version = s("ProductVersion");
                 info.build_version = s("BuildVersion");
