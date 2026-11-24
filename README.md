@@ -20,10 +20,13 @@ Operate a **real iPhone or iPad** connected over USB or Wi-Fi, from macOS or Win
 ```sh
 cargo build
 ./target/debug/iphone-use devices
+./target/debug/iphone-use session start --udid <UDID> "turn on dark mode"   # prints a session id
+export IPHONE_USE_SESSION=<id>                                # or --session <id> on each command
 ./target/debug/iphone-use services   --udid <UDID>
 ./target/debug/iphone-use screenshot --udid <UDID> -o screen.png
 ./target/debug/iphone-use ui         --udid <UDID>            # elements with @eN refs
-./target/debug/iphone-use tap        --udid <UDID> @e3        # or a label, or x,y in points
+./target/debug/iphone-use tap        --udid <UDID> @e3 --label "open Display settings"
+                                                              # or a label, or x,y in points
 ./target/debug/iphone-use swipe      --udid <UDID> 200,700 200,300 --place
 ./target/debug/iphone-use button     --udid <UDID> home
 ./target/debug/iphone-use launch     --udid <UDID> com.apple.calculator
@@ -31,10 +34,18 @@ cargo build
 ./target/debug/iphone-use settings   --udid <UDID>            # appearance, text size, switches, ...
 ./target/debug/iphone-use settings set --udid <UDID> appearance dark   # or text-size ax1, voiceover off,
                                                               # location set 37.3349 -122.0090, ...
+./target/debug/iphone-use session handoff --udid <UDID> --reason "enter the passcode"
+./target/debug/iphone-use session finish  --udid <UDID>
 ```
 
+**Agents:** run `iphone-use skill` for the usage guide that matches the binary (sessions, handing off
+to the user, reading the screen, labels). `skills/iphone-use/SKILL.md` is a bootstrap that points
+there.
+
 Output is JSON. Device commands go through a per-device daemon that the first command starts
-(`daemon status`, `daemon stop`). The viewer app (`app/`) shows the live screen:
+(`daemon status`, `daemon stop`). The viewer app (`app/`) shows the live screen; while an agent
+session runs it glows around the screen and shows the session at the bottom, with Take over / Hand
+back (Done after a handoff) and Stop:
 
 ```sh
 cd app && npm install && npx tauri dev

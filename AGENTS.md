@@ -32,8 +32,17 @@ usbmuxd (USB or Wi-Fi) -> lockdown -> CoreDeviceProxy -> CDTunnel
 ```
 
 Shape: one daemon per device owns the tunnel, the screen-sharing media session, HID and the
-accessibility subscription; the CLI, the Tauri viewer (live screen, human control, take over/stop
-while an agent drives, touch indicators) and later an MCP server all attach to it.
+accessibility subscription; the CLI, the Tauri viewer (live screen, human control, touch indicators
+with the agent's labels, and a panel to take over, hand back or stop an agent's session) and later
+an MCP server all attach to it.
+
+**Agent sessions** (`crates/daemon/src/control.rs`): an agent runs `session start "<goal>"` and
+sends input with the id (`--session` or `IPHONE_USE_SESSION`). One session per device; its owner is
+`agent`, `delegated_to_user` (the agent ran `session handoff`), `user` (the human pressed Take over)
+or `finished`. Agent input is refused unless the owner is `agent`, and the refusal tells the agent
+to stop and tell the user. Sessions expire when their agent goes quiet (10 min; 30 while the human
+has the device), since a CLI agent has no connection the daemon could watch. Input without a
+session works while none runs, with a `note`.
 
 There is no public API for any of this, so **observation, not documentation, is the source of
 truth.** `docs/PITFALLS.md` records why things are the way they are.
@@ -49,7 +58,9 @@ crates/daemon/      iphone-use-daemon: the per-device daemon (Unix socket; Windo
                     do), its wire format, agent/human control state, and the Client both the CLI
                     and the viewer use
 crates/cli/         binary `iphone-use`: JSON CLI. Device commands go through the daemon, which
-                    it starts on demand (`--no-daemon` for the direct path)
+                    it starts on demand (`--no-daemon` for the direct path). `src/skill.md` is the
+                    agent guide `iphone-use skill` prints: keep it in step with the commands
+skills/iphone-use/  SKILL.md: a bootstrap that tells agents to run `iphone-use skill`
 app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC decoding)
 app/src-tauri/      Tauri shell (workspace member), a daemon client
 THIRD_PARTY_NOTICES.md  Code adapted from other projects, with their licenses
@@ -82,6 +93,10 @@ npx tauri dev                                  # viewer, hot reload
 npx tauri build --bundles app                  # macOS .app (use nsis on Windows)
 ```
 
+A running daemon keeps the code it started with: after changing `crates/daemon` or `crates/core`,
+run `iphone-use daemon stop` (the next command starts the new build) and reopen the device in the
+viewer. `tauri dev` restarts the viewer itself when the daemon crate changes.
+
 There is no test suite against devices; a clean `cargo build` and `cargo clippy --workspace` is the
 minimum for every change. Pure logic (parsing, geometry) should get unit tests.
 
@@ -90,7 +105,7 @@ minimum for every change. Pure logic (parsing, geometry) should get unit tests.
 - **Comments explain why, not what.** The best comment says what breaks if the code is done the
   obvious way. When you learn such a thing by observation, add a `docs/PITFALLS.md` entry and cite it.
 - **The core crate owns all device I/O.** The CLI, the app and later the daemon/MCP stay thin.
-- **Output:** machine-readable output is JSON on stdout. Errors go to stderr as
+- **Output:** machine-readable output is JSON on stdout (`skill` prints Markdown). Errors go to stderr as
   `{"error": "..."}` with exit code 1, and tell the reader what to do next: agents follow them
   literally.
 - **Connection-failure messages say "connection" or "tunnel".** The future daemon drops its cached
