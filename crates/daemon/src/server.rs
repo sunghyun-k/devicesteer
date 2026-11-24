@@ -20,9 +20,10 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use iphone_use_core::{
-    Button, Controller, DeviceSettings, Display, DisplayPoller, Frame, FrameStream, MediaMode, Motion, RecordSummary,
+    Button, Clipboard, Controller, TypeMethod, DeviceSettings, Display, DisplayPoller, Frame, FrameStream, MediaMode, Motion, RecordSummary,
     Recorder, Resampler, Session, Setting, TAP_HOLD, Toggle, TouchPhase,
     ax::{BuildOptions, Screen},
+    keyboard,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -68,8 +69,14 @@ const AGENT_WAITS_FOR_TOUCH: Duration = Duration::from_secs(3);
 /// few words, not a sentence.
 const MAX_LABEL: usize = 60;
 
+/// Held keys are released after this long without a key step from their client. A held key's
+/// keydown repeats about every 30 to 80 ms in a browser, and the viewer sends those on; a key
+/// left down on the device repeats its character.
+const KEYS_TIMEOUT: Duration = Duration::from_secs(2);
+/// The same with only modifiers down: those don't repeat, and a person may hold one a while.
+const MODIFIERS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Commands that put input on the device.
-const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch", "settings_set"];
+const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch", "settings_set", "key", "type", "paste", "keyboard", "keyboard_connect", "keyboard_disconnect"];
 /// How long a reading of the VoiceOver switch is trusted before an input reads it again.
 const VOICEOVER_CHECK: Duration = Duration::from_secs(5);
 /// Added to the result of input sent while VoiceOver is on.
@@ -118,6 +125,27 @@ struct Device {
     location: Option<(f64, f64)>,
     /// The VoiceOver switch as last read, and when.
     voiceover: Option<(bool, Instant)>,
+    /// Keys a client holds down (the viewer's keyboard).
+    keys: Option<HeldKeys>,
+    /// The clipboard's contents from before a paste the device asked to allow, until
+    /// `paste --restore`. Never sent to a client.
+    clipboard: Option<Clipboard>,
+}
+
+/// Keys a client holds down on the device.
+struct HeldKeys {
+    conn: u64,
+    source: Source,
+    /// When that client last sent a key step (a held key repeats its keydown).
+    last: Instant,
+    /// Only modifiers are down.
+    modifiers_only: bool,
+}
+
+impl HeldKeys {
+    fn stale(&self) -> bool {
+        self.last.elapsed() > if self.modifiers_only { MODIFIERS_TIMEOUT } else { KEYS_TIMEOUT }
+    }
 }
 
 pub struct Daemon {
@@ -183,6 +211,14 @@ fn point(v: &Value) -> Result<(f64, f64)> {
 fn orientation_json(d: &Display) -> Value {
     let (w, h) = d.size();
     json!({ "rotation": d.rotation, "orientation": d.orientation(), "screen": [w, h] })
+}
+
+/// The `keyboard` event: whether our hardware keyboard is attached (the on-screen keyboard is
+/// then hidden), and whether it is meant to be (it is attached again with the next input after
+/// the HID connection closed while idle).
+fn keyboard_event(c: &Controller) -> Value {
+    let (wanted, attached) = c.keyboard_state();
+    json!({ "event": "keyboard", "hardware": wanted, "attached": attached })
 }
 
 /// An input's optional `label`: a few words saying what it does, shown next to it in the viewer.
@@ -441,6 +477,20 @@ impl Daemon {
             o.extend(e.clone());
         }
         self.emit(ev);
+    }
+
+    /// Releases the keys a client holds, if `which` picks it: before other input, when its
+    /// client goes away or stops sending (a key left down repeats on the device).
+    async fn release_keys(&self, dev: &mut Device, which: impl Fn(&HeldKeys) -> bool, why: &str) {
+        if !dev.keys.as_ref().is_some_and(&which) {
+            return;
+        }
+        dev.keys = None;
+        if let Some(c) = dev.controller.as_mut()
+            && let Err(e) = c.release_keys().await
+        {
+            tracing::warn!("could not release the held keys ({why}): {e:#}");
+        }
     }
 
     /// Lifts the live touch's finger, if one is down and `which` picks it. The `input` event
@@ -717,6 +767,98 @@ impl Daemon {
             "touch" => {
                 self.touch(dev, req).await
             }
+            "key" => {
+                let name = a.get("name").and_then(|v| v.as_str()).context("key needs a name")?;
+                let stroke = keyboard::parse_key(name)?;
+                let sync = self.sync_video(dev).await;
+                self.release_keys(dev, |_| true, "a key press").await;
+                let c = self.controller(dev).await?;
+                sync?;
+                let screen = c.display().await?.size();
+                self.input_event(req.source, "key", &[], screen, json!({ "key": name, "label": label(a)? }));
+                let sent = c.press_keys(std::slice::from_ref(&stroke)).await?;
+                dev.last_input = Some(Instant::now());
+                Ok(self.warn_voiceover(dev, json!({ "pressed": name, "ms": sent.ms })).await)
+            }
+            "type" => {
+                let text = a.get("text").and_then(|v| v.as_str()).context("type needs text")?;
+                let enter = a.get("enter").and_then(|v| v.as_bool()).unwrap_or(false);
+                let force = a.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
+                let method = match a.get("method").and_then(|v| v.as_str()) {
+                    Some(m) => TypeMethod::parse(m)?,
+                    None => TypeMethod::default(),
+                };
+                let sync = self.sync_video(dev).await;
+                self.release_keys(dev, |_| true, "typing").await;
+                let c = self.controller(dev).await?;
+                sync?;
+                let screen = c.display().await?.size();
+                self.input_event(req.source, "type", &[], screen, json!({ "chars": text.chars().count(), "label": label(a)? }));
+                let typed = Box::pin(c.type_text(text, enter, force, method)).await?;
+                dev.last_input = Some(Instant::now());
+                Ok(self.warn_voiceover(dev, serde_json::to_value(typed)?).await)
+            }
+            "paste" => {
+                let restore = a.get("restore").and_then(|v| v.as_bool()).unwrap_or(false);
+                let force = a.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
+                let sync = self.sync_video(dev).await;
+                self.release_keys(dev, |_| true, "pasting").await;
+                let mut backup = dev.clipboard.take();
+                let c = self.controller(dev).await?;
+                sync?;
+                let r = if restore {
+                    c.restore_backup(&mut backup).await.map(|restored| {
+                        json!({ "clipboard": if restored { "restored" } else { "nothing to restore" } })
+                    })
+                } else {
+                    let text = a.get("text").and_then(|v| v.as_str()).context("paste needs text")?;
+                    let screen = c.display().await?.size();
+                    self.input_event(req.source, "paste", &[], screen, json!({ "chars": text.chars().count(), "label": label(a)? }));
+                    let r = Box::pin(c.paste_text(text, force, &mut backup)).await;
+                    r.and_then(|p| Ok(serde_json::to_value(p)?))
+                };
+                dev.clipboard = backup;
+                dev.last_input = Some(Instant::now());
+                Ok(self.warn_voiceover(dev, r?).await)
+            }
+            "keyboard_connect" | "keyboard_disconnect" | "keyboard_status" => {
+                if req.cmd != "keyboard_status" {
+                    let sync = self.sync_video(dev).await;
+                    self.release_keys(dev, |_| true, "the hardware keyboard changed").await;
+                    let c = self.controller(dev).await?;
+                    sync?;
+                    c.set_keyboard(req.cmd == "keyboard_connect").await?;
+                    dev.last_input = Some(Instant::now());
+                }
+                let ev = keyboard_event(self.controller(dev).await?);
+                self.emit(ev.clone());
+                Ok(ev)
+            }
+            "keyboard" => {
+                let down = a.get("down").and_then(|v| v.as_bool()).context("keyboard needs down: true or false")?;
+                let usage = match (a.get("code").and_then(|v| v.as_str()), a.get("usage").and_then(|v| v.as_u64())) {
+                    (Some(code), _) => match keyboard::dom_code_usage(code) {
+                        Some(u) => u,
+                        // A key the device has no usage for (Fn, media keys): nothing to send.
+                        None => return Ok(json!({ "ignored": code })),
+                    },
+                    (None, Some(u)) if u >= 1 && u <= u64::from(keyboard::MAX_USAGE) => u as u8,
+                    _ => bail!("keyboard needs a DOM `code` (KeyA) or a HID `usage` (1 to 231)"),
+                };
+                if !down && dev.keys.is_none() {
+                    return Ok(json!({ "usage": usage, "down": false }));
+                }
+                let sync = self.sync_video(dev).await;
+                let c = self.controller(dev).await?;
+                sync?;
+                c.key(usage, down).await?;
+                let down_now = c.keys_down();
+                let modifiers_only = down_now.iter().all(|u| keyboard::is_modifier(*u));
+                dev.keys = (!down_now.is_empty())
+                    .then(|| HeldKeys { conn: req.conn, source: req.source, last: Instant::now(), modifiers_only });
+                dev.last_input = Some(Instant::now());
+                Ok(json!({ "usage": usage, "down": down }))
+            }
             "ui" => {
                 let opts = BuildOptions { all: a.get("all").and_then(|v| v.as_bool()).unwrap_or(false) };
                 let full = a.get("full").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -932,6 +1074,7 @@ impl Daemon {
             }
             if let Ok(mut dev) = self.device.try_lock() {
                 self.lift_touch(&mut dev, |t| t.last.elapsed() > TOUCH_TIMEOUT, "no step for 2 s").await;
+                self.release_keys(&mut dev, HeldKeys::stale, "no key step").await;
             }
             if !n.is_multiple_of(4) {
                 continue;
@@ -986,6 +1129,7 @@ impl Daemon {
                 // The human may want to touch right away; an agent's finger left down would fight them.
                 let mut dev = self.device.lock().await;
                 self.lift_touch(&mut dev, |t| t.source == Source::Agent, "the agent handed off").await;
+                self.release_keys(&mut dev, |k| k.source == Source::Agent, "the agent handed off").await;
             }
             self.emit_control();
         }
@@ -1090,6 +1234,7 @@ impl Daemon {
                                 if let Some(losing) = losing {
                                     let mut dev = self.device.lock().await;
                                     self.lift_touch(&mut dev, |t| t.source == losing, "control changed").await;
+                                    self.release_keys(&mut dev, |k| k.source == losing, "control changed").await;
                                 }
                                 self.emit_control();
                                 Ok(self.control.lock().unwrap().event())
@@ -1117,6 +1262,7 @@ impl Daemon {
         {
             let mut dev = self.device.lock().await;
             self.lift_touch(&mut dev, |t| t.conn == conn, "its client disconnected").await;
+            self.release_keys(&mut dev, |k| k.conn == conn, "its client disconnected").await;
         }
         if let Some((task, frames)) = subscription.take() {
             task.abort();

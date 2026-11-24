@@ -13,6 +13,7 @@ use crate::{
     ax::{AxClient, AxUnresponsive, BuildOptions, Dump, Screen},
     display::Display,
     input::{Button, Input, Motion, TAP_HOLD, TouchPhase},
+    keyboard::Stroke,
     media::{MediaMode, MediaSession, MediaStatus},
 };
 
@@ -45,6 +46,11 @@ pub struct Controller {
     apps: AppDirectory,
     /// The app list was fetched again for a bundle it lacked; once per controller is enough.
     apps_refreshed: bool,
+    /// A hardware keyboard should be attached: it is again whenever the HID connection is
+    /// reopened, since the device removes it with the connection (PITFALLS #36).
+    want_keyboard: bool,
+    /// How `type` typed each script in an app (by pid), so later calls skip the probe.
+    pub(crate) typing_ways: HashMap<(i64, crate::KeyboardLanguage), crate::typing::Way>,
 }
 
 /// Longest wait for one accessibility reading.
@@ -69,6 +75,8 @@ impl Controller {
             processes: HashMap::new(),
             apps: AppDirectory::default(),
             apps_refreshed: false,
+            want_keyboard: false,
+            typing_ways: HashMap::new(),
         }
     }
 
@@ -125,7 +133,10 @@ impl Controller {
         self.ensure_media().await?;
         let display = self.display().await?;
         if self.input.is_none() {
-            let input = Input::open(self.session.adapter().clone(), self.session.rsd().clone(), display.clone()).await?;
+            let mut input = Input::open(self.session.adapter().clone(), self.session.rsd().clone(), display.clone()).await?;
+            if self.want_keyboard {
+                input.connect_keyboard().await?;
+            }
             self.input = Some(input);
         }
         Ok((self.input.as_mut().expect("opened above"), display))
@@ -175,6 +186,75 @@ impl Controller {
     /// Whether a live touch has a finger down.
     pub fn touching(&self) -> bool {
         self.input.as_ref().is_some_and(Input::touching)
+    }
+
+    /// Presses `strokes` one after another (see [`Input::press`]).
+    pub async fn press_keys(&mut self, strokes: &[Stroke]) -> Result<Sent> {
+        let (_, display) = self.ensure_input().await?;
+        let began = std::time::Instant::now();
+        self.input_since_read = true;
+        let input = self.input.as_mut().expect("opened above");
+        for s in strokes {
+            input.press(s).await?;
+        }
+        Ok(Sent { screen: display.size(), ms: began.elapsed().as_millis() as u64 })
+    }
+
+    /// One step of a key a client holds (see [`Input::key`]).
+    pub async fn key(&mut self, usage: u8, down: bool) -> Result<()> {
+        // Letting go of a key the HID connection no longer has needs no connection.
+        if !down && !self.input.as_ref().is_some_and(|i| i.keys_down().contains(&usage)) {
+            return Ok(());
+        }
+        self.ensure_input().await?;
+        self.input_since_read = true;
+        self.input.as_mut().expect("opened above").key(usage, down).await
+    }
+
+    /// Attaches (`true`) or removes the hardware keyboard (see [`Input::connect_keyboard`]).
+    pub async fn set_keyboard(&mut self, connected: bool) -> Result<()> {
+        self.want_keyboard = connected;
+        // What the keyboard surface types follows the hardware keyboard's input source
+        // (PITFALLS #35), which a hardware keyboard can change.
+        self.typing_ways.clear();
+        if !connected && self.input.is_none() {
+            return Ok(());
+        }
+        self.ensure_input().await?;
+        self.input_since_read = true;
+        let input = self.input.as_mut().expect("opened above");
+        if connected { input.connect_keyboard().await } else { input.disconnect_keyboard().await }
+    }
+
+    /// Attaches or removes the hardware keyboard for one command, leaving what the user asked
+    /// for (`set_keyboard`) as it is.
+    pub(crate) async fn attach_for_typing(&mut self, on: bool) -> Result<()> {
+        if !on && self.input.is_none() {
+            return Ok(());
+        }
+        self.ensure_input().await?;
+        self.input_since_read = true;
+        let input = self.input.as_mut().expect("opened above");
+        if on { input.connect_keyboard().await } else { input.disconnect_keyboard().await }
+    }
+
+    /// Whether the hardware keyboard is meant to be attached, and whether it is now (the HID
+    /// connection may be closed while idle; it is attached again with the next input).
+    pub fn keyboard_state(&self) -> (bool, bool) {
+        (self.want_keyboard, self.input.as_ref().is_some_and(Input::keyboard_connected))
+    }
+
+    /// Keys a client holds down.
+    pub fn keys_down(&self) -> Vec<u8> {
+        self.input.as_ref().map(Input::keys_down).unwrap_or_default()
+    }
+
+    /// Releases the keys a client holds, if any.
+    pub async fn release_keys(&mut self) -> Result<()> {
+        match self.input.as_mut() {
+            Some(i) => i.release_keys().await,
+            None => Ok(()),
+        }
     }
 
     pub async fn button(&mut self, button: Button) -> Result<()> {

@@ -158,7 +158,7 @@ iphone-use tap @e12 --label "open Wi-Fi settings"       # by ref from the last u
 iphone-use tap "Wi-Fi" --label "open Wi-Fi settings"    # by label: exact, then a unique substring
 iphone-use tap 200,400 --label "dismiss the banner"     # x,y in screen points
 iphone-use swipe 200,700 200,300 --place --label "scroll down the list"
-iphone-use button home --label "go to the home screen"  # home, lock, volume_up, volume_down
+iphone-use button home --label "go to the home screen"  # home, lock, volume_up, volume_down, eject
 iphone-use launch com.apple.Preferences
 ```
 
@@ -178,6 +178,34 @@ If an input's result carries a `warning` about VoiceOver, taps only select eleme
 activate them, so your input doesn't do what you expect. Don't work around it with double taps. Ask
 the user whether to turn it off (`iphone-use settings set voiceover off`), and turn it back on at the
 end if you did.
+
+## Type text and press keys
+
+Tap the field first (so the keyboard is up), then:
+
+```sh
+iphone-use type "Hello 안녕하세요 1호선!" --label "enter the search text"
+iphone-use type "Bluetooth" --enter                 # Return after the text
+iphone-use key return --label "submit the form"     # also backspace, tab, escape, arrows, space
+iphone-use key cmd+a                                 # combinations: cmd+c, cmd+v, cmd+z, shift+tab
+iphone-use paste "🙂 thanks" --label "add the emoji" # what type can't send; see below
+```
+
+- `type` sends Latin letters, digits, symbols and Hangul, whatever language the on-screen keyboard
+  shows. It reads the focused field before and after, and the result says `verified: true` when
+  the field gained exactly the text. With nothing focused it fails without typing: tap the field.
+- Typing takes a few seconds (about 6 s for a word, 10 to 15 s with Hangul and Latin mixed). Send
+  a whole string in one `type`, not a character at a time.
+- Autocorrection applies as on a real keyboard. When the field doesn't match, `type` deletes what
+  it typed and types it again by tapping the on-screen keys (`method: "stream+tap"`, slower). If
+  `verified` is false or `notes` says so, read the screen and fix the field before going on.
+- **`paste`** goes through the device clipboard: it saves the user's clipboard first and puts it
+  back after. iOS may ask the user to allow the paste (`prompt: true`): **never allow it for
+  them.** Hand off; once they answered, run `paste --restore` to give them their clipboard back.
+  Use `paste` only for characters `type` refuses (emoji and other scripts).
+- `keyboard connect` attaches a hardware keyboard (the on-screen keyboard hides; `key ctrl+space`
+  switches its input source), `keyboard disconnect` removes it, `keyboard status` tells. `type`
+  works either way. If you connect one, disconnect it before you finish.
 
 ## Settings and location
 
@@ -209,7 +237,8 @@ beyond the task.
 
 ## When you finish
 
-- Restore what you changed: settings, location, the app you left the user in if they care.
+- Restore what you changed: settings, location, a hardware keyboard you connected, text you typed
+  that wasn't the task, the app you left the user in if they care.
 - `iphone-use session finish` as the last command of your reply.
 - Tell the user what you did and anything you left changed.
 

@@ -116,6 +116,71 @@ enum Command {
         #[arg(long)]
         place: bool,
     },
+    /// Type text into the focused field: Latin, digits, symbols and Hangul, whatever language the
+    /// on-screen keyboard shows. The keys go through a temporary hardware keyboard and the field
+    /// is checked once at the end; if it doesn't match, the text is typed again on the on-screen
+    /// keys (the result says so). Fails without typing when no field has the keyboard.
+    Type {
+        #[command(flatten)]
+        target: Target,
+        #[command(flatten)]
+        label: Label,
+        text: String,
+        /// Press Return after the text.
+        #[arg(long)]
+        enter: bool,
+        /// Send the keys without looking at the screen first (no focus check, no check of the
+        /// result).
+        #[arg(long)]
+        force: bool,
+        /// `stream` (default): all keys at once through a temporary hardware keyboard, checked
+        /// once at the end. `tap`: slower, checks each script and taps the on-screen keys where
+        /// the HID keys type the other one.
+        #[arg(long, value_parser = ["stream", "tap"], default_value = "stream")]
+        method: String,
+    },
+    /// Paste text through the device clipboard (for emoji and other characters `type` can't
+    /// send). The clipboard's contents are saved first and put back after the paste; they are
+    /// never printed. The device may ask the user to allow the paste: never allow it for them.
+    Paste {
+        #[command(flatten)]
+        target: Target,
+        #[command(flatten)]
+        label: Label,
+        /// The text to paste.
+        #[arg(required_unless_present_any = ["file", "restore"])]
+        text: Option<String>,
+        /// Paste this UTF-8 file's contents instead (keeps the text out of the command line).
+        #[arg(long, conflicts_with_all = ["text", "restore"])]
+        file: Option<PathBuf>,
+        /// Put back the clipboard contents a paste kept because the device asked to allow it.
+        #[arg(long)]
+        restore: bool,
+        /// Paste even if no field seems to have the keyboard.
+        #[arg(long)]
+        force: bool,
+    },
+    /// The hardware keyboard: `connect` attaches one the device takes for a real keyboard (the
+    /// on-screen keyboard hides; keys follow the device's input source, ctrl+space switches it),
+    /// `disconnect` removes it (the on-screen keyboard comes back), `status` tells. `type` works
+    /// either way.
+    Keyboard {
+        #[command(flatten)]
+        target: Target,
+        #[arg(value_parser = ["connect", "disconnect", "status"], default_value = "status")]
+        action: String,
+    },
+    /// Press a key: return, backspace (also `delete`), forward_delete, tab, escape, up, down, left,
+    /// right, home, end, pageup, pagedown, space, a single character, or a combination joined
+    /// with + such as cmd+a, cmd+c, cmd+v, cmd+z, cmd+shift+z, shift+tab, ctrl+space (next
+    /// input source).
+    Key {
+        #[command(flatten)]
+        target: Target,
+        #[command(flatten)]
+        label: Label,
+        name: String,
+    },
     /// Launch an app by bundle id, such as com.apple.calculator.
     Launch {
         #[command(flatten)]
@@ -125,7 +190,8 @@ enum Command {
         #[arg(long)]
         relaunch: bool,
     },
-    /// Press a hardware button: home, lock, volume_up, volume_down.
+    /// Press a hardware button: home, lock, volume_up, volume_down, or eject (with a hardware
+    /// keyboard connected, shows or hides the on-screen keyboard).
     Button {
         #[command(flatten)]
         target: Target,
@@ -464,6 +530,28 @@ async fn run(command: Command) -> Result<serde_json::Value> {
         }
         Command::Button { target, name, label } if !target.no_daemon => {
             target.client().await?.request("button", json!({ "name": name, "label": label.label })).await?
+        }
+        Command::Type { target, text, label, enter, force, method } => {
+            let args = json!({ "text": text, "enter": enter, "force": force, "method": method, "label": label.label });
+            target.client().await?.request("type", args).await?
+        }
+        Command::Paste { target, text, file, restore, force, label } => {
+            let args = if restore {
+                json!({ "restore": true })
+            } else {
+                let text = match file {
+                    Some(f) => std::fs::read_to_string(&f).with_context(|| format!("could not read {}", f.display()))?,
+                    None => text.unwrap_or_default(),
+                };
+                json!({ "text": text, "force": force, "label": label.label })
+            };
+            target.client().await?.request("paste", args).await?
+        }
+        Command::Keyboard { target, action } => {
+            target.client().await?.request(&format!("keyboard_{action}"), json!({})).await?
+        }
+        Command::Key { target, name, label } => {
+            target.client().await?.request("key", json!({ "name": name, "label": label.label })).await?
         }
         Command::Launch { target, bundle_id, relaunch } if !target.no_daemon => {
             let args = json!({ "bundle_id": bundle_id, "relaunch": relaunch });

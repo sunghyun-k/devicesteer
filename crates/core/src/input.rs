@@ -8,14 +8,17 @@
 //! touches, settle before closing) are adapted from iphone-cli `src/device/input.rs`, MIT, see
 //! THIRD_PARTY_NOTICES.md. PITFALLS #8 has what each one prevents.
 
-use std::time::{Duration, Instant};
+use std::{
+    collections::BTreeSet,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Result, anyhow, bail};
 use idevice::{
     ReadWrite, RsdService,
     core_device::hid::{
-        ButtonState, DIGITIZER_SURFACE_MAIN_TOUCHSCREEN, HidSurface, IndigoHidClient,
-        TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient,
+        ButtonState, DIGITIZER_SURFACE_MAIN_TOUCHSCREEN, HidSurface, IndigoHidClient, KeyboardUsage,
+        MainKeyboardService, TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient,
         build_touchscreen_report,
     },
     rsd::RsdHandshake,
@@ -23,7 +26,11 @@ use idevice::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{display::Display, step};
+use crate::{
+    display::Display,
+    keyboard::{self, Stroke},
+    step,
+};
 
 /// Longest wait for the device to list a new connection's HID devices.
 const DEVICES_READY: Duration = Duration::from_secs(5);
@@ -60,10 +67,13 @@ pub enum Button {
     Lock,
     VolumeUp,
     VolumeDown,
+    /// The Eject key: with a hardware keyboard attached, shows or hides the on-screen keyboard
+    /// (PITFALLS #39).
+    Eject,
 }
 
 impl Button {
-    pub const NAMES: &str = "home, lock, volume_up, volume_down";
+    pub const NAMES: &str = "home, lock, volume_up, volume_down, eject";
 
     pub fn parse(name: &str) -> Result<Self> {
         Ok(match name.trim().to_lowercase().replace('-', "_").as_str() {
@@ -71,6 +81,7 @@ impl Button {
             "lock" | "power" => Self::Lock,
             "volume_up" => Self::VolumeUp,
             "volume_down" => Self::VolumeDown,
+            "eject" => Self::Eject,
             other => bail!("unknown button `{other}`; use one of: {}", Self::NAMES),
         })
     }
@@ -83,6 +94,7 @@ impl Button {
             Self::Lock => (0x0C, 0x30, ms(200)),
             Self::VolumeUp => (0x0C, 0xE9, ms(80)),
             Self::VolumeDown => (0x0C, 0xEA, ms(80)),
+            Self::Eject => (0x0C, 0xB8, ms(80)),
         }
     }
 }
@@ -131,7 +143,20 @@ pub struct Input {
     settle: Duration,
     /// The finger of a live touch, while it is down.
     held: Option<Held>,
+    /// The keyboard surface key reports go to.
+    keyboard: u64,
+    /// Keys a client holds down between live key calls (the viewer's keyboard).
+    keys_down: BTreeSet<u8>,
+    /// The hardware keyboard we attached, while it is (see [`Input::connect_keyboard`]).
+    hardware: Option<MainKeyboardService>,
 }
+
+/// The keyboard surface every universalhidservice connection gets (old PITFALLS #11).
+const KEYBOARD_SURFACE: u64 = 512;
+/// Time between attaching the hardware keyboard and its first key.
+const KEYBOARD_ATTACH: Duration = Duration::from_millis(700);
+/// Time between the reports of one key press. Dev measured 20 ms per step as reliable over Wi-Fi.
+const KEY_STEP: Duration = Duration::from_millis(20);
 
 /// The touchscreens among a connection's HID surfaces: `CoreDevice touchscreen(<display>)`.
 fn touchscreens(surfaces: &[HidSurface]) -> Vec<(u64, String)> {
@@ -176,6 +201,10 @@ impl Input {
                 .map(|s| s.0)
                 .ok_or_else(|| anyhow!("no touchscreen belongs to the active display {}", display.unique_id))?,
         };
+        let keyboard = listed
+            .as_deref()
+            .and_then(|l| l.iter().find(|s| s.product.as_deref() == Some("CoreDevice keyboard")))
+            .map_or(KEYBOARD_SURFACE, |s| s.service_id);
         let mut input = Self {
             hid,
             indigo: None,
@@ -185,12 +214,18 @@ impl Input {
             last_release: None,
             settle: SETTLE,
             held: None,
+            keyboard,
+            keys_down: BTreeSet::new(),
+            hardware: None,
         };
         // A "finger up" with no finger down does nothing, but the first report on a new
         // connection is sometimes lost and takes a gesture with it (PITFALLS #8).
         input.report(TOUCHSCREEN_STATE_RELEASE, 65535, 65535).await?;
         tokio::time::sleep(WARMUP).await;
         input.report(TOUCHSCREEN_STATE_RELEASE, 65535, 65535).await?;
+        // The same for the keyboard: on a new connection the first `type` lost every key once
+        // (PITFALLS #37). A report with no key down does nothing.
+        input.key_report(&[]).await?;
         tokio::time::sleep(Duration::from_millis(60)).await;
         Ok(input)
     }
@@ -378,10 +413,132 @@ impl Input {
         Ok(())
     }
 
+    async fn key_report(&mut self, down: &[u8]) -> Result<()> {
+        let began = Instant::now();
+        let r = match self.hardware.as_mut() {
+            Some(k) => {
+                let usages = down.iter().filter_map(|u| KeyboardUsage::new(u16::from(*u)).ok());
+                self.hid
+                    .set_main_keyboard_usages(k, usages)
+                    .await
+                    .map_err(|e| anyhow!("key report failed (connection error: {e})"))
+            }
+            None => self
+                .hid
+                .send_report(self.keyboard, keyboard::report(down.iter().copied()))
+                .await
+                .map_err(|e| anyhow!("key report failed (connection error: {e:?})")),
+        };
+        crate::trace::line("key", format_args!("{down:02x?} {}", began.elapsed().as_micros()));
+        r
+    }
+
+    /// Presses and releases one key with its modifiers, the way a person types: modifiers down
+    /// first, then the key, then the key up, then the modifiers. A modifier sent in the same
+    /// report as its key was sometimes missed (old PITFALLS #18: cmd+v typed a Hangul letter).
+    pub async fn press(&mut self, stroke: &Stroke) -> Result<()> {
+        self.release_keys().await?;
+        let mods = stroke.modifiers.clone();
+        if !mods.is_empty() {
+            self.key_report(&mods).await?;
+            tokio::time::sleep(KEY_STEP).await;
+        }
+        let mut all = mods.clone();
+        all.push(stroke.usage);
+        self.key_report(&all).await?;
+        tokio::time::sleep(KEY_STEP).await;
+        if !mods.is_empty() {
+            self.key_report(&mods).await?;
+            tokio::time::sleep(KEY_STEP).await;
+        }
+        self.key_report(&[]).await?;
+        tokio::time::sleep(KEY_STEP).await;
+        Ok(())
+    }
+
+    /// One step of a key a client holds (the viewer's keyboard): `down` adds it to the keys that
+    /// are down, `!down` takes it away, and the report carries the whole set. A key that is
+    /// already in that state sends nothing.
+    pub async fn key(&mut self, usage: u8, down: bool) -> Result<()> {
+        let changed = if down { self.keys_down.insert(usage) } else { self.keys_down.remove(&usage) };
+        if !changed {
+            return Ok(());
+        }
+        let set: Vec<u8> = self.keys_down.iter().copied().collect();
+        self.key_report(&set).await
+    }
+
+    /// Keys a client holds down.
+    pub fn keys_down(&self) -> Vec<u8> {
+        self.keys_down.iter().copied().collect()
+    }
+
+    /// Releases every key a client holds, before keys of our own or when the client goes away.
+    pub async fn release_keys(&mut self) -> Result<()> {
+        if self.keys_down.is_empty() {
+            return Ok(());
+        }
+        self.keys_down.clear();
+        self.key_report(&[]).await
+    }
+
+    /// Attaches a keyboard the device takes for a hardware one, and sends keys to it from now on.
+    ///
+    /// The keyboard surface every connection has is a "software keyboard": the on-screen
+    /// keyboard stays up and its layout is fixed, whatever the input source (PITFALLS #35). A
+    /// keyboard made with `createService` (idevice's `mainKeyboard`) is a hardware one: the
+    /// on-screen keyboard goes away, the keys follow the input source (Hangul composes with the
+    /// Korean one, ctrl+space switches), and it lasts until it is removed or this connection
+    /// closes (PITFALLS #36).
+    pub async fn connect_keyboard(&mut self) -> Result<()> {
+        if self.hardware.is_some() {
+            return Ok(());
+        }
+        self.release_keys().await?;
+        let k = self
+            .hid
+            .create_main_keyboard()
+            .await
+            .map_err(|e| anyhow!("could not attach the hardware keyboard ({e}); retry, or type without it"))?;
+        self.hardware = Some(k);
+        // Keys sent 250 ms after registering were lost, 800 ms worked (iphone-cli
+        // `src/device/input.rs`, MIT, see THIRD_PARTY_NOTICES.md). A report with nothing down
+        // first, as on a new connection: the first key after attaching on a fresh connection
+        // lost its Shift once (PITFALLS #38).
+        tokio::time::sleep(KEYBOARD_ATTACH / 2).await;
+        self.key_report(&[]).await?;
+        tokio::time::sleep(KEYBOARD_ATTACH / 2).await;
+        Ok(())
+    }
+
+    /// Removes the hardware keyboard, if one is attached; the on-screen keyboard comes back.
+    pub async fn disconnect_keyboard(&mut self) -> Result<()> {
+        let Some(mut k) = self.hardware.take() else { return Ok(()) };
+        self.keys_down.clear();
+        if let Err(e) = self.hid.remove_main_keyboard(&mut k).await {
+            if k.is_active() {
+                self.hardware = Some(k);
+            }
+            bail!("could not remove the hardware keyboard ({e}); retry `keyboard disconnect`");
+        }
+        Ok(())
+    }
+
+    pub fn keyboard_connected(&self) -> bool {
+        self.hardware.is_some()
+    }
+
     /// Lifts a finger left down, lets the last release sink in, then closes the connections.
     pub async fn close(mut self) {
         if let Err(e) = self.lift().await {
             tracing::warn!("could not lift the finger before closing HID: {e:#}");
+        }
+        if let Err(e) = self.release_keys().await {
+            tracing::warn!("could not release the keys before closing HID: {e:#}");
+        }
+        // The device removes it with the connection too; removing it first says so for sure.
+        if let Err(e) = self.disconnect_keyboard().await {
+            tracing::warn!("{e:#}");
         }
         if let Some(t) = self.last_release {
             let since = t.elapsed();

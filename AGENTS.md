@@ -52,8 +52,9 @@ truth.** `docs/PITFALLS.md` records why things are the way they are.
 ```text
 Cargo.toml          Workspace; pins idevice to a git commit (see below)
 crates/core/        iphone-use-core: all device I/O. Tunnel session, display info, media streams
-                    (media.rs), HID input, accessibility tree (ax/), video frames, MP4 recording,
-                    and Controller, which ties them together for one device
+                    (media.rs), HID input, keyboard (keyboard.rs: key names and layouts;
+                    typing.rs: `type` and `paste`), accessibility tree (ax/), video frames, MP4
+                    recording, and Controller, which ties them together for one device
 crates/daemon/      iphone-use-daemon: the per-device daemon (Unix socket; Windows pipe still to
                     do), its wire format, agent/human control state, and the Client both the CLI
                     and the viewer use

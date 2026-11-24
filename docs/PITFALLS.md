@@ -17,13 +17,14 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screen streams (displayservice) | #1, #2, #7, #11, #13, #27, #28 |
 | Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
-| Touch and HID input | #6, #7, #8, #17, #18, #27, #34 |
+| Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39 |
 | Display info | #9, #27 |
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
 | Viewer | #15, #18, #23, #26, #27, #29, #33, #34 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
+| Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
 
 ## Entries
 
@@ -666,3 +667,127 @@ viewer's own times on the same wall clock:
 
 Swipes still play the cursor's 160 ms glide to the start point before the press, so their end is
 about that late; not changed here.
+
+### 35. The keyboard surface types the last hardware-keyboard input source, and that sticks
+
+Every HID connection has a keyboard surface (product "CoreDevice keyboard", usage page 0x07,
+sender 512 on the test iPhone) that takes 39-byte bitmap reports. iOS treats it as a *software*
+keyboard: the on-screen keyboard stays up, and the layout it types with is not the on-screen
+keyboard's language. Measured on the test iPhone (iOS 27.2.1):
+
+- At first it typed Latin in every app, with the on-screen keyboard on Korean too: Hangul sent as
+  Dubeolsik keys came out as `dkssud`. The Swift implementation had seen Dubeolsik in some apps on
+  the same model (old #11, #58), which looked like a per-app difference.
+- After a hardware keyboard (#36) was switched to the Korean source with ctrl+space and removed,
+  the surface typed Dubeolsik jamo in every app, until a hardware keyboard selected Latin again.
+
+So the surface uses the input source the **last hardware keyboard** left behind, device-wide, and
+it survives detaching, the end of the connection and other clients. Device Hub's keys with
+"Simulate Hardware Keyboard" off go the same way: they follow that stuck source, not the Mac's
+layout.
+
+Consequences:
+
+- Never assume what a key on the surface types. `type` doesn't use the surface for text; it
+  attaches its own hardware keyboard and sets the source (#38).
+- To put a device back after testing: `keyboard connect`, `key lang2` (Latin), `keyboard
+  disconnect`. A probe key into an empty field shows which source is active.
+- The viewer's "Type from Mac Keyboard" sends physical key positions (DOM `code`), so what comes
+  out is whatever this source makes of them, like on a real keyboard.
+
+### 36. A hardware keyboard: attach, detach and what the device does
+
+idevice's `mainKeyboard` (`createService` on the universal HID service, then usage reports) makes
+a keyboard the device takes for a real one. Observed:
+
+- **Attach:** the on-screen keyboard hides at once. Keys sent ~250 ms after attaching were lost,
+  ~800 ms worked (iphone-cli's measurement, matched here); we wait 700 ms with an empty report in
+  the middle.
+- **Its source:** it starts on the language the on-screen keyboard showed when it attached, then
+  follows ctrl+space and LANG2 (#38). Hangul composes with the Korean source.
+- **Detach** (`removeService`, or the HID connection closing): the on-screen keyboard comes back
+  within ~0.5 s, on the language of the source at detach. The source sticks for the surface (#35).
+- It lasts only as long as the HID connection that made it. The controller remembers that one
+  was asked for (`keyboard connect`) and makes it again when it reopens HID.
+- The on-screen keys are hidden while it is attached, so tapping keys (`type --method tap`)
+  detaches it for the typing and attaches it again afterwards.
+
+Detach after tests: a keyboard left attached keeps the owner's on-screen keyboard hidden.
+
+### 37. Reading the on-screen keyboard and the field around keyboard changes
+
+- A reading right after a tap on the next-keyboard key (or Shift) can still list the old keys,
+  or none while they redraw: poll until the language changed (`KEYS_WAIT`).
+- A reading right after keys can return the field's value from before them (like #12): when the
+  value hasn't changed, read again (`STALE_READS`) before deciding the keys did nothing.
+- A tap on the next-keyboard key was sometimes taken for a long press: the device lists the
+  keyboards over the keys instead of switching. The key's value names the keyboard a tap would
+  pick; that item is tapped in the list.
+- On a new HID connection, the first key reports of the first `type` were all lost once. An
+  empty keyboard report right after opening (with the touch warm-up) fixed it.
+- Readings take 1.5 to 2.5 s each, so a `type` that reads per character is slow (the tap method
+  took 51 to 58 s for a 20-character mixed string; #38 reads twice).
+
+### 38. Streaming text through a hardware keyboard
+
+`type` (method `stream`) attaches a hardware keyboard (#36), sends every key with the source
+switches at the script boundaries, removes it, and reads the field once. Measured on the test
+iPhone, Notes and Settings search:
+
+- **Starting source** = the on-screen keyboard's language at attach. With Hangul in the text,
+  the on-screen keyboard is switched to Korean first, so Korean is one of the two recent sources.
+- **LANG2** (usage 0x91) selects the Latin source, from any state. LANG1, Caps Lock, right Alt and
+  right Cmd did **not** select Korean.
+- **ctrl+space** switches to the source used before, so after LANG2 it goes back to Korean. It
+  brings up a list of sources for ~1.5 s, which takes the next **space, Return or LANG2** for
+  itself (a space 1.0 s after was lost, 1.5 s after was typed); letters go through. So the
+  stream waits out the list (`SOURCE_LIST`, 1.7 s) before whitespace or another switch.
+- A space after a composing Hangul syllable was lost when the switch to Latin came after it:
+  switch right after the Hangul letters, before the spaces.
+- The first key after attaching on a fresh connection lost its Shift once: an empty report
+  before the first key (#36).
+- Autocorrection and autocapitalization apply as on a real keyboard (`x` into an empty note came
+  out `X`). The final reading catches that; the text is then deleted and typed again by tapping
+  (`stream+tap` in the result).
+
+Times (one reading before, one after): "Hello World" 5.7 s, "Bluetooth" 6.2 s, "안녕하세요
+반갑습니다" 12.5 s (includes switching the on-screen keyboard to Korean), "Hi 안녕하세요 Seoul
+1호선!" 13.7 s with 5 switches, against 16 to 58 s for tapping. Only Latin and Korean are known;
+with a third input source installed, ctrl+space order is unverified.
+
+### 39. The Eject key shows and hides the on-screen keyboard
+
+With a hardware keyboard attached, consumer usage 0x0C/0xB8 (Eject, as Device Hub's "Toggle
+Software Keyboard" sends) brings the on-screen keyboard back, and again hides it. It shows the
+current hardware source's language; switching it there with the globe key changes that source
+too (the way to change the stuck source from Device Hub). Without a hardware keyboard it was
+not tried. `button eject` and the viewer's menu send it.
+
+### 40. A clipboard paste asks every time
+
+Re-checked on the new path (old #30): setting the clipboard through the pasteboard service and
+pressing cmd+v in Notes shows the paste prompt on every paste, from the same client too. The
+prompt is the owner's to answer, so `paste` reports it (`prompt: true`), keeps the owner's saved
+clipboard, and the agent restores it with `paste --restore` after the owner has answered. That
+makes `paste` a fallback for what `type` can't send (emoji), not the default.
+
+### 41. No layout-independent text input was found
+
+Looked for a way to put text into a field without keys:
+
+- **Accessibility audit server** (`com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote`,
+  RSD checkin + DTX, protocol version 157): its selectors include
+  `deviceElement:setValue:attribute:` and `deviceElement:performAction:withValue:`. With guessed
+  argument shapes it answered NSError code 1 or dropped the connection; one drop also closed our
+  own accessibility subscription ("accessibility connection closed"), recovered on the next call.
+  Stopped there: the shapes are unknown and a wrong one disturbs the owner's other AX clients.
+- **UniversalHID**: the event type enum has a unicode case, but no service wraps it; the device's
+  HID features are button, digitizer, keyboard and vendor-defined only.
+- **Device Hub** has no text path of its own: its keys are HID (#35).
+
+### 42. An empty field reads as its placeholder
+
+Settings' search field reads its placeholder ("Search", localized) as its value while empty,
+and once typed into reads the text alone. Checking "the value grew by the typed characters"
+against the placeholder failed, and deleting back to it removed what had been typed. Treat a
+reading that no longer contains the value from before as an empty field (`typing::baseline`).

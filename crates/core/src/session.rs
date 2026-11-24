@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, bail};
 use idevice::{
     IdeviceService, RsdService,
-    core_device::{AppServiceClient, ImageFormat, ScreenCaptureServiceClient},
+    core_device::{AppServiceClient, GENERAL_PASTEBOARD, ImageFormat, PasteboardServiceClient, ScreenCaptureServiceClient},
     core_device_proxy::CoreDeviceProxy,
     installation_proxy::InstallationProxyClient,
     heartbeat::HeartbeatClient,
@@ -215,6 +215,74 @@ impl Session {
     pub async fn screenshot(&mut self, display: Option<&str>) -> Result<Vec<u8>> {
         let mut client: ScreenCaptureServiceClient<_> = self.connect().await?;
         step("screenshot", client.take_screenshot(display, ImageFormat::Png)).await
+    }
+
+    /// What the device's clipboard holds, as far as it can be put back: text or one image.
+    pub async fn clipboard(&mut self) -> Result<Clipboard> {
+        let mut client: PasteboardServiceClient<_> = self.connect().await?;
+        let snap = step("clipboard read", client.get(GENERAL_PASTEBOARD)).await?;
+        Ok(if let Some(t) = snap.text() {
+            Clipboard::Text(t)
+        } else if let Some((uti, bytes)) = snap.image() {
+            Clipboard::Image { uti: uti.to_string(), bytes }
+        } else if snap.items.is_empty() {
+            Clipboard::Empty
+        } else {
+            Clipboard::Other
+        })
+    }
+
+    /// Replaces the clipboard with `text`. A new connection per request: the service has
+    /// answered one request per connection in the Swift implementation's use (old PITFALLS #14).
+    pub async fn set_clipboard_text(&mut self, text: &str) -> Result<()> {
+        let mut client: PasteboardServiceClient<_> = self.connect().await?;
+        step("clipboard write", client.set_text(text, GENERAL_PASTEBOARD)).await
+    }
+
+    /// Puts back what [`Self::clipboard`] read. Empty and unknown contents become an empty text.
+    pub async fn restore_clipboard(&mut self, saved: &Clipboard) -> Result<()> {
+        match saved {
+            Clipboard::Text(t) => self.set_clipboard_text(t).await,
+            Clipboard::Image { uti, bytes } => {
+                let mut client: PasteboardServiceClient<_> = self.connect().await?;
+                step("clipboard write", client.set_image(bytes, uti, GENERAL_PASTEBOARD)).await
+            }
+            Clipboard::Empty | Clipboard::Other => self.set_clipboard_text("").await,
+        }
+    }
+}
+
+/// A clipboard's contents, kept to put back after a paste. Never printed or logged: it is the
+/// owner's.
+#[derive(Clone)]
+pub enum Clipboard {
+    Text(String),
+    Image { uti: String, bytes: Vec<u8> },
+    Empty,
+    /// Something that is neither text nor an image (it can't be put back).
+    Other,
+}
+
+impl std::fmt::Debug for Clipboard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Clipboard::Text(_) => "Clipboard::Text(<redacted>)",
+            Clipboard::Image { .. } => "Clipboard::Image(<redacted>)",
+            Clipboard::Empty => "Clipboard::Empty",
+            Clipboard::Other => "Clipboard::Other",
+        })
+    }
+}
+
+impl Clipboard {
+    /// What kind of contents it is, for output.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Clipboard::Text(_) => "text",
+            Clipboard::Image { .. } => "image",
+            Clipboard::Empty => "empty",
+            Clipboard::Other => "other",
+        }
     }
 }
 
