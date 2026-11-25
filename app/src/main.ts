@@ -2080,10 +2080,18 @@ const introCard = $<HTMLDivElement>("#intro-card");
 let setupFor: DeviceInfo | undefined;
 /** The last state read for it (`setup_status`, or a step's result). */
 let setupStatus: SetupStatus | undefined;
-/** The step running now, with its latest progress. */
-let setupRun: { step: SetupStep; progress?: SetupProgress } | undefined;
+/** The step running now, with its latest progress, and when it began waiting for the person
+ * holding the device (`performance.now()`), which starts the countdown. */
+let setupRun: { step: SetupStep; progress?: SetupProgress; waitingSince?: number } | undefined;
 let setupError: { step: SetupStep; text: string } | undefined;
 let setupTimer: number | undefined;
+/** Ticks the countdown on the card while a step waits for the person. */
+let setupTick: number | undefined;
+/** How long a step waits for the person holding the device: tapping Trust, or turning Developer
+ * Mode on, which takes a restart and a confirmation. Passed to `setup_run`, so the countdown on
+ * the card ends when the core gives up. Dev builds take `?setupwait=<seconds>` to see the end
+ * without waiting ten minutes. */
+const SETUP_WAIT_S = (import.meta.env.DEV && Number(new URLSearchParams(location.search).get("setupwait"))) || 600;
 /** Bumped when the card is put away, so a late reply doesn't redraw it. */
 let setupGen = 0;
 /** Re-read the state this often while the card shows: the person may have done a step on the
@@ -2148,6 +2156,7 @@ function hideSetup(): void {
   setupStatus = undefined;
   setupRun = undefined;
   setupError = undefined;
+  stopSetupTick();
   introCard.replaceChildren();
 }
 
@@ -2193,23 +2202,77 @@ async function runSetup(step: SetupStep): Promise<void> {
   channel.onmessage = (p) => {
     if (gen !== setupGen || !setupRun) return;
     setupRun.progress = p;
+    // The core starts its clock as it first asks for the person (`trust`, `developer_mode`).
+    if (p.waiting_for_user && setupRun.waitingSince === undefined) {
+      setupRun.waitingSince = performance.now();
+      startSetupTick();
+    }
     renderSetup();
   };
   setupRun = { step };
   setupError = undefined;
   renderSetup();
+  let waited = false;
   try {
-    const st = await invoke<SetupStatus>("setup_run", { udid: d.udid, step, channel });
+    const st = await invoke<SetupStatus>("setup_run", { udid: d.udid, step, waitSecs: SETUP_WAIT_S, channel });
     if (gen !== setupGen) return;
+    waited = setupRun?.waitingSince !== undefined;
     setupRun = undefined;
+    stopSetupTick();
+    // Developer Mode ends its wait without an error: the state afterwards still needs the step.
+    if (waited && st.steps.find((x) => x.step === step)?.state === "needed") setupError = { step, text: setupTimeoutText(step) };
     onSetupStatus(st);
   } catch (e) {
     if (gen !== setupGen) return;
+    waited = setupRun?.waitingSince !== undefined;
     setupRun = undefined;
-    if (String(e) !== "cancelled") setupError = { step, text: setupErrorText(e) };
+    stopSetupTick();
+    // Pairing that nobody answered fails "... within 600s" (core `setup::trust`).
+    if (String(e) !== "cancelled") setupError = { step, text: waited && /\bwithin \d+s\b/.test(String(e)) ? setupTimeoutText(step) : setupErrorText(e) };
     renderSetup();
     void pollSetup();
   }
+}
+
+/** What the card says when the wait ran out. */
+function setupTimeoutText(step: SetupStep): string {
+  const m = SETUP_WAIT_S / 60;
+  const mins = Number.isInteger(m) ? `${m} minute${m === 1 ? "" : "s"}` : `${SETUP_WAIT_S} seconds`;
+  return step === "trust"
+    ? `Nobody tapped Trust within ${mins}. Unlock the device, press Try Again and tap Trust when it asks.`
+    : `Developer Mode wasn’t turned on within ${mins}. Press Try Again to keep waiting. If you turn it on without the app, this card notices by itself.`;
+}
+
+/** The time left to wait, as "9:41 left". */
+function setupTimeLeft(): { text: string; low: boolean } | undefined {
+  const since = setupRun?.waitingSince;
+  if (since === undefined) return undefined;
+  const left = Math.max(0, Math.ceil(SETUP_WAIT_S - (performance.now() - since) / 1000));
+  return { text: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`, low: left < 60 };
+}
+
+function startSetupTick(): void {
+  stopSetupTick();
+  // Only the time changes each second: a full redraw would restart the pulse and the spinner.
+  setupTick = window.setInterval(() => {
+    const t = setupTimeLeft();
+    const out = introCard.querySelector<HTMLElement>(".wait-time");
+    if (!t || !out) return;
+    out.textContent = t.text;
+    out.classList.toggle("low", t.low);
+  }, 1000);
+}
+
+function stopSetupTick(): void {
+  window.clearInterval(setupTick);
+  setupTick = undefined;
+}
+
+/** A progress message as the card shows it: the core writes "Settings > Privacy & Security" and
+ * leaves the final period off. */
+function setupMessage(m: string): string {
+  const t = m.replace(/ > /g, " › ");
+  return /[.!?…]$/.test(t) ? t : `${t}.`;
 }
 
 /** A setup error as the viewer shows it: the core writes for agents ("run `devicesteer setup
@@ -2251,7 +2314,19 @@ function renderSetup(): void {
       // While it runs, the step's own progress says what to do now (it repeats the description
       // at first, then follows the device: restarting, confirm after the restart).
       if (!running) body.append(el("p", "desc", t.text));
-      if (running) {
+      if (running && p?.waiting_for_user) {
+        // Waiting for the person, maybe for minutes: say so plainly, with what to do now and the
+        // time left, so the card doesn't look stuck.
+        const box = el("div", "wait");
+        const top = el("div", "wait-head");
+        const left = setupTimeLeft();
+        const time = el("span", `wait-time${left?.low ? " low" : ""}`, left?.text ?? "");
+        top.append(el("span", "pulse"), el("span", "wait-label", "Waiting for you on the device"), time);
+        const msg = el("p", "wait-msg", setupMessage(p.message));
+        msg.setAttribute("role", "status");
+        box.append(top, msg);
+        body.append(box);
+      } else if (running) {
         const line = el("div", "progress");
         line.append(el("span", "msg", p?.message ?? "Starting…"));
         if (p?.fraction !== undefined) {
@@ -2293,7 +2368,9 @@ function setupReport(): unknown {
   if (!setupFor) return null;
   return {
     steps: [...introCard.querySelectorAll(".setup-step")].map((li) => li.className.replace("setup-step ", "")),
-    running: setupRun ? { step: setupRun.step, message: setupRun.progress?.message ?? null } : null,
+    running: setupRun
+      ? { step: setupRun.step, message: setupRun.progress?.message ?? null, waiting: !!setupRun.progress?.waiting_for_user, left: setupTimeLeft()?.text ?? null }
+      : null,
     error: setupError?.text ?? null,
     button: introCard.querySelector(".actions .btn")?.textContent ?? null,
   };

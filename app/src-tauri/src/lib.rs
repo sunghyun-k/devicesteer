@@ -44,28 +44,32 @@ async fn setup_status(udid: String) -> Result<devicesteer_core::SetupStatus, Str
 }
 
 /// How long a step waits for the person holding the device (tap Trust; turn on Developer Mode,
-/// restart and confirm). Long: the card stays up and Cancel ends it sooner.
+/// restart and confirm) when the page doesn't say. The page passes its own (`SETUP_WAIT_S` in
+/// app/src/main.ts), since it counts the time down on the card.
 const SETUP_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// Runs one setup step (`trust`, `developer_mode`, `disk_image`) on `udid`, sending its progress
 /// to `channel`, and returns the state afterwards. A step started earlier is cancelled first.
+/// `wait_secs` is how long to wait for the person holding the device.
 #[tauri::command]
 async fn setup_run(
     udid: String,
     step: String,
+    wait_secs: Option<u64>,
     channel: Channel<devicesteer_core::setup::Progress>,
     viewer: State<'_, Viewer>,
 ) -> Result<devicesteer_core::SetupStatus, String> {
     use devicesteer_core::setup::{self, SetupStep};
     let step = SetupStep::parse(&step).map_err(|e| format!("{e:#}"))?;
+    let wait = wait_secs.map_or(SETUP_WAIT, |s| std::time::Duration::from_secs(s.clamp(10, 3600)));
     let progress: setup::ProgressFn = Arc::new(move |p| {
         let _ = channel.send(p);
     });
     let task = tokio::spawn(async move {
         let u = Some(udid.as_str());
         match step {
-            SetupStep::Trust => setup::trust(u, SETUP_WAIT, progress).await,
-            SetupStep::DeveloperMode => setup::developer_mode(u, Some(SETUP_WAIT), progress).await,
+            SetupStep::Trust => setup::trust(u, wait, progress).await,
+            SetupStep::DeveloperMode => setup::developer_mode(u, Some(wait), progress).await,
             SetupStep::DiskImage => setup::disk_image(u, None, progress).await,
         }
     });

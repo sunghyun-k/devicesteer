@@ -11,10 +11,11 @@
 // once, as DEVICESTEER_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
 // (no floating panel, for screenshots), `rotation=rot270` (start turned), `theme=light|dark`,
 // `session=agent|delegated_to_user|user` (a session already runs when the device is attached),
-// `lights=0` (no stand-in for the macOS traffic lights), `setup=ok|deny|fail` (how the setup
-// steps end: done, the user taps Don't Trust, or an error), `select=<udid suffix>` (pick that
-// device first, such as `select=6` for the one that needs Trust), `update=1` (a newer version is
-// out).
+// `lights=0` (no stand-in for the macOS traffic lights), `setup=ok|deny|fail|hold|timeout` (how
+// the setup steps end: done, the user taps Don't Trust, an error, nobody ever acts on the device,
+// or the wait runs out; pair `timeout` with `setupwait=15` to shorten it), `select=<udid suffix>`
+// (pick that device first, such as `select=6` for the one that needs Trust, `select=7` for
+// Developer Mode), `update=1` (a newer version is out).
 //
 // The Settings window: http://localhost:1420/settings.html?mock (also `theme`, `agents`,
 // `location`, `update`, `tab=agents|updates`). In the main window, the More menu's Settings… opens
@@ -109,7 +110,7 @@ const state = {
   recording: undefined as { path: string; since: number } | undefined,
   lastReport: undefined as unknown,
   /** How setup steps end (`setup=` in the URL). */
-  setupEnd: (params.get("setup") ?? "ok") as "ok" | "deny" | "fail",
+  setupEnd: (params.get("setup") ?? "ok") as "ok" | "deny" | "fail" | "hold" | "timeout",
   /** Bumped by `setup_cancel`: a running step sees it and stops. */
   setupGen: 0,
 };
@@ -328,7 +329,7 @@ function setupStatus(d: MockDevice) {
 }
 
 /** Plays one setup step the way the core reports it, then moves the device to the next step. */
-async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number }): Promise<unknown> {
+async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number }, args: Record<string, unknown>): Promise<unknown> {
   const gen = ++state.setupGen;
   let index = 0;
   const say = (message: string, waiting = false, fraction?: number) => {
@@ -342,8 +343,19 @@ async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number })
   const fail = (text: string) => {
     if (state.setupEnd === "fail") throw text;
   };
+  // The core's clock for the person starts as it first asks them; `hold` never ends.
+  const waitSecs = Number(args.waitSecs ?? 600);
+  const deadline = performance.now() + waitSecs * 1000;
+  const sitOut = async () => {
+    while (state.setupEnd === "hold" || performance.now() < deadline) await wait(200);
+  };
+  const slow = state.setupEnd === "hold" || state.setupEnd === "timeout";
   if (step === "trust") {
     say("Unlock the device, then tap Trust and enter its passcode", true);
+    if (slow) {
+      await sitOut();
+      throw `nobody tapped Trust on the device within ${waitSecs}s. Unlock it, then run \`devicesteer setup trust\` again and tap Trust when it asks`;
+    }
     await wait(2500);
     if (state.setupEnd === "deny")
       throw "the user tapped Don't Trust. Unplug the cable and plug it back in so the device asks again, then run `devicesteer setup trust` again";
@@ -363,6 +375,11 @@ async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number })
       unplug(d.udid, false);
     }
     say("Unlock the device, tap Turn On and enter the passcode", true);
+    if (slow) {
+      // The core ends its wait without an error, with the step still needed.
+      await sitOut();
+      return setupStatus(d);
+    }
     await wait(2000);
   } else {
     for (let i = 0; i < 3; i++) {
@@ -522,7 +539,7 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     case "setup_run": {
       const d = DEVICES.find((x) => x.udid === args.udid);
       if (!d) throw "the device is not connected";
-      return setupRun(d, args.step as SetupStep, args.channel as { id: number });
+      return setupRun(d, args.step as SetupStep, args.channel as { id: number }, args);
     }
     case "setup_cancel":
       state.setupGen++;
@@ -719,7 +736,7 @@ const mock = {
     const d = DEVICES.find((x) => x.udid.endsWith(udidSuffix));
     if (d) d.setup = step ?? undefined;
   },
-  setupEnd(end: "ok" | "deny" | "fail") {
+  setupEnd(end: "ok" | "deny" | "fail" | "hold" | "timeout") {
     state.setupEnd = end;
   },
   /** Unplugs a device (by UDID suffix; the current one when omitted), or plugs it back in with
@@ -757,7 +774,10 @@ const KEYS: [string, string, () => void][] = [
   ["r", "Turn the screen", () => mock.rotate()],
   ["c", "CLI record start/stop", () => (state.recording ? mock.recordStop() : mock.recordStart())],
   ["x", "Unplug/plug the device", () => mock.unplug()],
-  ["e", "Setup steps end: ok/deny/fail", () => mock.setupEnd(state.setupEnd === "ok" ? "deny" : state.setupEnd === "deny" ? "fail" : "ok")],
+  ["e", "Setup steps end: ok/deny/fail/hold/timeout", () => {
+    const ends = ["ok", "deny", "fail", "hold", "timeout"] as const;
+    mock.setupEnd(ends[(ends.indexOf(state.setupEnd) + 1) % ends.length]);
+  }],
 ];
 
 function panel(): void {

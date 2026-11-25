@@ -384,6 +384,24 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
   content: ""; display: block; height: 100%; width: calc(var(--f) * 100%); border-radius: inherit; background: var(--accent);
   transition: width 0.2s var(--ease);
 }
+/* A step waiting for the person holding the device: a tinted box with a live dot, the time
+   left, and what to do now in full-strength text. */
+.setup-step .wait {
+  margin-top: 6px; padding: 10px 12px; border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.setup-step .wait-head { display: flex; align-items: center; gap: 7px; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); }
+.setup-step .wait-label { flex: 1; min-width: 0; }
+.setup-step .wait-time { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--fg-2); }
+.setup-step .wait-time.low { color: var(--warning); }
+.setup-step .pulse {
+  flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: wait-pulse 1.6s var(--ease) infinite;
+}
+@keyframes wait-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
+.setup-step .wait-msg { margin-top: 5px; font-size: 13.5px; color: var(--fg); user-select: text; -webkit-user-select: text; }
+@media (prefers-reduced-motion: reduce) { .setup-step .pulse { animation: none; } }
 .setup-step .error { margin-top: 8px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 .setup-step .actions { display: flex; gap: 8px; margin-top: 10px; }
 
