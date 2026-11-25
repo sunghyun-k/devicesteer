@@ -544,7 +544,20 @@ pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: Pro
         .await
         .map_err(|e| anyhow::anyhow!("mounting the developer disk image failed: {e:?}"))?;
     report(&progress, s, false, "Mounted");
-    status(Some(&udid)).await
+    // Close the mount's connections before checking: with the mounter connection still open, the
+    // check's own mounter connection stalled on Windows although the image was mounted
+    // (PITFALLS #52). And the mount did succeed, so a failing check is retried once, not trusted.
+    drop(mounter);
+    drop(lockdown);
+    match status(Some(&udid)).await {
+        Ok(st) => Ok(st),
+        Err(first) => {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            status(Some(&udid)).await.with_context(|| {
+                format!("the disk image was mounted, but checking the device afterwards failed ({first:#}); run `devicesteer setup status`")
+            })
+        }
+    }
 }
 
 // ---------- finding the disk image ----------

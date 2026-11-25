@@ -25,7 +25,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Viewer | #15, #18, #23, #26, #27, #29, #33, #34 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
-| Windows host | #49, #50, #51 |
+| Windows host | #49, #50, #51, #52 |
 
 ## Entries
 
@@ -1026,3 +1026,15 @@ device. Unplugging it and plugging it back in made usbmuxd list it.
 The errors for a missing device and an empty `devices` list on Windows say to replug it
 (`missing_device_hint` in `crates/core/src/session.rs`). Not yet known: whether restarting the
 Apple Mobile Device Service alone also recovers it.
+
+### 52. Windows: the check after mounting the disk image stalled
+
+Windows PC, iPad on iPadOS 27.2.1 over USB, `setup disk-image --no-daemon`. The image was
+downloaded, signed and mounted in 17 s (the mounter answered the mount), then the command failed
+with `mounted image list timed out after 12s (connection stalled)`; `setup status` right after said
+the image was mounted. That check opens its own `mobile_image_mounter` connection and asks for
+`CopyDevices` while the mount's mounter and lockdown connections were still open.
+
+`setup::disk_image` now drops both before the check, and retries a failed check once after a
+second, saying the mount itself succeeded if it fails again. Not confirmed on the device yet: the
+image stays mounted until the device restarts, so the failing run couldn't be repeated.
