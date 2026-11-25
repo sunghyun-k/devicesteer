@@ -35,3 +35,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Instrument Sans and IBM Plex Mono
+
+<https://github.com/Instrument/instrument-sans>, <https://github.com/IBM/plex>
+
+The homepage serves Instrument Sans (variable, Latin subset) and IBM Plex Mono (400 and 500, Latin
+subset) from `site/fonts/`, taken from the Fontsource packages `@fontsource-variable/instrument-sans`
+and `@fontsource/ibm-plex-mono` 5.3.0, under the SIL Open Font License 1.1. The licenses are in
+`site/fonts/OFL-InstrumentSans.txt` and `site/fonts/OFL-IBMPlexMono.txt`.
