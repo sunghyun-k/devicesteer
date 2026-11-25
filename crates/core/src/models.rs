@@ -45,6 +45,7 @@ const MODELS: &[(&[&str], &str)] = &[
     (&["iPhone18,2"], "iPhone 17 Pro Max"),
     (&["iPhone18,3"], "iPhone 17"),
     (&["iPhone18,4"], "iPhone Air"),
+    (&["iPhone19,4"], "iPhone Duo"),
     // iPad
     (&["iPad7,11", "iPad7,12"], "iPad (7th generation)"),
     (&["iPad11,6", "iPad11,7"], "iPad (8th generation)"),
