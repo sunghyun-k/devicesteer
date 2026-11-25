@@ -55,12 +55,14 @@ const DEVICES: MockDevice[] = [
 const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];
 
 const state = {
-  /** Our hardware keyboard, and what the viewer sent: key steps and typed text, for scripts. */
+  /** Our hardware keyboard, and what the viewer sent: key steps, for scripts. */
   hardwareKeyboard: false,
   /** The viewer asked for it `while_connected`: it goes when the viewer detaches or the agent gets the device. */
   keyboardHeld: false,
   keyLog: [] as [string, boolean][],
-  typed: [] as string[],
+  /** The device clipboard, and the Mac's as the shell would see it. */
+  deviceClipboard: "mock text on the device",
+  macClipboard: "mock text on the Mac",
   devices: params.get("devices") ?? "normal",
   attach: params.get("attach") ?? "ok",
   watch: params.get("watch") ?? "ok",
@@ -406,6 +408,14 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       return `/Users/me/Movies/iphone-use ${args.stamp}.mp4`;
     case "reveal":
       return null;
+    case "clipboard_to_device":
+      await sleep(200);
+      state.deviceClipboard = state.macClipboard;
+      return { clipboard: "set", chars: state.macClipboard.length };
+    case "clipboard_from_device":
+      await sleep(200);
+      state.macClipboard = state.deviceClipboard;
+      return { kind: "text", chars: state.deviceClipboard.length };
     case "send":
       return send(String(args.cmd), (args.args ?? {}) as Record<string, unknown>);
   }
@@ -448,10 +458,6 @@ async function send(cmd: string, a: Record<string, unknown>): Promise<unknown> {
       return { event: "keyboard", hardware: state.hardwareKeyboard, attached: state.hardwareKeyboard };
     case "keyboard_status":
       return { event: "keyboard", hardware: state.hardwareKeyboard, attached: state.hardwareKeyboard };
-    case "type":
-      await sleep(600);
-      state.typed.push(String(a.text));
-      return { method: "stream", chars: String(a.text).length, verified: true };
     case "record_start":
       await sleep(200);
       return mock.recordStart(String(a.path));
@@ -480,12 +486,13 @@ const LABELS = ["Open Settings", "Tap Wi-Fi", "Scroll to Privacy & Security", "S
 let labelIndex = 0;
 
 const mock = {
-  /** Key steps (`[code, down]`) and texts the viewer sent; reading empties them. */
+  /** Key steps (`[code, down]`) the viewer sent; reading empties them. */
   takeKeys() {
     return state.keyLog.splice(0);
   },
-  takeTyped() {
-    return state.typed.splice(0);
+  /** The device and Mac clipboards, to check the Keyboard menu's clipboard items. */
+  clipboards() {
+    return { device: state.deviceClipboard, mac: state.macClipboard };
   },
   /** `owner` null ends the session. */
   session(owner: Owner | null = "agent", name = "Check the Wi-Fi settings", reason: string | null = null) {

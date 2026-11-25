@@ -76,7 +76,7 @@ const KEYS_TIMEOUT: Duration = Duration::from_secs(2);
 /// The same with only modifiers down: those don't repeat, and a person may hold one a while.
 const MODIFIERS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Commands that put input on the device.
-const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch", "settings_set", "key", "type", "paste", "keyboard", "keyboard_connect", "keyboard_disconnect"];
+const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch", "settings_set", "key", "type", "paste", "clipboard_set", "keyboard", "keyboard_connect", "keyboard_disconnect"];
 /// How long a reading of the VoiceOver switch is trusted before an input reads it again.
 const VOICEOVER_CHECK: Duration = Duration::from_secs(5);
 /// Added to the result of input sent while VoiceOver is on.
@@ -847,6 +847,30 @@ impl Daemon {
                 dev.clipboard = backup;
                 dev.last_input = Some(Instant::now());
                 Ok(self.warn_voiceover(dev, r?).await)
+            }
+            // The clipboard on its own, with no paste: the viewer's "Send Clipboard to iPhone"
+            // and "Get Clipboard from iPhone", and `iphone-use clipboard`. The contents go only
+            // to the client that asked; nothing here logs them.
+            "clipboard_set" => {
+                let text = a.get("text").and_then(|v| v.as_str()).context("clipboard_set needs text")?;
+                let c = self.controller(dev).await?;
+                c.put_clipboard_text(text).await?;
+                // The user's contents a paste kept for `paste --restore` would now replace what
+                // was just set on purpose.
+                let dropped = dev.clipboard.take().is_some();
+                dev.last_input = Some(Instant::now());
+                let mut r = json!({ "clipboard": "set", "chars": text.chars().count() });
+                if dropped {
+                    r["note"] = json!("the clipboard contents an earlier paste kept for `paste --restore` were dropped");
+                }
+                Ok(r)
+            }
+            "clipboard_get" => {
+                let c = self.controller(dev).await?;
+                Ok(match c.session.clipboard().await? {
+                    Clipboard::Text(t) => json!({ "kind": "text", "chars": t.chars().count(), "text": t }),
+                    other => json!({ "kind": other.kind() }),
+                })
             }
             "keyboard_connect" | "keyboard_disconnect" | "keyboard_status" => {
                 if req.cmd != "keyboard_status" {

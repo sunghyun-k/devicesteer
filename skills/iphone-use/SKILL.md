@@ -1,6 +1,6 @@
 ---
 name: iphone-use
-description: Operate a real iPhone or iPad connected over USB or Wi-Fi, and set a new one up (trust, Developer Mode, Developer Disk Image) without Xcode. Read the screen's accessibility tree, tap, swipe, type text (Latin and Hangul) and keys, press buttons, launch apps, change appearance, accessibility settings and the simulated location, and record the screen, in a session the person watching in the iphone-use viewer can take over or stop. Use it when a task needs a physical device, not a simulator.
+description: Operate a real iPhone or iPad connected over USB or Wi-Fi, and set a new one up (trust, Developer Mode, Developer Disk Image) without Xcode. Read the screen's accessibility tree, tap, swipe, type text (Latin and Hangul) and keys, read or set the clipboard, press buttons, launch apps, change appearance, accessibility settings and the simulated location, and record the screen, in a session the person watching in the iphone-use viewer can take over or stop. Use it when a task needs a physical device, not a simulator.
 metadata:
   bootstrap: "true"
 ---

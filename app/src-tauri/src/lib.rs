@@ -135,6 +135,34 @@ async fn send(cmd: String, args: Value, viewer: State<'_, Viewer>) -> Result<Val
     client.request(&cmd, args).await.map_err(|e| format!("{e:#}"))
 }
 
+/// Puts the Mac clipboard's text on the device clipboard, without pasting it. The text stays in
+/// this process: the page only learns how many characters went.
+#[tauri::command]
+async fn clipboard_to_device(viewer: State<'_, Viewer>) -> Result<Value, String> {
+    let client = viewer.client.lock().await.clone().ok_or("not attached to a device")?;
+    let text = arboard::Clipboard::new()
+        .and_then(|mut c| c.get_text())
+        .map_err(|e| match e {
+            arboard::Error::ContentNotAvailable => "The Mac clipboard holds no text.".to_string(),
+            e => format!("Couldn't read the Mac clipboard: {e}"),
+        })?;
+    client.request("clipboard_set", serde_json::json!({ "text": text })).await.map_err(|e| format!("{e:#}"))
+}
+
+/// Puts the device clipboard's text on the Mac clipboard. Returns its kind and length only.
+#[tauri::command]
+async fn clipboard_from_device(viewer: State<'_, Viewer>) -> Result<Value, String> {
+    let client = viewer.client.lock().await.clone().ok_or("not attached to a device")?;
+    let mut r = client.request("clipboard_get", serde_json::json!({})).await.map_err(|e| format!("{e:#}"))?;
+    let Some(text) = r.as_object_mut().and_then(|o| o.remove("text")) else {
+        return Ok(r);
+    };
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.set_text(text.as_str().unwrap_or_default()))
+        .map_err(|e| format!("Couldn't write the Mac clipboard: {e}"))?;
+    Ok(r)
+}
+
 /// The page's decoder numbers, appended to `viewer.log` in the state directory, so a check of
 /// the viewer doesn't need anyone to look at the window.
 #[tauri::command]
@@ -205,7 +233,7 @@ fn reveal(path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(Viewer::default())
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, report, initial_udid, recording_path, save_screenshot, reveal])
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, report, initial_udid, recording_path, save_screenshot, reveal])
         .run(tauri::generate_context!())
         .expect("error while running the iphone-use app");
 }

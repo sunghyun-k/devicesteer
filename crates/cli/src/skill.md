@@ -189,6 +189,7 @@ iphone-use type "Bluetooth" --enter                 # Return after the text
 iphone-use key return --label "submit the form"     # also backspace, tab, escape, arrows, space
 iphone-use key cmd+a                                 # combinations: cmd+c, cmd+v, cmd+z, shift+tab
 iphone-use paste "🙂 thanks" --label "add the emoji" # what type can't send; see below
+iphone-use clipboard get --out "$TMPDIR/clip.txt"     # only when the user asks; see below
 ```
 
 - `type` sends Latin letters, digits, symbols and Hangul, whatever language the on-screen keyboard
@@ -203,6 +204,10 @@ iphone-use paste "🙂 thanks" --label "add the emoji" # what type can't send; s
   back after. iOS may ask the user to allow the paste (`prompt: true`): **never allow it for
   them.** Hand off; once they answered, run `paste --restore` to give them their clipboard back.
   Use `paste` only for characters `type` refuses (emoji and other scripts).
+- **`clipboard`** reads or replaces the device clipboard without pasting, **only when the user
+  asks**: it is theirs. `clipboard set "text"` (or `--file`) replaces it; `clipboard get --out
+  FILE` writes its text to FILE and prints only `kind` (text, image, empty, other) and `chars`.
+  Never print or quote what you read.
 - `keyboard connect` attaches a hardware keyboard (the on-screen keyboard hides; `key ctrl+space`
   switches its input source), `keyboard disconnect` removes it, `keyboard status` tells. `type`
   works either way. If you connect one, disconnect it before you finish.

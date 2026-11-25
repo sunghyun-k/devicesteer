@@ -793,3 +793,15 @@ Settings' search field reads its placeholder ("Search", localized) as its value 
 and once typed into reads the text alone. Checking "the value grew by the typed characters"
 against the placeholder failed, and deleting back to it removed what had been typed. Treat a
 reading that no longer contains the value from before as an empty field (`typing::baseline`).
+
+### 43. A paste from the edit menu doesn't ask
+
+Setting the clipboard through the pasteboard service (`clipboard_set`, the viewer's "Send
+Clipboard to iPhone") and then pasting with a long press and Paste in the edit menu inserted the
+text in Notes with no allow-paste prompt (iOS 26, iPhone). The prompt of #40 comes with a
+programmatic paste such as cmd+v; the edit menu's Paste counts as the user's own. So the viewer
+sends the clipboard without pasting and leaves the paste to the person at the device.
+
+Also seen: right after the service sets the clipboard, the keyboard's suggestion bar offers it as
+"1 item, paste from dtpasteboardd" (localized), naming the service as the source. The service has
+no way to empty the clipboard: putting back an empty one writes an empty text item.

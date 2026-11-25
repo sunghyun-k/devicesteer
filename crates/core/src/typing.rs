@@ -842,18 +842,9 @@ impl Controller {
         if backup.is_none() {
             *backup = Some(self.session.clipboard().await?);
         }
-        let mut set = false;
-        for _ in 0..3 {
-            self.session.set_clipboard_text(text).await?;
-            if matches!(self.session.clipboard().await?, crate::Clipboard::Text(t) if t == text) {
-                set = true;
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(200)).await;
-        }
-        if !set {
+        if let Err(e) = self.put_clipboard_text(text).await {
             self.restore_backup(backup).await?;
-            bail!("the device clipboard did not take the text (read back differently); retry, or use `type`");
+            return Err(e.context("retry, or use `type`"));
         }
         self.press_keys(&[Stroke { usage: 0x19, modifiers: vec![usage::LEFT_CMD] }]).await?;
         tokio::time::sleep(PASTE_SETTLE).await;
@@ -880,6 +871,19 @@ impl Controller {
         }
         out.ms = began.elapsed().as_millis() as u64;
         Ok(out)
+    }
+
+    /// Replaces the clipboard with `text` and reads it back, without pasting: the next paste
+    /// on the device (by the user, or `paste`) inserts it.
+    pub async fn put_clipboard_text(&mut self, text: &str) -> Result<()> {
+        for _ in 0..3 {
+            self.session.set_clipboard_text(text).await?;
+            if matches!(self.session.clipboard().await?, crate::Clipboard::Text(t) if t == text) {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        bail!("the device clipboard did not take the text (read back differently)")
     }
 
     /// Puts back the clipboard contents a paste saved, if any.

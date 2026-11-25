@@ -48,7 +48,8 @@
       <symbol id="i-check" viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 6.8" /></symbol>
       <symbol id="i-keyboard" viewBox="0 0 20 20"><rect x="2.25" y="5" width="15.5" height="10" rx="2" /><path d="M5.2 8h.1M8.07 8h.1M10.93 8h.1M13.8 8h.1M5.2 10h.1M8.07 10h.1M10.93 10h.1M13.8 10h.1M6.5 12.4h7" /></symbol>
       <symbol id="i-keyboard-down" viewBox="0 0 20 20"><rect x="2.25" y="3" width="15.5" height="9" rx="2" /><path d="M5.2 6h.1M8.07 6h.1M10.93 6h.1M13.8 6h.1M6.5 9.2h7M7.5 14.5 10 17l2.5-2.5" /></symbol>
-      <symbol id="i-text-cursor" viewBox="0 0 20 20"><path d="M7.5 4h5M7.5 16h5M10 4v12M3.5 7.5v5M16.5 7.5v5" /></symbol>
+      <symbol id="i-clip-send" viewBox="0 0 20 20"><path d="M7.5 3.75h-1.5a1.75 1.75 0 0 0-1.75 1.75v10.25a1.75 1.75 0 0 0 1.75 1.75h8a1.75 1.75 0 0 0 1.75-1.75V5.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /><rect x="7.5" y="2.5" width="5" height="2.5" rx="1" /><path d="M10 14.25V8.5M7.6 10.9 10 8.5l2.4 2.4" /></symbol>
+      <symbol id="i-clip-get" viewBox="0 0 20 20"><path d="M7.5 3.75h-1.5a1.75 1.75 0 0 0-1.75 1.75v10.25a1.75 1.75 0 0 0 1.75 1.75h8a1.75 1.75 0 0 0 1.75-1.75V5.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /><rect x="7.5" y="2.5" width="5" height="2.5" rx="1" /><path d="M10 8.5v5.75M7.6 11.85 10 14.25l2.4-2.4" /></symbol>
       <symbol id="i-plug" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="12" rx="2.2" /><path d="M10 14v4M7.5 18h5" /></symbol>
     </svg>
 
@@ -122,7 +123,9 @@
                 <div id="keyboard-menu" class="menu" role="menu" hidden>
                   <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. The device's input source decides what they type (Control-Space switches it)"><svg class="icon check"><use href="#i-check" /></svg><span>Type from Mac Keyboard</span><kbd>⌘K</kbd></button>
                   <button id="kb-software" role="menuitem" type="button" title="Show or hide the on-screen keyboard while a hardware keyboard is connected"><svg class="icon"><use href="#i-keyboard-down" /></svg><span>Toggle Software Keyboard</span><kbd>⌥⌘K</kbd></button>
-                  <button id="kb-text" role="menuitem" type="button" title="Type text composed on the Mac (Hangul and other input methods) into the field that has focus"><svg class="icon"><use href="#i-text-cursor" /></svg><span>Type Text…</span></button>
+                  <div class="menu-sep" role="separator"></div>
+                  <button id="kb-clip-send" role="menuitem" type="button" title="Put the Mac clipboard's text on the device clipboard, without pasting it: paste it on the device yourself"><svg class="icon"><use href="#i-clip-send" /></svg><span>Send Clipboard to iPhone</span><kbd>⇧⌘V</kbd></button>
+                  <button id="kb-clip-get" role="menuitem" type="button" title="Put the device clipboard's text on the Mac clipboard"><svg class="icon"><use href="#i-clip-get" /></svg><span>Get Clipboard from iPhone</span><kbd>⇧⌘C</kbd></button>
                 </div>
               </div>
             </div>
@@ -155,14 +158,6 @@
             </button>
           </div>
         </div>
-
-        <!-- Text composed on the Mac, typed into the device's focused field by the same path as
-             `iphone-use type`. Keys typed here never go to the device one by one. -->
-        <form id="type-text" class="surface" hidden>
-          <input id="type-text-input" type="text" placeholder="Text to type on the device" autocomplete="off" spellcheck="false" aria-label="Text to type on the device" />
-          <button id="type-text-send" class="btn small primary" type="submit">Type</button>
-          <button id="type-text-close" class="icon-btn small" type="button" aria-label="Close" title="Close"><svg class="icon"><use href="#i-close" /></svg></button>
-        </form>
 
         <div id="stage" data-state="none" data-zoom="fit">
           <!-- Before the screen shows: what is selected and how to see it. -->

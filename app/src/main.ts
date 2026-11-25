@@ -1217,7 +1217,7 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("#device-bar [data-
 // screen has focus) go to the device as HID key downs and ups, by DOM `code`: the physical key,
 // so the device's layout and input source decide what it types (PITFALLS #35). Never while a
 // field of the viewer has focus, and never the viewer's own shortcuts. Text composed with a Mac
-// input method (Hangul) goes through "Type Text…", the `type` command, instead.
+// input method (Hangul) goes over with "Send Clipboard to iPhone" and a paste on the device.
 //
 // Turning it on attaches a hardware keyboard too: without one, the keys go through the
 // keyboard surface, whose input source is stuck (PITFALLS #35), and Control-Space can't switch
@@ -1231,9 +1231,6 @@ const kbButton = $<HTMLButtonElement>("#keyboard");
 const kbMenu = $<HTMLDivElement>("#keyboard-menu");
 const kbForward = $<HTMLButtonElement>("#kb-forward");
 const kbSoftware = $<HTMLButtonElement>("#kb-software");
-const typeForm = $<HTMLFormElement>("#type-text");
-const typeInput = $<HTMLInputElement>("#type-text-input");
-const typeSend = $<HTMLButtonElement>("#type-text-send");
 menu(kbButton, kbMenu);
 
 let forwarding = prefs.get("keyboard-forwarding") === "1";
@@ -1359,10 +1356,11 @@ function editing(): boolean {
 }
 
 /** ⌘ shortcuts that stay with the viewer and the Mac: zoom (⌘0, ⌘9, ⌘+, ⌘−), the keyboard
- * menu's (⌘K, ⌥⌘K), and quit, close, hide, minimize, settings. Every other ⌘ combination goes to
+ * menu's (⌘K, ⌥⌘K, ⇧⌘V, ⇧⌘C), and quit, close, hide, minimize, settings. Every other ⌘ combination goes to
  * the device (⌘A, ⌘C, ⌘V, ⌘Z…). */
 function viewerShortcut(e: KeyboardEvent): boolean {
   if (!e.metaKey) return false;
+  if (e.shiftKey && (e.code === "KeyV" || e.code === "KeyC")) return true;
   return ["Equal", "Minus", "Digit0", "Digit9", "KeyK", "KeyQ", "KeyW", "KeyH", "KeyM", "Comma", "NumpadAdd", "NumpadSubtract"].includes(e.code);
 }
 
@@ -1382,6 +1380,12 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (e.altKey) toggleSoftwareKeyboard();
     else setForwarding(!forwarding);
+    return;
+  }
+  // Not while a field of the viewer has focus: there ⇧⌘V and ⇧⌘C are the field's.
+  if (e.metaKey && e.shiftKey && !e.altKey && (e.code === "KeyV" || e.code === "KeyC") && stage.dataset.state === "live" && !editing()) {
+    e.preventDefault();
+    if (!e.repeat) void (e.code === "KeyV" ? sendClipboard() : getClipboard());
     return;
   }
   if (!keysGo() || viewerShortcut(e)) return;
@@ -1445,37 +1449,45 @@ function toggleSoftwareKeyboard(): void {
 }
 kbSoftware.addEventListener("click", toggleSoftwareKeyboard);
 
-function openTypeText(on: boolean): void {
-  typeForm.hidden = !on;
-  if (on) typeInput.focus();
-}
-$<HTMLButtonElement>("#kb-text").addEventListener("click", () => openTypeText(true));
-$<HTMLButtonElement>("#type-text-close").addEventListener("click", () => openTypeText(false));
-typeInput.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !e.isComposing) {
-    e.preventDefault();
-    openTypeText(false);
+// The clipboard, both ways. The text goes between the Mac clipboard and the daemon inside the
+// Tauri shell: the page sees only how many characters went, and shows or logs none of it.
+// Sending doesn't paste: iOS asks the user to allow a paste that ⌘V or our paste triggers
+// (PITFALLS #40), but not one the user makes from the edit menu (PITFALLS #43).
+const clipSend = $<HTMLButtonElement>("#kb-clip-send");
+const clipGet = $<HTMLButtonElement>("#kb-clip-get");
+let clipBusy = false;
+
+async function clipboardOp(cmd: "clipboard_to_device" | "clipboard_from_device"): Promise<Record<string, unknown> | undefined> {
+  if (clipBusy) return;
+  clipBusy = true;
+  try {
+    return (await invoke(cmd)) as Record<string, unknown>;
+  } catch (e) {
+    showNote(String(e), { error: true });
+  } finally {
+    clipBusy = false;
   }
-});
-typeForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = typeInput.value;
-  if (!text || typeSend.disabled) return;
-  typeSend.disabled = true;
-  typeInput.disabled = true;
-  void send("type", { text })
-    .then((r) => {
-      const t = r as { verified?: boolean | null; notes?: string[] };
-      typeInput.value = "";
-      if (t.verified === false) showNote(t.notes?.[0] ?? "The field doesn't show the text as typed; check the screen.", { error: true });
-    })
-    .catch(() => {})
-    .finally(() => {
-      typeSend.disabled = false;
-      typeInput.disabled = false;
-      typeInput.focus();
-    });
-});
+}
+
+async function sendClipboard(): Promise<void> {
+  // The agent's input (and a paste waiting for `paste --restore`) would be disturbed.
+  if (!humanHasDevice()) {
+    showNote("The agent has the device: take over first to send the clipboard.", { error: true });
+    return;
+  }
+  if (await clipboardOp("clipboard_to_device")) showNote("Copied to iPhone - paste on the device", { icon: "i-clip-send" });
+}
+
+async function getClipboard(): Promise<void> {
+  const r = await clipboardOp("clipboard_from_device");
+  if (!r) return;
+  if (r.kind === "text") showNote("Copied from iPhone", { icon: "i-clip-get" });
+  else if (r.kind === "empty") showNote("The iPhone clipboard is empty.", { icon: "i-clip-get" });
+  else showNote("The iPhone clipboard holds no text (an image or other content); only text is copied.", { error: true });
+}
+
+clipSend.addEventListener("click", () => void sendClipboard());
+clipGet.addEventListener("click", () => void getClipboard());
 showKeyboardState();
 
 // ---------- notes: where a file went, or what failed ----------

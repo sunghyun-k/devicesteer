@@ -160,6 +160,15 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// The device clipboard on its own, with no paste. `set` replaces it with text (the user's
+    /// next paste inserts it; iOS may ask them to allow that). `get --out FILE` writes the text it
+    /// holds to FILE and prints only its kind and length. Only when the user asks: it is theirs.
+    Clipboard {
+        #[command(flatten)]
+        target: Target,
+        #[command(subcommand)]
+        action: ClipboardAction,
+    },
     /// The hardware keyboard: `connect` attaches one the device takes for a real keyboard (the
     /// on-screen keyboard hides; keys follow the device's input source, ctrl+space switches it),
     /// `disconnect` removes it (the on-screen keyboard comes back), `status` tells. `type` works
@@ -316,6 +325,24 @@ enum SessionAction {
     /// The session's state: owner (agent, delegated_to_user, user, finished), handoff reason,
     /// time left before it expires. Without --session, the session using the device.
     Status,
+}
+
+#[derive(Subcommand)]
+enum ClipboardAction {
+    /// Replace the clipboard with text, without pasting it.
+    Set {
+        #[arg(required_unless_present = "file")]
+        text: Option<String>,
+        /// Use this UTF-8 file's contents instead (keeps the text out of the command line).
+        #[arg(long, conflicts_with = "text")]
+        file: Option<PathBuf>,
+    },
+    /// Write the clipboard's text to a file; prints its kind (text, image, empty, other) and length.
+    Get {
+        /// Where the text goes. It is never printed.
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -546,6 +573,23 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                 json!({ "text": text, "force": force, "label": label.label })
             };
             target.client().await?.request("paste", args).await?
+        }
+        Command::Clipboard { target, action: ClipboardAction::Set { text, file } } => {
+            let text = match file {
+                Some(f) => std::fs::read_to_string(&f).with_context(|| format!("could not read {}", f.display()))?,
+                None => text.unwrap_or_default(),
+            };
+            target.client().await?.request("clipboard_set", json!({ "text": text })).await?
+        }
+        Command::Clipboard { target, action: ClipboardAction::Get { out } } => {
+            let mut r = target.client().await?.request("clipboard_get", json!({})).await?;
+            // The contents go to the file, never to stdout.
+            if let Some(text) = r.as_object_mut().and_then(|o| o.remove("text")) {
+                let text = text.as_str().unwrap_or_default();
+                std::fs::write(&out, text).with_context(|| format!("could not write {}", out.display()))?;
+                r["out"] = json!(out);
+            }
+            r
         }
         Command::Keyboard { target, action } => {
             target.client().await?.request(&format!("keyboard_{action}"), json!({})).await?
