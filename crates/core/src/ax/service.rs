@@ -12,6 +12,8 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 use idevice::{
+    RsdService,
+    core_device::ScreenCaptureServiceClient,
     ReadWrite,
     dvt::{message::AuxValue, remote_server::RemoteServerClient},
     rsd::RsdHandshake,
@@ -162,16 +164,30 @@ impl Conn {
     }
 }
 
+/// Why [`SERVICE`] isn't there. It comes with the Developer Disk Image, but not every OS has it:
+/// iPadOS 17 with the image mounted had only `axAuditDaemon.remoteserver.shim.remote`
+/// (PITFALLS #65), so blaming the image there sent the user to a step that was already done.
+fn missing_service(rsd: &RsdHandshake) -> anyhow::Error {
+    // The screen capture service comes with the same image.
+    let mounted = rsd.services.contains_key(ScreenCaptureServiceClient::rsd_service_name().as_ref());
+    if mounted {
+        anyhow!(
+            "the device does not advertise {SERVICE} although the Developer Disk Image is mounted: DeviceSteer \
+             reads the screen's elements only on iOS 27 or later. Use `screenshot` for this screen; if the \
+             device runs iOS 27 or later, restart it, run `devicesteer setup` and retry"
+        )
+    } else {
+        anyhow!(
+            "the device does not advertise {SERVICE}: the Developer Disk Image is not mounted (a restart can \
+             unmount it). Run `devicesteer setup`, then retry"
+        )
+    }
+}
+
 impl AxClient {
     /// Connects and sends the first request.
     pub async fn open(adapter: &AdapterHandle, rsd: &RsdHandshake) -> Result<Self> {
-        let port = rsd
-            .services
-            .get(SERVICE)
-            .ok_or_else(|| {
-                anyhow!("the device does not advertise {SERVICE}; the Developer Disk Image is probably not mounted")
-            })?
-            .port;
+        let port = rsd.services.get(SERVICE).ok_or_else(|| missing_service(rsd))?.port;
         let conn = Conn::open(adapter, port).await?;
         let asked_at = conn.opened_at;
         Ok(Self { adapter: adapter.clone(), port, conn, asked_at, latency: Duration::ZERO })

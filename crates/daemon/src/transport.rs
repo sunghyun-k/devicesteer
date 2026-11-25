@@ -9,13 +9,48 @@ use anyhow::Result;
 /// Where the daemon for `udid` listens.
 #[cfg(unix)]
 pub fn socket_path(udid: &str) -> PathBuf {
-    let p = devicesteer_core::paths::state_dir().join(format!("{udid}.sock"));
-    // Unix socket paths are limited to about 104 bytes on macOS.
-    if p.as_os_str().len() < 100 {
-        p
-    } else {
-        std::env::temp_dir().join(format!("devicesteer-{udid}.sock"))
-    }
+    socket_path_in(&devicesteer_core::paths::state_dir(), &std::env::temp_dir(), udid)
+}
+
+/// The longest socket path `bind` takes: `sun_path` holds 104 bytes on macOS and 108 on Linux,
+/// with the terminating NUL.
+#[cfg(unix)]
+const MAX_SOCKET_PATH: usize = if cfg!(target_os = "macos") { 103 } else { 107 };
+
+/// The first of these that fits in [`MAX_SOCKET_PATH`]:
+///
+/// 1. `<state dir>/<udid>.sock` and 2. `<temp dir>/devicesteer-<udid>.sock`: the paths earlier
+///    builds used, in their order, so a daemon one of them started is still found and none starts
+///    a second daemon (which would fight it for the device's tunnel).
+/// 3. `<state dir>/<hash>.sock` and 4. `<temp dir>/devicesteer-<hash>.sock`, with a short hash of
+///    the UDID. A 40-character UDID (devices from before 2018) made both of the first two too long
+///    on macOS, so the daemon couldn't listen at all.
+///
+/// Both directories belong to the user: the state dir is in their home, and macOS's temp dir is
+/// per user (mode 700). The CLI and the viewer both call this, so they agree on the path.
+#[cfg(unix)]
+fn socket_path_in(state: &std::path::Path, temp: &std::path::Path, udid: &str) -> PathBuf {
+    let hash = format!("{:016x}", fnv1a(udid.as_bytes()));
+    let candidates = [
+        // Earlier builds took this one only below 100 bytes; keep that so they agree.
+        Some(state.join(format!("{udid}.sock"))).filter(|p| p.as_os_str().len() < 100),
+        Some(temp.join(format!("devicesteer-{udid}.sock"))),
+        Some(state.join(format!("{hash}.sock"))),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|p| p.as_os_str().len() <= MAX_SOCKET_PATH)
+        .unwrap_or_else(|| temp.join(format!("devicesteer-{hash}.sock")))
+}
+
+/// FNV-1a, 64-bit: stable across builds and Rust versions (std's hasher promises neither), so a
+/// CLI and a viewer built apart still find the same socket.
+#[cfg(unix)]
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3))
 }
 
 #[cfg(unix)]
@@ -217,3 +252,45 @@ mod imp {
 pub use imp::{Listener, connect};
 #[cfg(windows)]
 pub use imp::pipe_name;
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    // A typical home and the per-user temp dir macOS gives (`$TMPDIR`).
+    const STATE: &str = "/Users/someone/Library/Application Support/devicesteer";
+    const TEMP: &str = "/var/folders/wx/t_gxtcwd4rxgxftr41tfkj2r0000gn/T/";
+    const OLD_UDID: &str = "0123456789abcdef0123456789abcdef01234567";
+    const NEW_UDID: &str = "00008140-001A2B3C4D5E6F70";
+
+    #[test]
+    fn a_40_character_udid_fits() {
+        let p = socket_path_in(Path::new(STATE), Path::new(TEMP), OLD_UDID);
+        assert!(p.as_os_str().len() <= MAX_SOCKET_PATH, "{} is {} bytes", p.display(), p.as_os_str().len());
+        assert!(p.starts_with(STATE));
+        // The same every time, and not another device's.
+        assert_eq!(p, socket_path_in(Path::new(STATE), Path::new(TEMP), OLD_UDID));
+        assert_ne!(p, socket_path_in(Path::new(STATE), Path::new(TEMP), &OLD_UDID.replace('7', "8")));
+        // Even with a long home, in the temp dir.
+        let long = format!("/Users/{}/Library/Application Support/devicesteer", "x".repeat(60));
+        let p = socket_path_in(Path::new(&long), Path::new(TEMP), OLD_UDID);
+        assert!(p.as_os_str().len() <= MAX_SOCKET_PATH && p.starts_with(TEMP));
+    }
+
+    #[test]
+    fn paths_that_fit_before_stay_the_same() {
+        let p = socket_path_in(Path::new(STATE), Path::new(TEMP), NEW_UDID);
+        assert_eq!(p, Path::new(STATE).join(format!("{NEW_UDID}.sock")));
+        let long = format!("/Users/{}/Library/Application Support/devicesteer", "x".repeat(40));
+        let p = socket_path_in(Path::new(&long), Path::new(TEMP), NEW_UDID);
+        assert_eq!(p, Path::new(TEMP).join(format!("devicesteer-{NEW_UDID}.sock")));
+    }
+
+    #[test]
+    fn fnv1a_is_the_published_function() {
+        // Test vectors from the FNV reference.
+        assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
+    }
+}

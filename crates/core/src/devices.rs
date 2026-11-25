@@ -42,7 +42,7 @@ pub struct DeviceInfo {
     /// when it is ready.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub setup: Option<SetupStep>,
-    /// Why DeviceSteer can't work with this device (its OS is older than iOS 17), as a sentence to
+    /// Why DeviceSteer can't work with this device (its OS is older than iOS 27), as a sentence to
     /// show. Such a device has no `setup`: no step would make it usable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<String>,
@@ -52,9 +52,11 @@ pub struct DeviceInfo {
     pub error: Option<String>,
 }
 
-/// The oldest major OS version DeviceSteer works with. Everything goes through CoreDeviceProxy,
-/// RSD and RemoteXPC, which the device only has from iOS 17.
-pub const MIN_OS_MAJOR: u32 = 17;
+/// The oldest major OS version DeviceSteer works with. CoreDeviceProxy, RSD and RemoteXPC exist from
+/// iOS 17, but before iOS 27 the device refuses the screen-sharing session that the live screen,
+/// recording and touch input need (CoreDevice error 9021), and has no accessibility service for
+/// `ui` (PITFALLS #65).
+pub const MIN_OS_MAJOR: u32 = 27;
 
 /// The major version in a lockdown `ProductVersion` such as `15.8.8`.
 fn os_major(version: &str) -> Option<u32> {
@@ -73,7 +75,12 @@ pub fn unsupported_reason(version: &str, device_class: Option<&str>) -> Option<S
         return None;
     }
     let os = if device_class == Some("iPad") { "iPadOS" } else { "iOS" };
-    Some(format!("DeviceSteer needs iOS {MIN_OS_MAJOR} or later; this device runs {os} {}", version.trim()))
+    // Says why, not just "too old": iOS 17 to 26 look new enough and take the setup steps.
+    Some(format!(
+        "DeviceSteer needs {os} {MIN_OS_MAJOR} or later; this device runs {os} {}, which refuses screen sharing \
+         and remote control",
+        version.trim()
+    ))
 }
 
 /// [`unsupported_reason`] for a device's lockdown values.
@@ -214,7 +221,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn versions_below_17_are_unsupported() {
+    fn versions_below_27_are_unsupported() {
         assert_eq!(os_major("15.8.8"), Some(15));
         assert_eq!(os_major("17"), Some(17));
         assert_eq!(os_major("27.3"), Some(27));
@@ -223,22 +230,31 @@ mod tests {
 
         assert_eq!(
             unsupported_reason("15.8.8", Some("iPhone")).as_deref(),
-            Some("DeviceSteer needs iOS 17 or later; this device runs iOS 15.8.8")
+            Some(
+                "DeviceSteer needs iOS 27 or later; this device runs iOS 15.8.8, which refuses screen sharing and \
+                 remote control"
+            )
         );
         assert_eq!(
-            unsupported_reason("16.7.10", Some("iPad")).as_deref(),
-            Some("DeviceSteer needs iOS 17 or later; this device runs iPadOS 16.7.10")
+            unsupported_reason("17.7.11", Some("iPad")).as_deref(),
+            Some(
+                "DeviceSteer needs iPadOS 27 or later; this device runs iPadOS 17.7.11, which refuses screen \
+                 sharing and remote control"
+            )
         );
-        assert!(unsupported_reason("17.0", Some("iPhone")).is_none());
-        assert!(unsupported_reason("26.1", None).is_none());
+        assert!(unsupported_reason("26.1", None).is_some());
+        assert!(unsupported_reason("27.0", Some("iPhone")).is_none());
+        assert!(unsupported_reason("28.1", None).is_none());
         // Unreadable: not refused here.
         assert!(unsupported_reason("x.y", None).is_none());
     }
 
     #[test]
     fn reason_does_not_read_as_a_connection_failure() {
-        let r = unsupported_reason("12.5.7", None).unwrap();
-        assert!(!r.contains("connection") && !r.contains("tunnel"));
+        for v in ["12.5.7", "17.7.11", "26.4"] {
+            let r = unsupported_reason(v, None).unwrap();
+            assert!(!r.contains("connection") && !r.contains("tunnel"));
+        }
     }
 
     #[test]
@@ -247,7 +263,12 @@ mod tests {
             ("ProductVersion".to_string(), plist::Value::String("15.8.8".into())),
             ("DeviceClass".to_string(), plist::Value::String("iPhone".into())),
         ]);
-        assert!(unsupported_in(&values).unwrap().ends_with("iOS 15.8.8"));
+        assert!(unsupported_in(&values).unwrap().contains("runs iOS 15.8.8,"));
+        let values = plist::Dictionary::from_iter([
+            ("ProductVersion".to_string(), plist::Value::String("27.2.1".into())),
+            ("DeviceClass".to_string(), plist::Value::String("iPad".into())),
+        ]);
+        assert!(unsupported_in(&values).is_none());
         assert!(unsupported_in(&plist::Dictionary::new()).is_none());
     }
 }

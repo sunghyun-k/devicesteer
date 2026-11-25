@@ -14,16 +14,16 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 
 | Topic | Entries |
 |---|---|
-| Screen streams (displayservice) | #1, #2, #7, #11, #13, #27, #28 |
+| Screen streams (displayservice) | #1, #2, #7, #11, #13, #27, #28, #65 |
 | Connection and tunnel | #3, #4, #16, #50, #55 |
 | Screenshots | #5 |
-| Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39, #58 |
+| Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39, #58, #65 |
 | Display info | #9, #27 |
-| Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
+| Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27, #65 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
 | Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57, #64 |
-| Device setup (pairing, Developer Mode, DDI) | #30, #31, #32, #55, #56, #59 |
+| Device setup (pairing, Developer Mode, DDI) | #30, #31, #32, #49, #55, #56, #59, #65 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
 | Windows host | #51, #52, #53, #54, #57, #59, #64 |
 
@@ -113,6 +113,8 @@ packets stop for 2.5 s no longer opens the gate and is restarted before the next
 
 Measured: starting the audio stream took ~0.2 s to the first packet; audio + video ~0.33 s.
 Stopping by `RemoteSSRC` (#1) left `sessions: []` in the server status every time.
+
+See #65: iPadOS 17 refuses the stream (9021) but takes touches without one.
 
 ### 8. HID connection warm-up
 
@@ -962,6 +964,8 @@ before iOS 17 (CoreDeviceProxy, RSD, RemoteXPC, the personalized image), so a de
 now `unsupported` from lockdown's public `ProductVersion` and no step is probed; the refusal comes
 before any tunnel and doesn't say "connection" or "tunnel".
 
+See #65: the minimum is now iOS 27, refused the same way.
+
 ### 50. A device on Wi-Fi isn't listed by usbmuxd, even with Wi-Fi sync on
 
 macOS 27, usbmuxd from MobileDevice.framework. Two devices on the same network that Xcode listed as
@@ -1294,3 +1298,31 @@ command's error silently, so nothing said what failed.
 
 So every command that builds a window is `async` (`open_settings` in `settings_window.rs`), even
 with nothing to await. The page logs a failed `open_settings` instead of dropping it.
+
+### 65. Before iOS 27 the device refuses screen sharing: iOS 17 to 26 are unsupported
+
+iPad (iPadOS 17.7.11, USB), trusted, Developer Mode on, Developer Disk Image mounted (the services
+went from 57 to 80, displayservice, hid and screencaptureservice among them).
+
+- **Both media streams are refused** with `com.apple.dt.CoreDeviceError` 9021, "Remote control
+  requires iOS 27.0 or later on this device", whether the audio stream comes first (#7) or the
+  video stream alone. So no live screen, no recording, and (since `Controller` opens a media
+  session before HID, #7) no touch, key or button input either.
+- **HID itself works without a stream there** (a scratch patch that skipped the media session):
+  tap, swipe, home, volume, keys and the hardware keyboard all went through. #7 (touches dropped
+  without a stream) was observed on iOS 27 and doesn't hold on 17.
+- **No `axAuditDaemon.remoteAXService`**, only `com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote`
+  (the older DTX accessibility-audit API, which walks elements one at a time and which idevice
+  doesn't implement). So no `ui`, no taps by label, and `type`/`paste` can't read the focused field.
+- Worked: `display`, `screenshot`, `launch`, `clipboard`, `settings`, `keyboard status`, the setup
+  steps and agent sessions.
+
+Without the live screen and `ui` the device can't be driven the way DeviceSteer is meant to be, so
+the minimum is iOS 27 (`MIN_OS_MAJOR`): an older device is `unsupported`, refused before any tunnel
+like #49, with a reason that says the OS refuses screen sharing and remote control. iOS 18 to 26
+were not tried; the device's own sentence names 27, so they are taken to refuse the same way.
+
+Two messages were wrong on the way: the 9021 error printed the whole XPC error dictionary (with
+byte arrays) instead of its `NSLocalizedDescription` (`coredevice.rs` now shows the sentence and
+the code), and the missing accessibility service was blamed on an unmounted disk image when the
+image was mounted (`ax/service.rs` now checks whether the image's other services are there).
