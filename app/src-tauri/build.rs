@@ -4,6 +4,7 @@
 /// `generate_handler!` (src/lib.rs) and in the capability of each window that calls it.
 const COMMANDS: &[&str] = &[
     "list_devices",
+    "open_apple_devices_store",
     "setup_status",
     "setup_run",
     "setup_pair_wifi",

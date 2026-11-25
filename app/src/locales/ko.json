@@ -51,6 +51,10 @@
   "list.noMatches": "일치하는 항목 없음",
   "list.noMatchesDetail": "‘{query}’와(과) 일치하는 기기가 없습니다.",
   "list.sessionRuns": "이 기기에서 에이전트 세션이 실행 중입니다",
+  "list.noUsbmuxd.title": "Apple 기기 설치",
+  "list.noUsbmuxd.detail": "케이블로 연결하려면 Windows에 Apple 기기(또는 iTunes)가 필요합니다. 설치한 다음 한 번 열어 사용권 계약에 동의하고, 기기를 다시 연결하십시오.",
+  "list.noUsbmuxd.store": "Microsoft Store 열기",
+  "list.noUsbmuxd.waiting": "Apple 기기가 실행되면 이 목록이 자동으로 업데이트됩니다. Wi-Fi로 페어링한 기기는 Apple 기기 없이도 사용할 수 있습니다.",
 
   "device.unknown": "알 수 없는 기기",
   "device.new": "새로운 기기",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "Mac 클립보드에 텍스트가 없습니다.",
   "error.mac_clipboard_read": "Mac 클립보드를 읽을 수 없음: {detail}",
-  "error.mac_clipboard_write": "Mac 클립보드에 쓸 수 없음: {detail}"
+  "error.mac_clipboard_write": "Mac 클립보드에 쓸 수 없음: {detail}",
+  "error.open_store": "Microsoft Store를 열 수 없음: {detail}"
 }

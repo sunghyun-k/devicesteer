@@ -7,7 +7,7 @@
 // state: device lists, connecting and errors, agent sessions, cursor moves with labels, human
 // touches, settings and the VoiceOver warning.
 //
-// URL options: `devices=normal|empty|error|slow`, `open=1` (show the first device's screen at
+// URL options: `devices=normal|empty|error|slow|nomux` (nomux: Windows without Apple Devices), `open=1` (show the first device's screen at
 // once, as DEVICESTEER_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
 // (no floating panel, for screenshots), `rotation=rot270` (start turned), `theme=light|dark`,
 // `session=agent|delegated_to_user|user` (a session already runs when the device is attached;
@@ -68,6 +68,10 @@ const DEVICES: MockDevice[] = [
   { udid: "00000000-0000000000000007", transports: ["usb"], name: "Lab iPhone", product_type: "iPhone14,5", model_name: "iPhone 13", device_class: "iPhone", os_version: "27.0", setup: "developer_mode" },
   { udid: "00000000-0000000000000008", transports: ["usb", "wifi"], name: "Spare iPad", product_type: "iPad13,18", model_name: "iPad (10th generation)", device_class: "iPad", os_version: "27.1", setup: "disk_image" },
 ];
+
+/** What the core says when nothing answers where usbmuxd should be (`UsbmuxdMissing`). */
+const NO_USBMUXD =
+  "usbmuxd connection failed: nothing answers at 127.0.0.1:27015, so Apple's device support isn't running. Install Apple Devices from the Microsoft Store (ms-windows-store://pdp/?ProductId=9NP83LWLPZ9K) or iTunes, open it once and accept its license (its usbmuxd starts only after that), then reconnect the device. Devices paired over Wi-Fi work without it";
 
 const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];
 
@@ -556,8 +560,18 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     case "list_devices":
       if (state.devices === "slow") await sleep(2500);
       else await sleep(250);
-      if (state.devices === "error") throw "usbmuxd is not running. Install iTunes or Apple Devices, or start usbmuxd, then refresh.";
-      return state.devices === "empty" ? [] : DEVICES.filter((d) => !state.unplugged.has(d.udid));
+      if (state.devices === "error") throw "usbmuxd device list failed (connection error: Socket(Kind(ConnectionReset)))";
+      // Windows without Apple Devices: only the Wi-Fi-paired devices, and what to install.
+      if (state.devices === "nomux")
+        return {
+          devices: DEVICES.filter((d) => d.transports.includes("wifi") && !d.transports.includes("usb") && !state.unplugged.has(d.udid)),
+          usbmuxd_missing: NO_USBMUXD,
+        };
+      return { devices: state.devices === "empty" ? [] : DEVICES.filter((d) => !state.unplugged.has(d.udid)) };
+    case "open_apple_devices_store":
+      // Stands in for the Store: Apple Devices is installed and running from now on.
+      if (state.devices === "nomux") window.setTimeout(() => (state.devices = "normal"), 4000);
+      return null;
     case "attach":
       state.current = args.udid as string;
       if (state.unplugged.has(state.current)) {
@@ -796,7 +810,8 @@ const mock = {
   settingsFail(on = true) {
     state.settingsFail = on;
   },
-  devices(kind: "normal" | "empty" | "error" | "slow") {
+  /** `nomux`: Windows without Apple Devices (the Store button "installs" it in 4 s). */
+  devices(kind: "normal" | "empty" | "error" | "slow" | "nomux") {
     state.devices = kind;
   },
   attach(kind: "ok" | "hang" | "error") {

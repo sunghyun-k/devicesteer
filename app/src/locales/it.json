@@ -51,6 +51,10 @@
   "list.noMatches": "Nessun risultato",
   "list.noMatchesDetail": "Nessuna corrispondenza per “{query}”.",
   "list.sessionRuns": "Su questo dispositivo è in corso una sessione dell’agente",
+  "list.noUsbmuxd.title": "Installa Dispositivi Apple",
+  "list.noUsbmuxd.detail": "Per collegare con un cavo, Windows ha bisogno di Dispositivi Apple (o di iTunes). Installalo, aprilo una volta e accetta la licenza, poi ricollega il dispositivo.",
+  "list.noUsbmuxd.store": "Apri Microsoft Store",
+  "list.noUsbmuxd.waiting": "Questo elenco si aggiorna da solo quando Dispositivi Apple è in esecuzione. I dispositivi abbinati tramite Wi-Fi funzionano anche senza.",
 
   "device.unknown": "Dispositivo sconosciuto",
   "device.new": "Nuovo dispositivo",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "Gli appunti del Mac non contengono testo.",
   "error.mac_clipboard_read": "Impossibile leggere gli appunti del Mac: {detail}",
-  "error.mac_clipboard_write": "Impossibile scrivere negli appunti del Mac: {detail}"
+  "error.mac_clipboard_write": "Impossibile scrivere negli appunti del Mac: {detail}",
+  "error.open_store": "Impossibile aprire Microsoft Store: {detail}"
 }

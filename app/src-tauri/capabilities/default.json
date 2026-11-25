@@ -12,6 +12,7 @@
     "updater:default",
     "process:allow-restart",
     "allow-list-devices",
+    "allow-open-apple-devices-store",
     "allow-setup-status",
     "allow-setup-run",
     "allow-setup-pair-wifi",

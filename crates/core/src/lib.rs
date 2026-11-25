@@ -38,7 +38,9 @@ pub mod trace;
 mod typing;
 
 pub use control::{Controller, Sent};
-pub use devices::{DeviceInfo, MIN_OS_MAJOR, Transport, list_devices, unsupported_reason};
+pub use devices::{
+    APPLE_DEVICES_STORE_URL, DeviceInfo, DeviceList, MIN_OS_MAJOR, Transport, UsbmuxdMissing, list_devices, unsupported_reason,
+};
 pub use display::{Display, DisplayPoller, Rotation};
 pub use typing::{KeyboardLanguage, Pasted, TypeMethod, Typed};
 pub use input::{Button, Input, Motion, TAP_HOLD, TouchPhase};

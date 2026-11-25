@@ -84,6 +84,14 @@
           <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search devices" data-i18n-placeholder="sidebar.search" data-i18n-aria-label="sidebar.searchDevices" />
         </label>
         <nav id="device-list">
+          <!-- Windows without Apple Devices: nothing answers where usbmuxd should be, so no USB
+               device can show up. Shown while the list says so (main.ts `loadDevices`). -->
+          <div id="mux-card" class="mux-card surface" role="status" hidden>
+            <p class="title" data-i18n="list.noUsbmuxd.title">Install Apple Devices</p>
+            <p class="detail" data-i18n="list.noUsbmuxd.detail">To connect with a cable, Windows needs Apple Devices (or iTunes). Install it, open it once and accept its license, then plug the device in again.</p>
+            <button id="mux-store" class="btn primary small" type="button" data-i18n="list.noUsbmuxd.store">Open Microsoft Store</button>
+            <p class="note"><span class="spinner" aria-hidden="true"></span><span data-i18n="list.noUsbmuxd.waiting">This list updates by itself once Apple Devices runs. Devices paired over Wi-Fi work without it.</span></p>
+          </div>
           <section id="sec-available">
             <h3 data-i18n="sidebar.available">Available</h3>
             <ul id="available" role="listbox" aria-label="Available devices" data-i18n-aria-label="sidebar.availableDevices"></ul>

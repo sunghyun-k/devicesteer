@@ -51,6 +51,10 @@
   "list.noMatches": "Sin resultados",
   "list.noMatchesDetail": "Nada coincide con “{query}”.",
   "list.sessionRuns": "Hay una sesión de agente en curso en este dispositivo",
+  "list.noUsbmuxd.title": "Instala Dispositivos Apple",
+  "list.noUsbmuxd.detail": "Para conectar con un cable, Windows necesita Dispositivos Apple (o iTunes). Instálalo, ábrelo una vez y acepta su licencia; luego vuelve a conectar el dispositivo.",
+  "list.noUsbmuxd.store": "Abrir Microsoft Store",
+  "list.noUsbmuxd.waiting": "Esta lista se actualiza sola cuando Dispositivos Apple está en ejecución. Los dispositivos enlazados por Wi-Fi funcionan sin él.",
 
   "device.unknown": "Dispositivo desconocido",
   "device.new": "Dispositivo nuevo",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "El portapapeles del Mac no contiene texto.",
   "error.mac_clipboard_read": "No se ha podido leer el portapapeles del Mac: {detail}",
-  "error.mac_clipboard_write": "No se ha podido escribir en el portapapeles del Mac: {detail}"
+  "error.mac_clipboard_write": "No se ha podido escribir en el portapapeles del Mac: {detail}",
+  "error.open_store": "No se ha podido abrir Microsoft Store: {detail}"
 }
