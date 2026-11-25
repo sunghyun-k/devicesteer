@@ -15,6 +15,7 @@
 // steps end: done, the user taps Don't Trust, or an error), `select=<udid suffix>` (pick that
 // device first, such as `select=6` for the one that needs Trust).
 
+import { emit as emitEvent } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
 type Point = [number, number];
@@ -65,6 +66,8 @@ const state = {
   macClipboard: "mock text on the Mac",
   /** Whether the page asked the shell to keep the clipboards in step. */
   clipboardSync: false,
+  /** The check of View > Show Touches in the shell's menu. */
+  menuShowTouches: true,
   devices: params.get("devices") ?? "normal",
   attach: params.get("attach") ?? "ok",
   watch: params.get("watch") ?? "ok",
@@ -494,6 +497,9 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       await sleep(200);
       state.macClipboard = state.deviceClipboard;
       return { kind: "text", chars: state.deviceClipboard.length };
+    case "set_show_touches":
+      state.menuShowTouches = args.on === true;
+      return null;
     case "clipboard_sync":
       state.clipboardSync = !!args.on;
       return true;
@@ -567,6 +573,15 @@ const LABELS = ["Open Settings", "Tap Wi-Fi", "Scroll to Privacy & Security", "S
 let labelIndex = 0;
 
 const mock = {
+  /** Chooses View > Show Touches, as the shell does: `on` is the item's new check. */
+  showTouches(on: boolean) {
+    state.menuShowTouches = on;
+    return emitEvent("show-touches", on);
+  },
+  /** The check of View > Show Touches, as the page last set or the menu left it. */
+  menuShowTouches() {
+    return state.menuShowTouches;
+  },
   /** Key steps (`[code, down]`) the viewer sent; reading empties them. */
   takeKeys() {
     return state.keyLog.splice(0);
@@ -713,7 +728,7 @@ export function installMock(): void {
   if (theme) document.documentElement.dataset.theme = theme;
   if (params.get("lights") !== "0") lights();
   mockWindows("main");
-  mockIPC((cmd, args) => handle(cmd, (args ?? {}) as Record<string, unknown>));
+  mockIPC((cmd, args) => handle(cmd, (args ?? {}) as Record<string, unknown>), { shouldMockEvents: true });
   (window as unknown as { VideoDecoder: unknown }).VideoDecoder = FakeDecoder;
   window.mock = mock;
   // Module scripts run after the document is parsed, so the body is there.

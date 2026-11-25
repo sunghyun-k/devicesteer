@@ -717,12 +717,31 @@ const RELEASE_MS = 350;
 /** How long a tap holds the finger down when the event doesn't say (`TAP_HOLD` in the core). */
 const TAP_HOLD_MS = 50;
 
+// "Show Touches" (View menu, ⇧⌘T; app/src-tauri/src/view_menu.rs) turns the discs off, the
+// human's and the agent's alike. The agent cursor and labels stay: they say where the agent is
+// working, which the discs only repeat.
+let showTouches = prefs.get("show-touches") !== "0";
+
+function setShowTouches(on: boolean): void {
+  showTouches = on;
+  prefs.set("show-touches", on ? "1" : "0");
+  if (on) return;
+  for (const d of overlay.querySelectorAll(".touch-dot")) d.remove();
+  fingers.clear();
+}
+
+void listen<boolean>("show-touches", (e) => setShowTouches(e.payload));
+// The menu starts checked; make it match what was saved.
+void invoke("set_show_touches", { on: showTouches }).catch(() => {});
+
+/** A disc at `at`. With touches hidden it is never put on the overlay, so callers animate and
+ * remove it as usual and nothing shows. */
 function touchDot(at: [number, number]): HTMLDivElement {
   const d = document.createElement("div");
   d.className = "touch-dot";
   d.style.left = `${at[0]}px`;
   d.style.top = `${at[1]}px`;
-  overlay.append(d);
+  if (showTouches) overlay.append(d);
   return d;
 }
 
@@ -1424,11 +1443,12 @@ function editing(): boolean {
 }
 
 /** ⌘ shortcuts that stay with the viewer and the Mac: zoom (⌘0, ⌘9, ⌘+, ⌘−), the keyboard
- * menu's (⌘K, ⌥⌘K, ⇧⌘V, ⇧⌘C), and quit, close, hide, minimize, settings. Every other ⌘ combination goes to
- * the device (⌘A, ⌘C, ⌘V, ⌘Z…). */
+ * menu's (⌘K, ⌥⌘K, ⇧⌘V, ⇧⌘C), the app menu's Show Touches (⇧⌘T), and quit, close, hide,
+ * minimize, settings. Every other ⌘ combination goes to the device (⌘A, ⌘C, ⌘V, ⌘Z…). A menu
+ * shortcut reaches the menu only if the page doesn't take the key. */
 function viewerShortcut(e: KeyboardEvent): boolean {
   if (!e.metaKey) return false;
-  if (e.shiftKey && (e.code === "KeyV" || e.code === "KeyC")) return true;
+  if (e.shiftKey && (e.code === "KeyV" || e.code === "KeyC" || e.code === "KeyT")) return true;
   return ["Equal", "Minus", "Digit0", "Digit9", "KeyK", "KeyQ", "KeyW", "KeyH", "KeyM", "Comma", "NumpadAdd", "NumpadSubtract"].includes(e.code);
 }
 
@@ -2384,6 +2404,7 @@ function report(): void {
         : { name: sessionName.textContent, state: sessionState.textContent, button: sessionPrimary.textContent },
       glow: glow.hidden ? null : glow.classList.contains("human") ? "human" : "agent",
       labelsShown,
+      showTouches,
       touchDotsOnScreen: overlay.querySelectorAll(".touch-dot").length,
       agentCursor: cursor.hidden
         ? null
