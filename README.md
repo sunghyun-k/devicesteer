@@ -26,8 +26,9 @@ connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
 
 ### Windows (10 and 11, x64)
 
-1. For USB, install **Apple Devices** from the Microsoft Store (or iTunes): it brings the usbmuxd
-   service DeviceSteer talks to. A device paired over Wi-Fi needs neither.
+1. For USB, install **Apple Devices** from the Microsoft Store (or iTunes), open it once and accept
+   its license: it brings the usbmuxd service DeviceSteer talks to. A device paired over Wi-Fi
+   needs neither.
 2. Install DeviceSteer from PowerShell (recommended):
 
    ```powershell

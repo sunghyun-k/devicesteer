@@ -89,4 +89,4 @@ try {
 }
 
 Write-Host "DeviceSteer $Version is installed. Open it from the Start menu; it offers to set up the devicesteer command and the agent skill." -ForegroundColor Green
-Write-Host 'For USB devices, install Apple Devices from the Microsoft Store (or iTunes) if you have not.'
+Write-Host 'For USB devices, install Apple Devices from the Microsoft Store (or iTunes), open it once and accept its license.'
