@@ -98,6 +98,7 @@
   "keyboard.forwardKey": "⌘K",
   "keyboard.forwardKey@windows": "Ctrl+K",
   "keyboard.forwardHelp": "デバイスにハードウェアキーボードを接続し、ポインタが画面上にある間はキー入力をデバイスに送ります。入力される文字はデバイスの入力ソースで決まります（Control-Spaceで切り替え）",
+  "keyboard.forwardHelp@windows": "デバイスにハードウェアキーボードを接続し、ポインタが画面上にある間はキー入力をデバイスに送ります。CtrlはCommandキー（Ctrl+Cでコピー、Ctrl+Vでペースト）、WindowsキーはControlキーとして働きます。入力される文字はデバイスの入力ソースで決まります（Ctrl+Spaceで切り替え）",
   "keyboard.software": "ソフトウェアキーボードを切り替え",
   "keyboard.softwareKey": "⌥⌘K",
   "keyboard.softwareKey@windows": "Ctrl+Alt+K",

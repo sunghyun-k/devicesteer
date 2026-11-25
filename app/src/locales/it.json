@@ -98,6 +98,7 @@
   "keyboard.forwardKey": "⌘K",
   "keyboard.forwardKey@windows": "Ctrl+K",
   "keyboard.forwardHelp": "Collega una tastiera fisica al dispositivo, e i tasti vanno a esso mentre il puntatore è sullo schermo. La sorgente di input del dispositivo decide cosa viene digitato (Control-Space la cambia)",
+  "keyboard.forwardHelp@windows": "Collega una tastiera fisica al dispositivo, e i tasti vanno a esso mentre il puntatore è sullo schermo. Ctrl funziona come il tasto Comando (Ctrl+C copia, Ctrl+V incolla) e il tasto Windows come Control. La sorgente di input del dispositivo decide cosa viene digitato (Ctrl+Spazio la cambia)",
   "keyboard.software": "Mostra/nascondi tastiera su schermo",
   "keyboard.softwareKey": "⌥⌘K",
   "keyboard.softwareKey@windows": "Ctrl+Alt+K",

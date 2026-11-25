@@ -98,6 +98,7 @@
   "keyboard.forwardKey": "⌘K",
   "keyboard.forwardKey@windows": "Ctrl+K",
   "keyboard.forwardHelp": "기기에 하드웨어 키보드를 연결하고, 포인터가 화면 위에 있는 동안 키 입력을 기기로 보냅니다. 입력되는 문자는 기기의 입력 소스에 따라 달라집니다(Control-Space로 전환)",
+  "keyboard.forwardHelp@windows": "기기에 하드웨어 키보드를 연결하고, 포인터가 화면 위에 있는 동안 키 입력을 기기로 보냅니다. Ctrl은 Command 키로(Ctrl+C로 복사, Ctrl+V로 붙여넣기), Windows 키는 Control 키로 동작합니다. 입력되는 문자는 기기의 입력 소스에 따라 달라집니다(Ctrl+Space로 전환)",
   "keyboard.software": "소프트웨어 키보드 보기/가리기",
   "keyboard.softwareKey": "⌥⌘K",
   "keyboard.softwareKey@windows": "Ctrl+Alt+K",

@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { initAgents, openSettings } from "./agents";
 import { listen } from "@tauri-apps/api/event";
 import { errorText, localize, num, onLanguageChange, t, type Key } from "./i18n";
+import { KeyMapper, type KeyStep } from "./keymap";
 
 // Dev only: `?mock` runs the viewer against a fake backend in a plain browser (see src/mock.ts).
 // Vite replaces `import.meta.env.DEV` with false in builds, which drops the mock entirely.
@@ -1475,7 +1476,8 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("#device-bar [data-
 // so the device's layout and input source decide what it types (PITFALLS #35). Never while a
 // field of the viewer has focus, and never the viewer's own shortcuts. Text composed with a Mac
 // input method (Hangul) goes over with the shared clipboard (or "Send Clipboard") and a paste on
-// the device.
+// the device. On Windows, Ctrl is Command on the device and the Windows key Control
+// (keymap.ts), as on an iPad with a PC keyboard whose modifier keys are swapped.
 //
 // Turning it on attaches a hardware keyboard too: without one, the keys go through the
 // keyboard surface, whose input source is stuck (PITFALLS #35), and Control-Space can't switch
@@ -1484,6 +1486,11 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("#device-bar [data-
 // isn't live. Either way the on-screen keyboard comes back (PITFALLS #36).
 
 type KeyboardState = { hardware: boolean; attached: boolean };
+
+/** The viewer's shortcut modifier is ⌘ on macOS, Ctrl elsewhere (`cmdKey`). On Windows the
+ * Windows key (what the page sees as ⌘) belongs to the OS: Win+K opens Cast, Win+V the clipboard
+ * history. */
+const MAC_KEYS = /Mac/.test(navigator.platform);
 
 const kbButton = $<HTMLButtonElement>("#keyboard");
 const kbMenu = $<HTMLDivElement>("#keyboard-menu");
@@ -1499,10 +1506,15 @@ let kbOurs = false;
 /** A connect or disconnect is on its way. */
 let kbBusy = false;
 let overScreen = false;
-/** Keys sent down, by code, so every one is let go again. */
-const keysDown = new Set<string>();
+/** Which device key each computer key presses (Ctrl is Command on Windows, keymap.ts), and what
+ * is held, so every key is let go again. */
+const keys = new KeyMapper(!MAC_KEYS);
 /** Key steps go out one at a time and in order: an up that overtook its down would leave the key held. */
 let keyChain: Promise<unknown> = Promise.resolve();
+
+function keySteps(steps: KeyStep[]): void {
+  for (const s of steps) keyStep(s.code, s.down);
+}
 
 function keyStep(code: string, down: boolean): void {
   keyChain = keyChain
@@ -1540,7 +1552,7 @@ const CTRL_LATE_MS = 500;
 // source (PITFALLS #45) has its own path: its keydown clears `ctrlAlone`.
 void listen("input-source-changed", () => {
   if (!keysGo() || !ctrlAlone) return;
-  if ([...keysDown].some((c) => c.startsWith("Control"))) keyTap("Space");
+  if (keys.held().some((c) => c.startsWith("Control"))) keyTap("Space");
   else if (performance.now() - ctrlUpAt < CTRL_LATE_MS) {
     keyStep("ControlLeft", true);
     keyTap("Space");
@@ -1550,8 +1562,7 @@ void listen("input-source-changed", () => {
 });
 
 function releaseKeys(): void {
-  for (const code of keysDown) keyStep(code, false);
-  keysDown.clear();
+  keySteps(keys.releaseAll());
 }
 
 /** The human may send input: no agent session, or one that gave the device to the human. */
@@ -1657,7 +1668,7 @@ function forgetKeyboard(): void {
   hardwareKeyboard = false;
   kbOurs = false;
   kbBusy = false;
-  keysDown.clear();
+  keys.releaseAll();
   showKeyboardState();
   syncSharedClipboard();
 }
@@ -1673,17 +1684,13 @@ function editing(): boolean {
   );
 }
 
-/** The viewer's shortcut modifier: ⌘ on macOS, Ctrl elsewhere. On Windows the Windows key (what
- * the page sees as ⌘) belongs to the OS: Win+K opens Cast, Win+V the clipboard history. */
-const MAC_KEYS = /Mac/.test(navigator.platform);
 const cmdKey = (e: KeyboardEvent): boolean => (MAC_KEYS ? e.metaKey : e.ctrlKey && !e.metaKey);
 
 /** Shortcuts that stay with the viewer and the computer: zoom (⌘0, ⌘9, ⌘+, ⌘−), the keyboard
  * menu's (⌘K, ⌥⌘K, ⇧⌘V, ⇧⌘C) and Settings (⌘,), with Ctrl for ⌘ off macOS; on macOS also the
  * app menu's Show Touches (⇧⌘T), quit, close, hide and minimize. Every other combination goes to
- * the device: ⌘A, ⌘C, ⌘V, ⌘Z… on a Mac, and Ctrl ones as Control (Control-Space switches the
- * device's input source) on Windows, which has no key the page could send as ⌘. A menu shortcut
- * reaches the menu only if the page doesn't take the key. */
+ * the device: ⌘A, ⌘C, ⌘V, ⌘Z… on a Mac, and Ctrl+A, Ctrl+C… on Windows, where Ctrl is Command on
+ * the device (keymap.ts). A menu shortcut reaches the menu only if the page doesn't take the key. */
 function viewerShortcut(e: KeyboardEvent): boolean {
   if (!cmdKey(e)) return false;
   if (e.shiftKey && (e.code === "KeyV" || e.code === "KeyC" || (MAC_KEYS && e.code === "KeyT"))) return true;
@@ -1734,13 +1741,9 @@ window.addEventListener("keydown", (e) => {
   // The Mac switching its input source with Caps Lock adds a keydown with no code and no keyup
   // (PITFALLS #45): nothing for the device.
   if (e.code === "Unidentified" || e.code === "") return;
-  keysDown.add(e.code);
-  keyStep(e.code, true);
+  keySteps(keys.down(e.code, e.getModifierState("AltGraph")));
   // With ⌘ held, macOS sends no keyup for the other keys: let go of this one at once.
-  if (e.metaKey && !e.code.startsWith("Meta")) {
-    keysDown.delete(e.code);
-    keyStep(e.code, false);
-  }
+  if (MAC_KEYS && e.metaKey && !e.code.startsWith("Meta")) keySteps(keys.up(e.code));
 });
 
 window.addEventListener("keyup", (e) => {
@@ -1753,13 +1756,12 @@ window.addEventListener("keyup", (e) => {
     if (!release) keyTap(e.code);
     return;
   }
-  if (!keysDown.has(e.code)) return;
+  if (!keys.held().includes(e.code)) return;
   e.preventDefault();
-  keysDown.delete(e.code);
-  keyStep(e.code, false);
+  keySteps(keys.up(e.code));
   if (e.code.startsWith("Control")) ctrlUpAt = e.timeStamp;
   // Letting go of ⌘ lets go of whatever macOS didn't report.
-  if (e.code.startsWith("Meta")) releaseKeys();
+  if (MAC_KEYS && e.code.startsWith("Meta")) releaseKeys();
 });
 
 window.addEventListener("blur", releaseKeys);
