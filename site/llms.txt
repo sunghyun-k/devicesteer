@@ -31,7 +31,7 @@ devicesteer session finish                        # at the end of your reply
 ## Setup
 
 - A new device needs three steps: trust this computer, Developer Mode, and the developer disk image. `devicesteer setup --udid <UDID>` runs them; the first two need the person holding the device.
-- Wi-Fi pairing without a cable: `devicesteer setup wifi`. On the device: Settings > Privacy & Security > Developer Mode > Pair with "DeviceSteer", then the device's own passcode, then the 6-digit code shown on the computer.
+- Wi-Fi pairing without a cable: `devicesteer setup wifi`. On the device: Settings > Privacy & Security > Developer Mode > Pair with "DeviceSteer", then the device's own passcode, then the 6-digit code shown on the computer. On Windows the firewall asks then whether DeviceSteer may accept connections (the device connects to the computer to pair): allow it on private networks. Finding and using devices doesn't ask.
 - The viewer app's interface is in English, Korean, Japanese, Simplified and Traditional Chinese, Spanish, French, German, Brazilian Portuguese and Italian, following the system's language (Settings › General overrides it). The CLI, its JSON output and the skill stay in English.
 - Install on macOS: `DeviceSteer_<version>_universal.dmg` from GitHub Releases. On Windows 10 and 11 (x64): `irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex` in PowerShell (per user, no administrator rights), or `DeviceSteer_<version>_x64-setup.exe`; USB needs Apple Devices or iTunes, opened once.
 - The app installs the `devicesteer` command (`~/.local/bin/devicesteer`; `%USERPROFILE%\.local\bin\devicesteer.exe` on Windows) and links the skill into agents' skill folders (Settings › Agents).

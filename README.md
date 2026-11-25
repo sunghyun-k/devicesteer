@@ -54,6 +54,10 @@ DeviceSteer 1.0 is in beta.
 4. Open DeviceSteer. It offers to set up agents as on macOS: `%USERPROFILE%\.local\bin\devicesteer.exe`
    and the skill links. If `%USERPROFILE%\.local\bin` isn't on your PATH, add it to your user Path
    (Edit environment variables for your account) and open a new terminal.
+5. Pairing a device over Wi-Fi (**Pair over Wi-Fi**, or `devicesteer setup wifi`) is the one time
+   DeviceSteer accepts a connection from the network, so Windows Defender Firewall asks then
+   whether to allow it: allow it on **private networks**, or the device can't connect to pair.
+   Finding and using devices doesn't ask.
 
 Before uninstalling, turn the items off in Settings › Agents: the uninstaller removes the app's
 folder but not the links it made (see [docs/SETUP.md](docs/SETUP.md#uninstalling)).

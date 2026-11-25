@@ -19,6 +19,8 @@ pub mod ax;
 mod control;
 mod coredevice;
 mod devices;
+#[cfg(windows)]
+mod dnssd;
 mod display;
 mod input;
 pub mod keyboard;

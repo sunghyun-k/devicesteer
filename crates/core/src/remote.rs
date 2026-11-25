@@ -12,7 +12,7 @@
 
 use std::{
     collections::HashMap,
-    net::{IpAddr, SocketAddr, SocketAddrV6},
+    net::{IpAddr, SocketAddr},
     path::PathBuf,
     time::Duration,
 };
@@ -78,8 +78,8 @@ impl Advert {
 
 /// Every `_remotepairing._tcp` advert heard within `wait`, one per device.
 ///
-/// Uses its own mDNS socket (no Bonjour service needed, so it works the same on Windows). A
-/// device that sleeps is answered for by a sleep proxy, which macOS's Bonjour caches but a fresh
+/// Needs no Bonjour service: on Windows the system's own mDNS responder answers (PITFALLS #68),
+/// elsewhere our own mDNS socket. A device that sleeps is answered for by a sleep proxy, which macOS's Bonjour caches but a fresh
 /// query here may not hear; such a device shows up once it wakes (PITFALLS #55).
 pub(crate) async fn browse(wait: Duration) -> Result<Vec<Advert>> {
     browse_until(wait, |_| false).await
@@ -95,16 +95,10 @@ async fn find(wait: Duration, pairing: &Pairing) -> Result<Option<Advert>> {
 
 /// [`browse`], stopping early at the first advert `done` accepts.
 async fn browse_until(wait: Duration, done: impl Fn(&Advert) -> bool) -> Result<Vec<Advert>> {
-    let mdns = mdns_sd::ServiceDaemon::new().context("could not start mDNS discovery")?;
-    let rx = mdns.browse(SERVICE).context("could not start mDNS discovery")?;
+    let mut answers = Answers::start()?;
     let mut out: Vec<Advert> = Vec::new();
     let end = tokio::time::Instant::now() + wait;
-    while let Ok(Ok(event)) = tokio::time::timeout_at(end, rx.recv_async()).await {
-        let mdns_sd::ServiceEvent::ServiceResolved(info) = event else { continue };
-        let txt: HashMap<String, String> =
-            info.get_properties().iter().map(|p| (p.key().to_string(), p.val_str().to_string())).collect();
-        let port = info.get_port();
-        let addrs = info.get_addresses().iter().filter_map(|a| socket_addr(a, port)).collect();
+    while let Ok(Some((txt, addrs))) = tokio::time::timeout_at(end, answers.next()).await {
         if let Some(a) = Advert::from_txt(&txt, addrs) {
             // One device answers on every interface it shares with us, under one identifier.
             match out.iter_mut().find(|o| o.identifier == a.identifier) {
@@ -120,14 +114,64 @@ async fn browse_until(wait: Duration, done: impl Fn(&Advert) -> bool) -> Result<
             }
         }
     }
-    let _ = mdns.shutdown();
+    answers.stop();
     Ok(out)
 }
 
+/// `_remotepairing._tcp` instances as they are resolved: TXT record and addresses.
+///
+/// Windows asks its own mDNS responder: an mDNS socket of ours there makes the firewall ask the
+/// person to allow the program (PITFALLS #68). Elsewhere `mdns-sd` sends the queries itself.
+#[cfg(windows)]
+struct Answers(crate::dnssd::Browse);
+
+#[cfg(windows)]
+impl Answers {
+    fn start() -> Result<Self> {
+        Ok(Self(crate::dnssd::Browse::start(SERVICE)?))
+    }
+
+    async fn next(&mut self) -> Option<(HashMap<String, String>, Vec<SocketAddr>)> {
+        self.0.next().await.map(|r| (r.txt, r.addrs))
+    }
+
+    fn stop(self) {}
+}
+
+#[cfg(not(windows))]
+struct Answers {
+    mdns: mdns_sd::ServiceDaemon,
+    rx: mdns_sd::Receiver<mdns_sd::ServiceEvent>,
+}
+
+#[cfg(not(windows))]
+impl Answers {
+    fn start() -> Result<Self> {
+        let mdns = mdns_sd::ServiceDaemon::new().context("could not start mDNS discovery")?;
+        let rx = mdns.browse(SERVICE).context("could not start mDNS discovery")?;
+        Ok(Self { mdns, rx })
+    }
+
+    async fn next(&mut self) -> Option<(HashMap<String, String>, Vec<SocketAddr>)> {
+        loop {
+            let mdns_sd::ServiceEvent::ServiceResolved(info) = self.rx.recv_async().await.ok()? else { continue };
+            let txt = info.get_properties().iter().map(|p| (p.key().to_string(), p.val_str().to_string())).collect();
+            let port = info.get_port();
+            let addrs = info.get_addresses().iter().filter_map(|a| socket_addr(a, port)).collect();
+            return Some((txt, addrs));
+        }
+    }
+
+    fn stop(self) {
+        let _ = self.mdns.shutdown();
+    }
+}
+
+#[cfg(not(windows))]
 fn socket_addr(a: &mdns_sd::ScopedIp, port: u16) -> Option<SocketAddr> {
     match a {
         mdns_sd::ScopedIp::V4(v4) => Some(SocketAddr::new(IpAddr::V4(*v4.addr()), port)),
-        mdns_sd::ScopedIp::V6(v6) => Some(SocketAddr::V6(SocketAddrV6::new(*v6.addr(), port, 0, v6.scope_id().index))),
+        mdns_sd::ScopedIp::V6(v6) => Some(SocketAddr::V6(std::net::SocketAddrV6::new(*v6.addr(), port, 0, v6.scope_id().index))),
         _ => None,
     }
 }
@@ -340,6 +384,10 @@ pub(crate) enum PairEvent {
 /// Pairs with a device on the network, started from the device (iOS 27 and later; PITFALLS #56):
 /// this computer offers itself as "DeviceSteer", the user picks it on the device and types the
 /// code `events` receives. Returns the new device's UDID once the pairing is saved.
+///
+/// The device connects to us, so this listens on every interface: the one place DeviceSteer
+/// accepts connections from the network. On Windows that makes the firewall ask, once per
+/// executable, whether to allow it; a per-user install can't add the rule beforehand (PITFALLS #68).
 pub(crate) async fn pair(wait: Duration, events: impl Fn(PairEvent) + Send) -> Result<String> {
     // One listener per family on the same port: `::` takes IPv4 too on macOS, but is IPv6-only
     // on Windows, where IPv4 connections were refused (PITFALLS #59).
@@ -394,7 +442,7 @@ pub(crate) async fn pair(wait: Duration, events: impl Fn(PairEvent) + Send) -> R
             Ok(r) => r.context("the device's pairing connection failed")?,
             Err(_) => bail!(
                 "no device asked to pair within {}s. On the device, pick \"{HOST_NAME}\" where it lists computers \
-                 to pair with, then run `devicesteer setup wifi` again",
+                 to pair with, then run `devicesteer setup wifi` again{FIREWALL_HINT}",
                 wait.as_secs()
             ),
         };
@@ -413,6 +461,15 @@ pub(crate) async fn pair(wait: Duration, events: impl Fn(PairEvent) + Send) -> R
     }
     result
 }
+
+/// Added to the timeout when no device connected: on Windows a refused firewall prompt blocks the
+/// device's connection without a word (PITFALLS #68).
+#[cfg(windows)]
+const FIREWALL_HINT: &str = ". If Windows asked whether to allow DeviceSteer on the network and it was not allowed, the \
+    device can't connect: ask the user to allow it on private networks in Windows Security > Firewall & network \
+    protection > Allow an app through firewall";
+#[cfg(not(windows))]
+const FIREWALL_HINT: &str = "";
 
 /// What the device is told this computer is. iOS shows computers by a Mac model; on other
 /// systems the generic Mac identifier stands in.
