@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 // Dev only: `?mock` runs the viewer against a fake backend in a plain browser (see src/mock.ts).
 // Vite replaces `import.meta.env.DEV` with false in builds, which drops the mock entirely.
@@ -1269,6 +1270,29 @@ let capsTappedAt = -Infinity;
 /** A Caps Lock keyup this soon after a keydown is that press's release, not another press. */
 const CAPS_RELEASE_MS = 1000;
 
+/** Control is down, or was last, with no other key since: what Control-Space looks like in the
+ * page, since macOS keeps the Space (PITFALLS #46). */
+let ctrlAlone = false;
+/** When Control last came up. */
+let ctrlUpAt = -Infinity;
+/** The Mac's input source change can land just after a quick Control-Space is let go. */
+const CTRL_LATE_MS = 500;
+
+// Control-Space switched the Mac's input source, as the Mac's "Select the previous input
+// source" shortcut: the page saw only Control (PITFALLS #46). Give the device its Space and put
+// the Mac's input source back, so only the device switches. Caps Lock switching the Mac's input
+// source (PITFALLS #45) has its own path: its keydown clears `ctrlAlone`.
+void listen("input-source-changed", () => {
+  if (!keysGo() || !ctrlAlone) return;
+  if ([...keysDown].some((c) => c.startsWith("Control"))) keyTap("Space");
+  else if (performance.now() - ctrlUpAt < CTRL_LATE_MS) {
+    keyStep("ControlLeft", true);
+    keyTap("Space");
+    keyStep("ControlLeft", false);
+  } else return;
+  void invoke("restore_input_source").catch(() => {});
+});
+
 function releaseKeys(): void {
   for (const code of keysDown) keyStep(code, false);
   keysDown.clear();
@@ -1439,6 +1463,7 @@ window.addEventListener("keydown", (e) => {
   // (PITFALLS #45): a keydown when it locks and a keyup when it unlocks, or, where Caps Lock
   // switches the Mac's input source, a keydown on press and a keyup on release. The keyup
   // listener tells them apart by time.
+  if (e.code !== "Unidentified" && e.code !== "") ctrlAlone = e.code.startsWith("Control");
   if (e.code === "CapsLock") {
     if (!e.repeat) {
       capsTappedAt = e.timeStamp;
@@ -1472,6 +1497,7 @@ window.addEventListener("keyup", (e) => {
   e.preventDefault();
   keysDown.delete(e.code);
   keyStep(e.code, false);
+  if (e.code.startsWith("Control")) ctrlUpAt = e.timeStamp;
   // Letting go of ⌘ lets go of whatever macOS didn't report.
   if (e.code.startsWith("Meta")) releaseKeys();
 });

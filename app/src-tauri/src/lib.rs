@@ -1,6 +1,7 @@
 //! Tauri shell for the viewer: lists devices, attaches to a device's daemon as the human client,
 //! and passes its events and video frames to the page.
 
+mod input_source;
 mod shared_clip;
 
 use std::sync::Arc;
@@ -260,6 +261,10 @@ fn reveal(path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(Viewer::default())
+        .setup(|app| {
+            input_source::watch(app.handle().clone());
+            Ok(())
+        })
         // Coming back to the window is when someone wants to paste what they copied on the
         // device: read it now rather than at the next poll.
         .on_window_event(|window, event| {
@@ -268,7 +273,7 @@ pub fn run() {
                 window.state::<Viewer>().clip.poke();
             }
         })
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal])
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source])
         .run(tauri::generate_context!())
         .expect("error while running the iphone-use app");
 }

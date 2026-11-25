@@ -847,5 +847,24 @@ Lock is never left held on the device. The cost: on a Mac where Caps Lock only l
 within a second of locking reaches the device as one press, not two. The `Unidentified` keydown
 is dropped: the device has no usage for it.
 
-Control-Space on such a Mac is also the Mac's own "Select the previous input source" shortcut
-(on by default), so the Mac switches along with the device.
+Control-Space is handled separately (#46).
+
+### 46. Control-Space never reaches the page
+
+Control-Space is the Mac's "Select the previous input source" shortcut (on by default). macOS
+takes it before the window: with the viewer forwarding the keyboard, one Control-Space arrived in
+the page (WKWebView; macOS 26) as `keydown ControlLeft` and `keyup ControlLeft` about 300 ms apart
+and nothing in between: no Space, no `Unidentified` keydown (unlike Caps Lock, #45). From the
+page alone it can't be told from a lone Control tap.
+
+What does happen is the Mac's input source changing. The Tauri shell watches
+`kTISNotifySelectedKeyboardInputSourceChanged` (a distributed notification) and tells the page.
+The page treats a change while Control is down with no other key since (or let go within 500 ms,
+for a quick press) as the shortcut: it sends the device a Space under the Control it already sent
+(or a whole Control-Space if Control is already up), and asks the shell to select the Mac's
+previous input source again, so only the device switches. The shell ignores the notification its
+own reselection causes. A Caps Lock keydown clears the "Control alone" state, so a Caps Lock that
+switches the Mac's input source (#45) isn't also sent as a Space.
+
+With the shortcut turned off in the Mac's settings, the Space reaches the page as usual and goes
+over as a normal key; no input source change follows, so nothing doubles.
