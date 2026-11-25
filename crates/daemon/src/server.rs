@@ -1456,7 +1456,17 @@ impl Daemon {
                         let first = self.frame_subscribers.fetch_add(1, Ordering::Relaxed) == 0;
                         let mut dev = self.device.lock().await;
                         let had_stream = dev.frames.is_some();
-                        let synced = self.sync_video(&mut dev).await;
+                        let mut synced = self.sync_video(&mut dev).await;
+                        // A tunnel that died while nobody watched (Wi-Fi, the device asleep) is
+                        // still cached: drop it and open a new one, as device commands do, or
+                        // every viewer that attaches gets the same error.
+                        if let Err(e) = &synced
+                            && is_connection_error(e)
+                        {
+                            let why = anyhow!("{e:#}");
+                            self.forget(&mut dev, &why).await;
+                            synced = self.sync_video(&mut dev).await;
+                        }
                         drop(dev);
                         match synced {
                             Err(e) => Err(e),

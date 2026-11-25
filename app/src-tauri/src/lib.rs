@@ -362,17 +362,24 @@ pub fn run() {
         .setup(|app| {
             session_watch::record_app_path();
             session_watch::start(app.handle().clone());
-            // Launched by a daemon for its session (with `open -g`, in the background): show the
-            // window without taking the keyboard.
-            if session_watch::launch_udid().is_some() {
-                session_watch::bring_forward(app.handle());
-            }
+
             input_source::watch(app.handle().clone());
             agent_setup::refresh_on_launch();
             view_menu::install(app.handle())?;
             Ok(())
         })
         .on_menu_event(|app, event| view_menu::on_menu_event(app, &event))
+        // Launched by a daemon for its session (with `open -g`, in the background): show the
+        // window without taking the keyboard. Once the page has loaded: ordered forward from
+        // `setup`, the window still opened behind the app in front.
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Finished
+                && session_watch::launch_udid().is_some()
+            {
+                session_watch::bring_forward(webview.app_handle());
+            }
+        })
         // Coming back to the window is when someone wants to paste what they copied on the
         // device: read it now rather than at the next poll.
         .on_window_event(|window, event| match event {
