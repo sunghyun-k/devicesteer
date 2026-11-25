@@ -72,6 +72,9 @@ app/src-tauri/      Tauri shell (workspace member), a daemon client. agent_setup
                     bundles. A new command also goes in build.rs's COMMANDS and the
                     capabilities/*.json of each window that calls it, or the window can't
 scripts/            build-cli.sh (the CLI for the bundle), release.sh (release Mac only)
+site/               The product homepage, devicesteer.sunghyunkim.com: static HTML/CSS with no build
+                    step, served by Vercel from this folder (production branch main); llms.txt
+                    summarises the product for agents; images/ holds its pictures
 THIRD_PARTY_NOTICES.md  Code adapted from other projects, with their licenses
 docs/PITFALLS.md    Numbered observations, cited from code as PITFALLS #N
 docs/SETUP.md       Device setup without Xcode: steps, detection, where the disk image comes from
@@ -134,6 +137,14 @@ minimum for every change. Pure logic (parsing, geometry) should get unit tests.
   session when it sees those words.
 - **Keep private data out of the repository:** no real names, device names, SSIDs, UDIDs, message
   contents or third-party app specifics in code, docs, examples or commit messages.
+- **Keep the homepage in step.** A change that alters what users or agents see or do (commands,
+  setup steps, supported devices or OS versions, the pairing flow, viewer features) updates
+  `site/index.html` and `site/llms.txt` in the same PR, alongside README, `docs/SETUP.md` and
+  `crates/cli/src/skill.md`.
+- **Site images come from the viewer's mock mode (`?mock`, fake devices) or are drawn**, never
+  captured from a real device. Keep them small (WebP or AVIF; PNG only where needed, such as
+  `site/og.png` and icons). `.gitignore` ignores `*.png` everywhere else; keep its exceptions for
+  `site/` that narrow. Large media such as video goes to external storage, not the repository.
 
 ## Verifying on a real device: rules you must follow
 
