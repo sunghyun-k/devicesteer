@@ -1033,6 +1033,13 @@ The errors for a missing device and an empty `devices` list on Windows say to re
 (`missing_device_hint` in `crates/core/src/session.rs`). Not yet known: whether restarting the
 Apple Mobile Device Service alone also recovers it.
 
+Before that, usbmuxd has to be there at all. Without Apple Devices (or iTunes) nothing listens on
+`127.0.0.1:27015`, and the connection is refused; installing Apple Devices is not enough either,
+as seen by the owner: its usbmuxd starts only once the app has been opened and its license
+accepted. A refused connection there is reported as `UsbmuxdMissing` (`crates/core/src/devices.rs`),
+which says to install and open it and then reconnect the device; `devices` lists the Wi-Fi-paired
+devices anyway, and the viewer shows a card with the Store link.
+
 ### 54. Windows: the check after mounting the disk image stalled
 
 Windows PC, iPad on iPadOS 27.2.1 over USB, `setup disk-image --no-daemon`. The image was

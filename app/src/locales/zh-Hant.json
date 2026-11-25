@@ -51,6 +51,10 @@
   "list.noMatches": "沒有符合的項目",
   "list.noMatchesDetail": "沒有符合「{query}」的項目。",
   "list.sessionRuns": "此裝置上正在執行代理程式工作階段",
+  "list.noUsbmuxd.title": "安裝 Apple 裝置",
+  "list.noUsbmuxd.detail": "若要透過連接線連接，Windows 需要 Apple 裝置（或 iTunes）。請安裝並打開一次、接受其授權條款，然後重新連接裝置。",
+  "list.noUsbmuxd.store": "打開 Microsoft Store",
+  "list.noUsbmuxd.waiting": "Apple 裝置執行後，此列表會自動更新。透過 Wi-Fi 配對的裝置不需要 Apple 裝置也能使用。",
 
   "device.unknown": "未知的裝置",
   "device.new": "新裝置",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "Mac 剪貼板中沒有文字。",
   "error.mac_clipboard_read": "無法讀取 Mac 剪貼板：{detail}",
-  "error.mac_clipboard_write": "無法寫入 Mac 剪貼板：{detail}"
+  "error.mac_clipboard_write": "無法寫入 Mac 剪貼板：{detail}",
+  "error.open_store": "無法打開 Microsoft Store：{detail}"
 }

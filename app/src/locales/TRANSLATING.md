@@ -30,6 +30,9 @@ Use one term throughout, as Apple writes it in that language where Apple has one
   开发者模式, 開發者模式, Modo de desarrollador, Mode développeur, Entwicklermodus,
   Modo de Desenvolvedor, Modalità sviluppatore.
 - **agent** (coding agent): the AI tool such as Claude Code.
+- **Apple Devices** (the Windows app from the Microsoft Store): its name in that language's
+  Store, e.g. Apple 기기, Appleデバイス, Apple 设备, Apple 裝置, Dispositivos Apple, Appareils
+  Apple, Apple Geräte, Dispositivi Apple. `iTunes` and `Microsoft Store` stay as they are.
 
 ## What the person must find on the device
 

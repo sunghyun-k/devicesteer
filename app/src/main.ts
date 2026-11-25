@@ -37,6 +37,13 @@ interface SetupStatus {
   next: string;
 }
 
+/** Mirrors `devicesteer_core::DeviceList`. */
+interface DeviceList {
+  devices: DeviceInfo[];
+  /** Set when usbmuxd isn't running at all (Windows without Apple Devices or iTunes). */
+  usbmuxd_missing?: string;
+}
+
 /** What a running setup step reports (`devicesteer_core::setup::Progress`). */
 interface SetupProgress {
   step: SetupStep;
@@ -199,12 +206,15 @@ $<HTMLButtonElement>("#inspector-toggle").addEventListener("click", () =>
 const availableList = $<HTMLUListElement>("#available");
 const unavailableList = $<HTMLUListElement>("#unavailable");
 const listMessage = $<HTMLDivElement>("#list-message");
+const muxCard = $<HTMLDivElement>("#mux-card");
 const search = $<HTMLInputElement>("#search");
 const refreshBtn = $<HTMLButtonElement>("#refresh");
 
 let devices: DeviceInfo[] = [];
 let selected: DeviceInfo | undefined;
 let listError: string | undefined;
+/** Whether the last list said usbmuxd isn't there: the sidebar shows how to install it. */
+let usbmuxdMissing = false;
 /** Set while the selected device has left the device list (unplugged, or restarting, which
  * turning on Developer Mode does): what to go back to when the same UDID comes back. The
  * selection stays, so it picks up again by itself. */
@@ -294,7 +304,8 @@ function renderList(): void {
   if (listError) m = { title: t("list.error"), detail: listError, cls: "error" };
   else if (!listed) m = { title: t("list.looking"), detail: "", cls: "loading" };
   // A row of the selected device that left the list is enough to drop the empty state.
-  else if (!devices.length && !extra) m = { title: t("list.empty"), detail: t("list.emptyDetail") };
+  // The card says why nothing is listed and what to do.
+  else if (!devices.length && !extra) m = usbmuxdMissing ? null : { title: t("list.empty"), detail: t("list.emptyDetail") };
   else if (!ok.length && !bad.length) m = { title: t("list.noMatches"), detail: t("list.noMatchesDetail", { query: search.value.trim() }) };
   listMessage.hidden = !m;
   if (m) {
@@ -329,10 +340,13 @@ async function loadDevices(): Promise<void> {
   refreshBtn.disabled = true;
   const before = devices;
   try {
-    devices = await invoke<DeviceInfo[]>("list_devices");
+    const list = await invoke<DeviceList>("list_devices");
+    devices = list.devices;
+    usbmuxdMissing = !!list.usbmuxd_missing;
     listError = undefined;
   } catch (e) {
     devices = [];
+    usbmuxdMissing = false;
     listError = String(e);
   } finally {
     listed = true;
@@ -359,6 +373,7 @@ async function loadDevices(): Promise<void> {
       void select(d);
     }
   }
+  muxCard.hidden = !usbmuxdMissing;
   renderList();
 }
 
@@ -406,9 +421,22 @@ search.addEventListener("keydown", (e) => {
 });
 refreshBtn.addEventListener("click", () => void loadDevices());
 // Devices come and go (a cable, Wi-Fi): the list keeps itself current while the window shows.
+// While usbmuxd is missing, more often, so the card goes soon after Apple Devices starts.
+let sinceList = 0;
 window.setInterval(() => {
-  if (!document.hidden) void loadDevices();
-}, 8000);
+  sinceList += 2;
+  if (document.hidden || sinceList < (usbmuxdMissing ? 2 : 8)) return;
+  sinceList = 0;
+  void loadDevices();
+}, 2000);
+
+$<HTMLButtonElement>("#mux-store").addEventListener("click", () => {
+  invoke("open_apple_devices_store").catch((e) => showNote(errorText(e), { error: true }));
+});
+// Back from the Store or from Apple Devices' license: look again at once.
+window.addEventListener("focus", () => {
+  if (usbmuxdMissing) void loadDevices();
+});
 
 // ---------- the selected device ----------
 

@@ -51,6 +51,10 @@
   "list.noMatches": "一致する項目なし",
   "list.noMatchesDetail": "「{query}」に一致する項目はありません。",
   "list.sessionRuns": "このデバイスでエージェントのセッションが実行中です",
+  "list.noUsbmuxd.title": "Appleデバイスをインストール",
+  "list.noUsbmuxd.detail": "ケーブルで接続するには、WindowsにAppleデバイス（またはiTunes）が必要です。インストールして一度開き、使用許諾契約に同意してから、デバイスを接続し直してください。",
+  "list.noUsbmuxd.store": "Microsoft Storeを開く",
+  "list.noUsbmuxd.waiting": "Appleデバイスが動作し始めると、このリストは自動的に更新されます。Wi-Fiでペアリングしたデバイスは、Appleデバイスなしでも使えます。",
 
   "device.unknown": "不明なデバイス",
   "device.new": "新しいデバイス",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "Macのクリップボードにテキストがありません。",
   "error.mac_clipboard_read": "Macのクリップボードを読み込めませんでした: {detail}",
-  "error.mac_clipboard_write": "Macのクリップボードに書き込めませんでした: {detail}"
+  "error.mac_clipboard_write": "Macのクリップボードに書き込めませんでした: {detail}",
+  "error.open_store": "Microsoft Storeを開けませんでした: {detail}"
 }

@@ -30,6 +30,11 @@ network (`transports: ["wifi"]`). When the user expects a Wi-Fi device that isn'
 to wake and unlock it; if it was never paired with this computer, pair it (next section) or ask
 them to connect it with a cable.
 
+On Windows, `devices` may carry a `note` that usbmuxd isn't running: Apple Devices (or iTunes)
+isn't installed, or was never opened. Only Wi-Fi-paired devices can be listed then. Pass the note's
+steps on to the user (install Apple Devices from the Microsoft Store, open it once, accept its
+license, reconnect the device); you can't do them yourself.
+
 ## Set up a new device
 
 A device needs three steps before the other commands work: it trusts this computer, Developer Mode

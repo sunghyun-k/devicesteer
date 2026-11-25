@@ -1,10 +1,13 @@
 //! Device discovery through usbmuxd.
 
-use anyhow::Result;
-use idevice::usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdDevice};
+use anyhow::{Result, bail};
+use idevice::{
+    IdeviceError,
+    usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdConnection, UsbmuxdDevice},
+};
 use serde::Serialize;
 
-use crate::{setup::SetupStep, step};
+use crate::{STEP_TIMEOUT, setup::SetupStep, step};
 
 /// How a device is reachable through usbmuxd.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -103,15 +106,80 @@ pub(crate) fn mux_addr() -> UsbmuxdAddr {
     UsbmuxdAddr::from_env_var().unwrap_or_default()
 }
 
+/// The Microsoft Store page of Apple Devices, which brings Apple's usbmuxd to Windows.
+pub const APPLE_DEVICES_STORE_URL: &str = "ms-windows-store://pdp/?ProductId=9NP83LWLPZ9K";
+
+/// Nothing listens where usbmuxd should be: on Windows, Apple Devices (or iTunes) isn't
+/// installed, or was never opened (PITFALLS #53). Callers find it with `downcast_ref` to list the
+/// Wi-Fi-paired devices anyway and to show the viewer's setup card.
+///
+/// The message says "connection" so the daemon treats it as a connection failure (lib.rs `step`).
+#[derive(Debug, Clone)]
+pub struct UsbmuxdMissing {
+    /// Where usbmuxd was looked for, such as `127.0.0.1:27015`.
+    pub addr: String,
+}
+
+impl std::fmt::Display for UsbmuxdMissing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "usbmuxd connection failed: nothing answers at {}, so Apple's device support isn't running. Install \
+             Apple Devices from the Microsoft Store ({APPLE_DEVICES_STORE_URL}) or iTunes, open it once and accept \
+             its license (its usbmuxd starts only after that), then reconnect the device. Devices paired over Wi-Fi \
+             work without it",
+            self.addr
+        )
+    }
+}
+
+impl std::error::Error for UsbmuxdMissing {}
+
+/// Whether connecting to usbmuxd failed because nothing listens there. Only a refused TCP
+/// connection counts: a Unix socket that is missing is a macOS or Linux problem the Store advice
+/// doesn't fix.
+fn refused(addr: &UsbmuxdAddr, e: &IdeviceError) -> bool {
+    matches!(addr, UsbmuxdAddr::TcpSocket(_))
+        && matches!(e, IdeviceError::Socket(io) if io.kind() == std::io::ErrorKind::ConnectionRefused)
+}
+
+/// Connects to usbmuxd, as [`step`] would, but says what to install when it isn't there on Windows.
+pub(crate) async fn mux_connect() -> Result<UsbmuxdConnection> {
+    let addr = mux_addr();
+    match tokio::time::timeout(STEP_TIMEOUT, addr.connect(0)).await {
+        Ok(Ok(c)) => Ok(c),
+        Ok(Err(e)) if cfg!(windows) && refused(&addr, &e) => {
+            let addr = match &addr {
+                UsbmuxdAddr::TcpSocket(a) => a.to_string(),
+                #[allow(unreachable_patterns)]
+                _ => String::new(),
+            };
+            Err(UsbmuxdMissing { addr }.into())
+        }
+        Ok(Err(e)) => bail!("usbmuxd connection failed (connection error: {e:?})"),
+        Err(_) => bail!("usbmuxd connection timed out after {}s (connection stalled)", STEP_TIMEOUT.as_secs()),
+    }
+}
+
 /// Raw usbmuxd entries, one per (device, transport).
 pub(crate) async fn mux_devices() -> Result<Vec<UsbmuxdDevice>> {
-    let mut mux = step("usbmuxd connection", mux_addr().connect(0)).await?;
+    let mut mux = mux_connect().await?;
     step("usbmuxd device list", mux.get_devices()).await
+}
+
+/// What `devices` found.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceList {
+    pub devices: Vec<DeviceInfo>,
+    /// Set when usbmuxd isn't there (Windows without Apple Devices or iTunes): what to install, as
+    /// [`UsbmuxdMissing`] says it. `devices` then holds only the Wi-Fi-paired devices that answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usbmuxd_missing: Option<String>,
 }
 
 /// Every device usbmuxd lists, with what lockdown says about it, and every device paired over
 /// Wi-Fi that answers on the network (PITFALLS #50).
-pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
+pub async fn list_devices() -> Result<DeviceList> {
     let stored = crate::remote::pairings();
     // The network search runs while usbmuxd and lockdown are asked, and only when there is a
     // pairing it could find.
@@ -124,9 +192,17 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
     };
     let (mut list, adverts) = tokio::join!(list_mux_devices(), adverts);
     let (matched, _) = crate::remote::match_adverts(adverts, &stored);
-    // No usbmuxd at all (Windows without Apple's device support): Wi-Fi pairings still count.
-    if list.is_err() && !matched.is_empty() {
-        list = Ok(Vec::new());
+    let mut usbmuxd_missing = None;
+    if let Err(e) = &list {
+        // No usbmuxd at all (Windows without Apple's device support): not a failure of the list,
+        // which still has the Wi-Fi pairings; another usbmuxd failure is one unless they found
+        // something.
+        if let Some(m) = e.downcast_ref::<UsbmuxdMissing>() {
+            usbmuxd_missing = Some(m.to_string());
+            list = Ok(Vec::new());
+        } else if !matched.is_empty() {
+            list = Ok(Vec::new());
+        }
     }
     let mut list = list?;
     for (_, p) in matched {
@@ -139,7 +215,7 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
             None => list.push(remote_info(p)),
         }
     }
-    Ok(list)
+    Ok(DeviceList { devices: list, usbmuxd_missing })
 }
 
 /// A device reached only through our Wi-Fi pairing, described from what it said when we last
@@ -255,6 +331,30 @@ mod tests {
             let r = unsupported_reason(v, None).unwrap();
             assert!(!r.contains("connection") && !r.contains("tunnel"));
         }
+    }
+
+    #[test]
+    fn only_a_refused_tcp_connection_means_usbmuxd_is_missing() {
+        let tcp = UsbmuxdAddr::TcpSocket("127.0.0.1:27015".parse().unwrap());
+        let io = |k| IdeviceError::Socket(std::io::Error::from(k));
+        assert!(refused(&tcp, &io(std::io::ErrorKind::ConnectionRefused)));
+        assert!(!refused(&tcp, &io(std::io::ErrorKind::TimedOut)));
+        assert!(!refused(&tcp, &io(std::io::ErrorKind::ConnectionReset)));
+        #[cfg(unix)]
+        assert!(!refused(
+            &UsbmuxdAddr::UnixSocket("/var/run/usbmuxd".into()),
+            &io(std::io::ErrorKind::ConnectionRefused)
+        ));
+    }
+
+    #[test]
+    fn missing_usbmuxd_reads_as_a_connection_failure_and_says_what_to_install() {
+        let m = UsbmuxdMissing { addr: "127.0.0.1:27015".into() }.to_string();
+        assert!(m.contains("connection"));
+        assert!(m.contains(APPLE_DEVICES_STORE_URL) && m.contains("iTunes") && m.contains("license"));
+        // Callers find it through anyhow, after context is added too.
+        let e = anyhow::Error::new(UsbmuxdMissing { addr: String::new() }).context("listing");
+        assert!(e.downcast_ref::<UsbmuxdMissing>().is_some());
     }
 
     #[test]

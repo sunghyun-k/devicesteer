@@ -51,6 +51,10 @@
   "list.noMatches": "无匹配项",
   "list.noMatchesDetail": "没有与“{query}”匹配的项目。",
   "list.sessionRuns": "此设备上正在运行智能体会话",
+  "list.noUsbmuxd.title": "安装 Apple 设备",
+  "list.noUsbmuxd.detail": "要通过数据线连接，Windows 需要 Apple 设备（或 iTunes）。请安装并打开一次、接受其许可协议，然后重新连接设备。",
+  "list.noUsbmuxd.store": "打开 Microsoft Store",
+  "list.noUsbmuxd.waiting": "Apple 设备运行后，此列表会自动更新。通过 Wi-Fi 配对的设备无需 Apple 设备即可使用。",
 
   "device.unknown": "未知设备",
   "device.new": "新设备",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "Mac 剪贴板中没有文本。",
   "error.mac_clipboard_read": "无法读取 Mac 剪贴板：{detail}",
-  "error.mac_clipboard_write": "无法写入 Mac 剪贴板：{detail}"
+  "error.mac_clipboard_write": "无法写入 Mac 剪贴板：{detail}",
+  "error.open_store": "无法打开 Microsoft Store：{detail}"
 }

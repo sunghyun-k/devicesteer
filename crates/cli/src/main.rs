@@ -487,12 +487,15 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             v
         }
         Command::Devices => {
-            let devices = list_devices().await?;
+            let list = list_devices().await?;
             let hint = devicesteer_core::missing_device_hint();
-            if devices.is_empty() && !hint.is_empty() {
-                json!({ "devices": devices, "hint": format!("usbmuxd lists no device{hint}") })
+            if let Some(note) = list.usbmuxd_missing {
+                // Wi-Fi-paired devices still work; USB ones wait for Apple Devices.
+                json!({ "devices": list.devices, "note": note })
+            } else if list.devices.is_empty() && !hint.is_empty() {
+                json!({ "devices": list.devices, "hint": format!("usbmuxd lists no device{hint}") })
             } else {
-                json!({ "devices": devices })
+                json!({ "devices": list.devices })
             }
         }
         Command::Setup { target, action, wait, ddi } => {

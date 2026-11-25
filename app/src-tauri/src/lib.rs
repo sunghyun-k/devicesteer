@@ -10,7 +10,7 @@ mod view_menu;
 
 use std::sync::Arc;
 
-use devicesteer_core::DeviceInfo;
+use devicesteer_core::DeviceList;
 use devicesteer_daemon::{Client, Source};
 use serde_json::Value;
 use tauri::{
@@ -31,10 +31,23 @@ struct Viewer {
     clip: Arc<shared_clip::SharedClipboard>,
 }
 
-/// Lists the devices usbmuxd sees. Errors come back to the page as strings.
+/// Lists the devices usbmuxd sees, and the Wi-Fi-paired ones that answer. Errors come back to the
+/// page as strings; usbmuxd missing altogether is not one (`usbmuxd_missing`): the page shows how
+/// to install it.
 #[tauri::command]
-async fn list_devices() -> Result<Vec<DeviceInfo>, String> {
+async fn list_devices() -> Result<DeviceList, String> {
     devicesteer_core::list_devices().await.map_err(|e| format!("{e:#}"))
+}
+
+/// Opens Apple Devices' page in the Microsoft Store, for the card shown when usbmuxd is missing.
+/// The URL is fixed here rather than allowing the page to open any URL.
+#[tauri::command]
+fn open_apple_devices_store(app: tauri::AppHandle) -> Result<(), serde_json::Value> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(devicesteer_core::APPLE_DEVICES_STORE_URL, None::<&str>).map_err(|e| {
+        // A `code` the page turns into its own words (`errorText`).
+        serde_json::json!({ "code": "open_store", "message": format!("could not open the Microsoft Store: {e}"), "detail": e.to_string() })
+    })
 }
 
 /// Which setup steps `udid` still needs (see `devicesteer_core::setup`). Reads only.
@@ -331,6 +344,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(Viewer::default())
         .setup(|app| {
             input_source::watch(app.handle().clone());
@@ -350,7 +364,7 @@ pub fn run() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_pair_wifi, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, view_menu::set_menu_labels, settings_window::open_settings, settings_window::show_move_sheet])
+        .invoke_handler(tauri::generate_handler![list_devices, open_apple_devices_store, setup_status, setup_run, setup_pair_wifi, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, view_menu::set_menu_labels, settings_window::open_settings, settings_window::show_move_sheet])
         .run(tauri::generate_context!())
         .expect("error while running the DeviceSteer app");
 }
