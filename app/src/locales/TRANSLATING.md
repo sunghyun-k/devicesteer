@@ -17,7 +17,9 @@ translated in every file in the same change (AGENTS.md, "Language").
   `Xcode`, `macOS`, `PATH`, `Finder` (but Simplified Chinese calls it 访达), key symbols
   (⌘K, ⌥⌘K, Control-Space) and `›` path separators as they are.
 - A key ending in `@windows` replaces the key before it on Windows: the same message for a PC
-  ("this PC" for "this Mac", `Ctrl+` for `⌘`; German keyboards say `Strg+`). Use the word the
+  ("this PC" for "this Mac", `Ctrl+` for `⌘`). Shortcuts on a PC use the key names printed on
+  that language's keyboards: `Strg` and `Umschalt` in German, `Maj` in French, `Mayús` in
+  Spanish, `Maiusc` in Italian, else `Ctrl` and `Shift`. Use the word the
   language's other PC strings use (`prefs.notFoundPc`).
 - `menu.*` are the Mac app menu: use the exact titles macOS uses in that language (About,
   Services, Hide, Quit, Edit, ...). `common.listSeparator` is the language's list comma.

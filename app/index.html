@@ -139,12 +139,12 @@
                   <svg class="icon"><use href="#i-keyboard" /></svg>
                 </button>
                 <div id="keyboard-menu" class="menu" role="menu" hidden>
-                  <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. The device's input source decides what they type (Control-Space switches it)" data-i18n-title="keyboard.forwardHelp"><svg class="icon check"><use href="#i-check" /></svg><span data-i18n="keyboard.forward">Type from Mac Keyboard</span><kbd>⌘K</kbd></button>
-                  <button id="kb-software" role="menuitem" type="button" title="Show or hide the on-screen keyboard while a hardware keyboard is connected" data-i18n-title="keyboard.softwareHelp"><svg class="icon"><use href="#i-keyboard-down" /></svg><span data-i18n="keyboard.software">Toggle Software Keyboard</span><kbd>⌥⌘K</kbd></button>
+                  <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. The device's input source decides what they type (Control-Space switches it)" data-i18n-title="keyboard.forwardHelp"><svg class="icon check"><use href="#i-check" /></svg><span data-i18n="keyboard.forward">Type from Mac Keyboard</span><kbd data-i18n="keyboard.forwardKey">⌘K</kbd></button>
+                  <button id="kb-software" role="menuitem" type="button" title="Show or hide the on-screen keyboard while a hardware keyboard is connected" data-i18n-title="keyboard.softwareHelp"><svg class="icon"><use href="#i-keyboard-down" /></svg><span data-i18n="keyboard.software">Toggle Software Keyboard</span><kbd data-i18n="keyboard.softwareKey">⌥⌘K</kbd></button>
                   <div class="menu-sep" role="separator"></div>
                   <button id="kb-clip-shared" role="menuitemcheckbox" aria-checked="true" type="button" title="Keep the Mac and device clipboards in step while the screen is live, text only. Paused while the agent is in control; never sends what a password manager marks private" data-i18n-title="keyboard.sharedHelp"><svg class="icon"><use href="#i-clip-sync" /></svg><span data-i18n="keyboard.shared">Use Shared Clipboard</span><svg class="icon check"><use href="#i-check" /></svg></button>
-                  <button id="kb-clip-get" role="menuitem" type="button" title="Put the device clipboard's text on the Mac clipboard" data-i18n-title="keyboard.getHelp"><svg class="icon"><use href="#i-clip-get" /></svg><span data-i18n="keyboard.get">Get Clipboard</span><kbd>⇧⌘C</kbd></button>
-                  <button id="kb-clip-send" role="menuitem" type="button" title="Put the Mac clipboard's text on the device clipboard, without pasting it: paste it on the device yourself" data-i18n-title="keyboard.sendHelp"><svg class="icon"><use href="#i-clip-send" /></svg><span data-i18n="keyboard.send">Send Clipboard</span><kbd>⇧⌘V</kbd></button>
+                  <button id="kb-clip-get" role="menuitem" type="button" title="Put the device clipboard's text on the Mac clipboard" data-i18n-title="keyboard.getHelp"><svg class="icon"><use href="#i-clip-get" /></svg><span data-i18n="keyboard.get">Get Clipboard</span><kbd data-i18n="keyboard.getKey">⇧⌘C</kbd></button>
+                  <button id="kb-clip-send" role="menuitem" type="button" title="Put the Mac clipboard's text on the device clipboard, without pasting it: paste it on the device yourself" data-i18n-title="keyboard.sendHelp"><svg class="icon"><use href="#i-clip-send" /></svg><span data-i18n="keyboard.send">Send Clipboard</span><kbd data-i18n="keyboard.sendKey">⇧⌘V</kbd></button>
                 </div>
               </div>
             </div>
@@ -158,7 +158,7 @@
                   <button id="menu-reveal" role="menuitem" type="button"><svg class="icon"><use href="#i-folder" /></svg><span data-i18n="more.showLastRecording">Show Last Recording</span></button>
                   <!-- Only where there is no app menu with Settings… (main.ts). -->
                   <div class="menu-sep" role="separator" data-no-app-menu></div>
-                  <button id="menu-settings" role="menuitem" type="button" data-no-app-menu><svg class="icon"><use href="#i-sliders" /></svg><span data-i18n="more.settings">Settings…</span><kbd>Ctrl+,</kbd></button>
+                  <button id="menu-settings" role="menuitem" type="button" data-no-app-menu><svg class="icon"><use href="#i-sliders" /></svg><span data-i18n="more.settings">Settings…</span><kbd data-i18n="more.settingsKey">Ctrl+,</kbd></button>
                 </div>
               </div>
             </div>

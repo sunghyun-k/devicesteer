@@ -1673,14 +1673,22 @@ function editing(): boolean {
   );
 }
 
-/** ⌘ shortcuts that stay with the viewer and the Mac: zoom (⌘0, ⌘9, ⌘+, ⌘−), the keyboard
- * menu's (⌘K, ⌥⌘K, ⇧⌘V, ⇧⌘C), the app menu's Show Touches (⇧⌘T) and Settings (⌘,), and quit,
- * close, hide, minimize. Every other ⌘ combination goes to the device (⌘A, ⌘C, ⌘V, ⌘Z…). A menu
- * shortcut reaches the menu only if the page doesn't take the key. */
+/** The viewer's shortcut modifier: ⌘ on macOS, Ctrl elsewhere. On Windows the Windows key (what
+ * the page sees as ⌘) belongs to the OS: Win+K opens Cast, Win+V the clipboard history. */
+const MAC_KEYS = /Mac/.test(navigator.platform);
+const cmdKey = (e: KeyboardEvent): boolean => (MAC_KEYS ? e.metaKey : e.ctrlKey && !e.metaKey);
+
+/** Shortcuts that stay with the viewer and the computer: zoom (⌘0, ⌘9, ⌘+, ⌘−), the keyboard
+ * menu's (⌘K, ⌥⌘K, ⇧⌘V, ⇧⌘C) and Settings (⌘,), with Ctrl for ⌘ off macOS; on macOS also the
+ * app menu's Show Touches (⇧⌘T), quit, close, hide and minimize. Every other combination goes to
+ * the device: ⌘A, ⌘C, ⌘V, ⌘Z… on a Mac, and Ctrl ones as Control (Control-Space switches the
+ * device's input source) on Windows, which has no key the page could send as ⌘. A menu shortcut
+ * reaches the menu only if the page doesn't take the key. */
 function viewerShortcut(e: KeyboardEvent): boolean {
-  if (!e.metaKey) return false;
-  if (e.shiftKey && (e.code === "KeyV" || e.code === "KeyC" || e.code === "KeyT")) return true;
-  return ["Equal", "Minus", "Digit0", "Digit9", "KeyK", "KeyQ", "KeyW", "KeyH", "KeyM", "Comma", "NumpadAdd", "NumpadSubtract"].includes(e.code);
+  if (!cmdKey(e)) return false;
+  if (e.shiftKey && (e.code === "KeyV" || e.code === "KeyC" || (MAC_KEYS && e.code === "KeyT"))) return true;
+  if (MAC_KEYS && ["KeyQ", "KeyW", "KeyH", "KeyM"].includes(e.code)) return true;
+  return ["Equal", "Minus", "Digit0", "Digit9", "KeyK", "Comma", "NumpadAdd", "NumpadSubtract"].includes(e.code);
 }
 
 function keysGo(): boolean {
@@ -1695,14 +1703,14 @@ function keysGo(): boolean {
 }
 
 window.addEventListener("keydown", (e) => {
-  if (e.metaKey && e.code === "KeyK" && stage.dataset.state === "live") {
+  if (cmdKey(e) && e.code === "KeyK" && stage.dataset.state === "live") {
     e.preventDefault();
     if (e.altKey) toggleSoftwareKeyboard();
     else setForwarding(!forwarding);
     return;
   }
   // Not while a field of the viewer has focus: there ⇧⌘V and ⇧⌘C are the field's.
-  if (e.metaKey && e.shiftKey && !e.altKey && (e.code === "KeyV" || e.code === "KeyC") && stage.dataset.state === "live" && !editing()) {
+  if (cmdKey(e) && e.shiftKey && !e.altKey && (e.code === "KeyV" || e.code === "KeyC") && stage.dataset.state === "live" && !editing()) {
     e.preventDefault();
     if (!e.repeat) void (e.code === "KeyV" ? sendClipboard() : getClipboard());
     return;
