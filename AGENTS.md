@@ -31,6 +31,9 @@ Guide for anyone changing the code of this repository: coding agents and human c
   (CLI output, JSON, `skill.md`, the daemon's errors) and core or daemon messages the viewer shows
   as they are; for a message the Tauri shell writes for the person, return a `code` the page maps
   to a catalog key (`errorText` in `i18n.ts`).
+- **The homepage stays English** (`site/`). It names the viewer's languages, so adding or dropping
+  a catalog updates `site/index.html` and `site/llms.txt` in the same PR ("Keep the homepage in
+  step" below).
 
 ## What this is
 
@@ -153,9 +156,9 @@ viewer. Pure logic (parsing, geometry) should get unit tests.
 - **Keep private data out of the repository:** no real names, device names, SSIDs, UDIDs, message
   contents or third-party app specifics in code, docs, examples or commit messages.
 - **Keep the homepage in step.** A change that alters what users or agents see or do (commands,
-  setup steps, supported devices or OS versions, the pairing flow, viewer features) updates
-  `site/index.html` and `site/llms.txt` in the same PR, alongside README, `docs/SETUP.md` and
-  `crates/cli/src/skill.md`.
+  setup steps, supported devices or OS versions, the pairing flow, viewer features or languages)
+  updates `site/index.html` and `site/llms.txt` in the same PR, alongside README, `docs/SETUP.md`
+  and `crates/cli/src/skill.md`.
 - **Site images come from the viewer's mock mode (`?mock`, fake devices) or are drawn**, never
   captured from a real device. Keep them small (WebP or AVIF; PNG only where needed, such as
   `site/og.png` and icons). `.gitignore` ignores `*.png` everywhere else; keep its exceptions for
