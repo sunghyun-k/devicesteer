@@ -640,24 +640,26 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .agent-row .note.warn { color: var(--warning); }
 .btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .pane-note { margin-top: 12px; padding: 10px 12px; border-radius: var(--r-md); background: var(--tile); color: var(--fg-2); font-size: var(--fs-sm); }
+.pane-note .btn { margin-top: 8px; }
 #agent-status { color: var(--fg-3); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 #agent-status:empty { display: none; }
 #agent-status.error { color: var(--danger); padding: 10px 12px; border-radius: var(--r-md); background: var(--danger-tint); }
 .group.info .row > #update-text { flex: 1; white-space: normal; font-size: var(--fs-sm); }
 
-/* The first-launch sheet: a surface over a dimmed window, like the app's menus and cards. */
-#agent-sheet {
+/* The launch sheets (move to Applications, set up agents): a surface over a dimmed window, like
+   the app's menus and cards. */
+.sheet {
   width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 22px 24px 20px; margin: auto;
   border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); color: var(--fg);
   box-shadow: var(--shadow-md); overflow-y: auto;
 }
-#agent-sheet::backdrop { background: rgba(0, 0, 0, 0.25); }
-#agent-sheet h3 { font-size: 16px; font-weight: 600; }
-#agent-sheet .lead { margin-top: 6px; color: var(--fg-2); font-size: var(--fs-sm); }
-#agent-sheet .group { margin-top: 12px; border-top: 1px solid var(--hairline); }
-#agent-sheet .error-text:empty { display: none; }
-#agent-sheet .error-text { margin-top: 8px; }
-#agent-sheet .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.sheet::backdrop { background: rgba(0, 0, 0, 0.25); }
+.sheet h3 { font-size: 16px; font-weight: 600; }
+.sheet .lead { margin-top: 6px; color: var(--fg-2); font-size: var(--fs-sm); }
+.sheet .group { margin-top: 12px; border-top: 1px solid var(--hairline); }
+.sheet .error-text:empty { display: none; }
+.sheet .error-text { margin-top: 8px; }
+.sheet .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .error-text { color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 
 /* ---------- narrow windows ----------

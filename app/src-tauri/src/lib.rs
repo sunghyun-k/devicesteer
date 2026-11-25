@@ -2,6 +2,7 @@
 //! and passes its events and video frames to the page.
 
 mod agent_setup;
+mod app_location;
 mod input_source;
 mod shared_clip;
 
@@ -283,7 +284,7 @@ pub fn run() {
                 window.state::<Viewer>().clip.poke();
             }
         })
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_version])
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version])
         .run(tauri::generate_context!())
         .expect("error while running the DeviceSteer app");
 }

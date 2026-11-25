@@ -316,7 +316,10 @@
 
         <!-- The app, not the device: what agents get (agents.ts) and updates. -->
         <div id="pane-app" class="pane" role="tabpanel" aria-labelledby="tab-app" hidden>
-          <p id="agent-unavailable" class="pane-note" hidden></p>
+          <div id="agent-unavailable" class="pane-note" hidden>
+            <p id="agent-unavailable-text"></p>
+            <button id="agent-move" class="btn small" type="button" hidden>Move to Applications…</button>
+          </div>
           <section class="group agents">
             <h4>Command-Line Tool</h4>
             <div id="agent-cli"></div>
@@ -334,8 +337,20 @@
         </div>
       </aside>
     </div>
+    <!-- Offered at launch when the app runs from its disk image or a Gatekeeper copy (agents.ts). -->
+    <dialog id="move-sheet" class="sheet" aria-labelledby="move-sheet-title">
+      <form id="move-sheet-form" method="dialog">
+        <h3 id="move-sheet-title">Move DeviceSteer to Applications?</h3>
+        <p id="move-sheet-lead" class="lead"></p>
+        <p id="move-sheet-error" class="error-text"></p>
+        <div class="actions">
+          <button id="move-sheet-later" class="btn ghost" type="button">Not Now</button>
+          <button id="move-sheet-ok" class="btn primary" type="submit">Move to Applications</button>
+        </div>
+      </form>
+    </dialog>
     <!-- Offered once, on the first launch of an installed app (agents.ts). -->
-    <dialog id="agent-sheet" aria-labelledby="agent-sheet-title">
+    <dialog id="agent-sheet" class="sheet" aria-labelledby="agent-sheet-title">
       <form id="agent-sheet-form" method="dialog">
         <h3 id="agent-sheet-title">Set Up Agents</h3>
         <p class="lead">Let coding agents on this Mac use your iPhone or iPad: DeviceSteer adds its command-line tool and its skill, linked to this app so they update with it. Change this later in the inspector’s Agents pane.</p>

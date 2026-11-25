@@ -376,9 +376,22 @@ const AGENT_ITEMS: [string, string, string, boolean][] = [
   ["copilot", "GitHub Copilot CLI", "~/.copilot/skills/devicesteer", false],
 ];
 
+// `location=dmg|translocated|exists|noperm`: the app runs from its disk image or a Gatekeeper copy,
+// so it offers to move itself; `exists` has an older copy in Applications already, and `noperm`
+// can't write there. A move that succeeds reloads the page as the moved app (with `sheet=1`).
+const moveMode = params.get("location");
+const appLocation = moveMode
+  ? { reason: moveMode === "translocated" ? "translocated" : "disk_image", exists: moveMode === "exists", existing_version: moveMode === "exists" ? "1.0.0-beta.1" : null }
+  : { reason: null, exists: false, existing_version: null };
+if (moveMode && params.get("sheet") === "1") localStorage.removeItem("devicesteer.move-declined");
+
 function agentStatus(): unknown {
   return {
-    unavailable: agentsMode === "dev" ? "Agent setup works in the installed app, not in a development build." : null,
+    unavailable: moveMode
+      ? "Move DeviceSteer to the Applications folder and open it from there to set up agents."
+      : agentsMode === "dev"
+        ? "Agent setup works in the installed app, not in a development build."
+        : null,
     cli: { id: "cli", name: "devicesteer command", path: "~/.local/bin/devicesteer", detected: true, ...agentLinks.cli },
     on_path: false,
     agents: AGENT_ITEMS.map(([id, name, path, detected]) => ({ id, name, path, detected, ...agentLinks[id] })),
@@ -402,6 +415,19 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     }
     case "app_version":
       return "0.1.0";
+    case "app_location":
+      return appLocation;
+    case "app_move_to_applications": {
+      await sleep(800);
+      if (moveMode === "noperm") throw { kind: "no_permission", message: "could not write to the Applications folder: Permission denied (os error 13)" };
+      if (appLocation.exists && !args.replace) throw { kind: "exists", version: appLocation.existing_version };
+      // The real app quits and the copy opens; here the page reloads as that copy.
+      const next = new URLSearchParams(location.search);
+      next.delete("location");
+      next.set("sheet", "1");
+      location.search = next.toString();
+      return new Promise(() => {});
+    }
     case "plugin:updater|check":
       await sleep(400);
       return null;

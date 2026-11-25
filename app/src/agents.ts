@@ -1,6 +1,7 @@
-// The inspector's Agents pane and the first-launch sheet: install the `devicesteer` command and
-// the DeviceSteer skill for the coding agents on this Mac (app/src-tauri/src/agent_setup.rs does
-// the work and explains the links), plus updates from GitHub Releases.
+// The inspector's Agents pane and the launch sheets: moving the app to Applications when it runs
+// from its disk image (app/src-tauri/src/app_location.rs), then installing the `devicesteer`
+// command and the DeviceSteer skill for the coding agents on this Mac (agent_setup.rs does the
+// work and explains the links), plus updates from GitHub Releases.
 
 import { invoke } from "@tauri-apps/api/core";
 import { check, type Update } from "@tauri-apps/plugin-updater";
@@ -19,6 +20,13 @@ interface Status {
   cli: Item;
   on_path: boolean | null;
   agents: Item[];
+}
+
+/** Where the app runs from (app_location.rs). `reason` is set when it should move. */
+interface AppLocation {
+  reason: "disk_image" | "translocated" | null;
+  exists: boolean;
+  existing_version: string | null;
 }
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -49,6 +57,8 @@ const pref = {
 };
 
 let status: Status | undefined;
+let appLocation: AppLocation | undefined;
+let appVersion = "";
 let busy = false;
 /** The item a Replace button was pressed for: the next press confirms. */
 let confirming: string | undefined;
@@ -59,6 +69,8 @@ function say(text: string, error = false): void {
   statusLine.textContent = text;
   statusLine.classList.toggle("error", error);
 }
+
+const CLI_NEEDED = "Agents need the command-line tool to operate devices. Without it, the skills won’t work.";
 
 const conflict = (i: Item) => i.state === "other_link" || i.state === "not_a_link";
 
@@ -135,12 +147,16 @@ function itemRow(i: Item, extra?: HTMLElement): HTMLDivElement {
 function render(): void {
   const s = status;
   if (!s) return;
-  const note = $<HTMLParagraphElement>("#agent-unavailable");
-  note.hidden = !s.unavailable;
-  note.textContent = s.unavailable ?? "";
+  $<HTMLDivElement>("#agent-unavailable").hidden = !s.unavailable;
+  $<HTMLParagraphElement>("#agent-unavailable-text").textContent = s.unavailable ?? "";
+  $<HTMLButtonElement>("#agent-move").hidden = !appLocation?.reason;
   let pathNote: HTMLElement | undefined;
   if (s.cli.state === "installed" && s.on_path === false) {
     pathNote = el("div", "note warn", "~/.local/bin isn’t on your shell’s PATH. Add it to your shell profile, e.g. export PATH=\"$HOME/.local/bin:$PATH\" in ~/.zshrc, then open a new terminal.");
+  } else if (s.cli.state === "missing" && !s.unavailable) {
+    // A warning once a skill is installed without it: that skill can't do anything.
+    const skills = s.agents.some((a) => a.state === "installed");
+    pathNote = el("div", `note${skills ? " warn" : ""}`, CLI_NEEDED);
   }
   $<HTMLDivElement>("#agent-cli").replaceChildren(itemRow(s.cli, pathNote));
   $<HTMLDivElement>("#agent-skills").replaceChildren(...s.agents.map((a) => itemRow(a)));
@@ -168,7 +184,15 @@ function renderSheet(s: Status): void {
     } else if (conflict(i)) {
       box.disabled = true;
       text.append(el("div", "note warn", `${conflictText(i)} Replace it from the Agents pane if you want.`));
-    } else box.checked = true;
+    } else {
+      box.checked = true;
+      if (i.id === "cli") {
+        const note = el("div", "note warn", CLI_NEEDED);
+        note.hidden = true;
+        text.append(note);
+        box.addEventListener("change", () => (note.hidden = box.checked));
+      }
+    }
     row.append(text, box);
     rows.push(row);
   }
@@ -221,6 +245,85 @@ $<HTMLFormElement>("#agent-sheet-form").addEventListener("submit", async (e) => 
     $<HTMLButtonElement>("#tab-app").click();
   }
 });
+
+// ---------- move to Applications ----------
+
+const moveSheet = $<HTMLDialogElement>("#move-sheet");
+const moveLead = $<HTMLParagraphElement>("#move-sheet-lead");
+const moveOk = $<HTMLButtonElement>("#move-sheet-ok");
+const moveError = $<HTMLParagraphElement>("#move-sheet-error");
+/** Set once the person was told an app is already in Applications: the next press replaces it. */
+let moveReplacing = false;
+
+/** What `app_move_to_applications` rejects with (app_location.rs `MoveError`). */
+type MoveError = { kind: "exists"; version: string | null } | { kind: "no_permission"; message: string } | { kind: "failed"; message: string };
+
+function moveIntro(): string {
+  const where =
+    appLocation?.reason === "translocated"
+      ? "DeviceSteer is running from a temporary copy macOS made of the download."
+      : "DeviceSteer is running from its disk image.";
+  return `${where} Move it to the Applications folder so coding agents can use it and it can update itself. It reopens from there.`;
+}
+
+function showReplace(version: string | null): void {
+  moveReplacing = true;
+  const old = version ? `DeviceSteer ${version}` : "another copy of DeviceSteer";
+  const ours = appVersion ? ` with this one (${appVersion})` : "";
+  moveLead.textContent = `The Applications folder already has ${old}. Replace it${ours}? The old one goes to the Trash.`;
+  moveOk.textContent = "Replace";
+}
+
+function openMoveSheet(): void {
+  moveReplacing = false;
+  moveLead.textContent = moveIntro();
+  moveOk.textContent = "Move to Applications";
+  moveOk.disabled = false;
+  moveError.textContent = "";
+  moveSheet.showModal();
+}
+
+$<HTMLButtonElement>("#move-sheet-later").addEventListener("click", () => {
+  // Asked again by the next version; until then the Agents pane keeps the hint and a button.
+  pref.set("move-declined", appVersion);
+  moveSheet.close();
+});
+$<HTMLButtonElement>("#agent-move").addEventListener("click", openMoveSheet);
+$<HTMLFormElement>("#move-sheet-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (appLocation?.exists && !moveReplacing) {
+    showReplace(appLocation.existing_version);
+    return;
+  }
+  const label = moveOk.textContent;
+  moveOk.disabled = true;
+  moveOk.textContent = "Moving…";
+  moveError.textContent = "";
+  try {
+    // On success the app quits and the copy in Applications opens, so this doesn't come back.
+    await invoke("app_move_to_applications", { replace: moveReplacing });
+  } catch (x) {
+    moveOk.disabled = false;
+    moveOk.textContent = label;
+    const err = x as MoveError | string;
+    if (typeof err === "object" && err.kind === "exists") showReplace(err.version);
+    else if (typeof err === "object" && err.kind === "no_permission") {
+      moveError.textContent = "DeviceSteer can’t write to the Applications folder. In Finder, drag DeviceSteer into Applications, then open it from there.";
+    } else moveError.textContent = `The move failed: ${typeof err === "object" ? err.message : err}`;
+  }
+});
+
+/** Offers the move when the app runs from somewhere that won't last; true when it did. */
+async function offerMove(): Promise<boolean> {
+  try {
+    appLocation = await invoke<AppLocation>("app_location");
+  } catch {
+    return false;
+  }
+  if (!appLocation.reason) return false;
+  if (pref.get("move-declined") !== appVersion) openMoveSheet();
+  return true;
+}
 
 // ---------- updates ----------
 
@@ -280,10 +383,12 @@ export function showAgentsPane(): void {
 }
 
 export function initAgents(): void {
-  void invoke<string>("app_version")
-    .then((v) => ($<HTMLOutputElement>("#app-version").value = v))
-    .catch(() => {});
-  void offerOnFirstLaunch();
+  void (async () => {
+    appVersion = await invoke<string>("app_version").catch(() => "");
+    $<HTMLOutputElement>("#app-version").value = appVersion;
+    // A copy that should move can't set up agents; the moved copy offers that when it opens.
+    if (!(await offerMove())) await offerOnFirstLaunch();
+  })();
   // Development builds aren't released, so there is nothing to update them to.
   if (!import.meta.env.DEV) window.setTimeout(() => void checkForUpdate(true), 5000);
 }

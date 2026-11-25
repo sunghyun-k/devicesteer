@@ -303,10 +303,9 @@ fn bundle_contents(exe: &Path) -> Result<PathBuf, String> {
         .and_then(Path::parent)
         .filter(|c| c.parent().is_some_and(|a| a.extension().is_some_and(|e| e == "app")))
         .ok_or("Agent setup works in the installed app, not in a development build.")?;
-    let s = contents.to_string_lossy();
     // Gatekeeper runs a quarantined app from a random read-only copy (App Translocation), and a
-    // disk image goes away when ejected: a link to either breaks soon.
-    if s.contains("/AppTranslocation/") || s.starts_with("/Volumes/") {
+    // disk image goes away when ejected: a link to either breaks soon. The page offers the move.
+    if crate::app_location::temporary(contents).is_some() {
         return Err("Move DeviceSteer to the Applications folder and open it from there to set up agents.".into());
     }
     if !contents.join("MacOS").join(CLI_NAME).is_file() || !contents.join("Resources/skills").join(SKILL_NAME).join("SKILL.md").is_file() {
