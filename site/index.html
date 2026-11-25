@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeviceSteer: see and control your iPhone from your computer</title>
+<meta name="description" content="See and control a real iPhone or iPad from macOS or Windows, without Xcode. A live viewer for you, a JSON CLI and an agent skill for Claude Code, Codex and other coding agents, in sessions you can watch, take over or stop.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111214" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://devicesteer.sunghyunkim.com/">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/images/favicon.png" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="DeviceSteer">
+<meta property="og:url" content="https://devicesteer.sunghyunkim.com/">
+<meta property="og:title" content="DeviceSteer: see and control your iPhone from your computer">
+<meta property="og:description" content="A live viewer for you, a CLI and skill for your coding agent. Real iPhone or iPad over USB or Wi-Fi, from macOS or Windows, no Xcode.">
+<meta property="og:image" content="https://devicesteer.sunghyunkim.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="DeviceSteer viewer showing an iPhone screen while an agent taps, with its label next to the touch">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="DeviceSteer: see and control your iPhone from your computer">
+<meta name="twitter:description" content="A live viewer for you, a CLI and skill for your coding agent. Real iPhone or iPad over USB or Wi-Fi, from macOS or Windows, no Xcode.">
+<meta name="twitter:image" content="https://devicesteer.sunghyunkim.com/og.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "DeviceSteer",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Windows",
+  "description": "See and control a real iPhone or iPad from macOS or Windows without Xcode, for you or for a coding agent.",
+  "url": "https://devicesteer.sunghyunkim.com/",
+  "downloadUrl": "https://github.com/sunghyun-k/devicesteer/releases",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "Sunghyun Kim", "url": "https://sunghyunkim.com" }
+}
+</script>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="DeviceSteer home">
+      <img src="/icon.svg" alt="" width="28" height="28">
+      <span>DeviceSteer</span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="#start">Get started</a>
+      <a href="#agents">For agents</a>
+      <a href="#safety">Safety</a>
+      <a class="gh" href="https://github.com/sunghyun-k/devicesteer">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">iPhone &amp; iPad · macOS &amp; Windows · no Xcode</p>
+    <h1>Your iPhone, on your computer.<br><span class="soft">For you, and for your agent.</span></h1>
+    <p class="lede">DeviceSteer shows the live screen of a real iPhone or iPad and lets you control it with your
+      mouse and keyboard. Your coding agent drives the same device through a CLI, in a session you can
+      watch, take over, hand back or stop.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/sunghyun-k/devicesteer/releases">Download for macOS</a>
+      <a class="btn" href="https://github.com/sunghyun-k/devicesteer">View on GitHub</a>
+    </div>
+    <p class="fine">Free and open source (MIT). iOS / iPadOS 17 or later, over USB or Wi-Fi.</p>
+  </div>
+  <div class="wrap shot-wrap">
+    <picture>
+      <source srcset="/images/viewer-dark.webp" media="(prefers-color-scheme: dark)">
+      <img class="shot" src="/images/viewer-light.webp" width="2200" height="1760"
+        alt="The DeviceSteer viewer: a device list, the live iPhone screen with an agent's touch labelled 'Open Wi-Fi settings', a bar reading 'Agent is in control' with Stop and Take over, and device settings on the right">
+    </picture>
+  </div>
+</section>
+
+<section class="features" aria-labelledby="features-title">
+  <div class="wrap">
+    <h2 id="features-title" class="sr">What it does</h2>
+    <div class="grid">
+      <article>
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 5h3"/></svg></div>
+        <h3>Live screen, real control</h3>
+        <p>Watch the device in a window and use it with your mouse and keyboard: tap, swipe, type, Home,
+          Lock and volume buttons, screenshots and screen recordings.</p>
+      </article>
+      <article>
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
+        <h3>A CLI and a skill for agents</h3>
+        <p><code>devicesteer</code> reads the screen's accessibility tree, taps, swipes, types and launches
+          apps, all as JSON. The bundled skill teaches Claude Code, Codex, Cursor, Copilot CLI and others
+          how to use it.</p>
+      </article>
+      <article>
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3 2"/></svg></div>
+        <h3>Sessions you can watch</h3>
+        <p>An agent works in a named session. The viewer glows while it drives, and you can
+          <strong>Take over</strong>, <strong>Hand back</strong> or <strong>Stop</strong> at any moment.</p>
+      </article>
+      <article>
+        <div class="ico agent" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="4.5"/><rect x="12.5" y="14" width="9" height="5" rx="2.5"/></svg></div>
+        <h3>Touches with labels</h3>
+        <p>Every tap and swipe an agent makes shows on the screen with a few words saying what it is for,
+          so you can follow along.</p>
+      </article>
+      <article>
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0"/><path d="M5.5 12.5a9.5 9.5 0 0 1 13 0"/><path d="M8.7 16a5 5 0 0 1 6.6 0"/><circle cx="12" cy="19.2" r="1"/></svg></div>
+        <h3>USB or Wi-Fi</h3>
+        <p>Plug in a cable, or on iOS 27 pair over Wi-Fi once and leave the cable in the drawer.</p>
+      </article>
+      <article>
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.4-3.2 8.3-7.5 9.5-4.3-1.2-7.5-5.1-7.5-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg></div>
+        <h3>No Xcode needed</h3>
+        <p>DeviceSteer sets a new device up itself: Trust, Developer Mode and the developer disk image.
+          Works on macOS and Windows.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="start" class="block" aria-labelledby="start-title">
+  <div class="wrap">
+    <h2 id="start-title">Get started</h2>
+    <ol class="steps">
+      <li>
+        <h3>Install the app</h3>
+        <p>Download <code>DeviceSteer_&lt;version&gt;_universal.dmg</code> from
+          <a href="https://github.com/sunghyun-k/devicesteer/releases">GitHub Releases</a>, open it and drag
+          DeviceSteer to Applications. The app keeps itself up to date.</p>
+        <p class="note">Windows builds aren't published yet; on Windows, build from source (see the
+          <a href="https://github.com/sunghyun-k/devicesteer#readme">README</a>) and install Apple Devices or
+          iTunes for USB.</p>
+      </li>
+      <li>
+        <h3>Set up your device</h3>
+        <p>Connect an iPhone or iPad with iOS / iPadOS 17 or later and select it in the app. A device that
+          isn't ready shows three steps, in order:</p>
+        <ul class="checks">
+          <li><strong>Trust this computer.</strong> Unlock the device, tap <em>Trust</em> and enter its passcode (over USB).</li>
+          <li><strong>Developer Mode.</strong> Open Settings › Privacy &amp; Security › Developer Mode, turn it on and
+            tap <em>Restart</em>. After the restart, unlock it, tap <em>Turn On</em> and enter the passcode.</li>
+          <li><strong>Developer tools.</strong> DeviceSteer mounts Apple's developer disk image by itself. Nothing to
+            do on the device.</li>
+        </ul>
+        <p class="note">From the terminal: <code>devicesteer setup --udid &lt;UDID&gt;</code>.</p>
+      </li>
+      <li class="split">
+        <div>
+          <h3>Or pair over Wi-Fi, no cable <span class="tag">iOS 27+</span></h3>
+          <p>With the device on the same network, click <em>Pair over Wi-Fi…</em> in the app (or run
+            <code>devicesteer setup wifi</code>), then on the device:</p>
+          <ol class="sub">
+            <li>Settings › Privacy &amp; Security › Developer Mode. Under <em>Other Devices</em>, tap
+              <em>Pair with "DeviceSteer"</em>, then <em>Pair</em>.</li>
+            <li>Enter <strong>the device's own passcode</strong>.</li>
+            <li>Type the <strong>6-digit code shown on your computer</strong>.</li>
+          </ol>
+          <p>From then on the device shows up whenever it's awake on the same network.</p>
+        </div>
+        <picture>
+          <source srcset="/images/pair-dark.webp" media="(prefers-color-scheme: dark)">
+          <img class="shot small" src="/images/pair-light.webp" width="892" height="1031" loading="lazy"
+            alt="The 'Pair a device over Wi-Fi' card: three steps and a large 6-digit pairing code to type on the device">
+        </picture>
+      </li>
+      <li>
+        <h3>Connect your agents</h3>
+        <p>On first launch the app offers to set up the <code>devicesteer</code> command
+          (<code>~/.local/bin/devicesteer</code>) and the DeviceSteer skill for the coding agents it finds:
+          Claude Code, Codex and others that read <code>~/.agents/skills</code>, Cursor and GitHub Copilot CLI.
+          Both are links into the app, so they update with it. Change this any time in
+          <em>Settings › Agents</em> (⌘,).</p>
+        <p class="note">If it says <code>~/.local/bin</code> isn't on your PATH, add
+          <code>export PATH="$HOME/.local/bin:$PATH"</code> to your shell profile. Agents can read the full guide
+          with <code>devicesteer skill</code>.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="agents" class="block alt" aria-labelledby="agents-title">
+  <div class="wrap two">
+    <div>
+      <h2 id="agents-title">For agents</h2>
+      <p>Ask your agent to do something on the phone. It starts a session named after the goal, reads the
+        screen, acts with labelled touches and finishes when done. Every command prints JSON; errors say what
+        to do next.</p>
+      <p>When a step needs a person (a passcode, a sign-in, a payment, a permission prompt), the agent hands the
+        device to you with a reason, and continues after you press <em>Done</em>.</p>
+      <p class="note">Agents: run <code>devicesteer skill</code> for the guide that matches the installed
+        version, or read <a href="/llms.txt">llms.txt</a>.</p>
+    </div>
+    <pre class="code" aria-label="Example agent session"><code><span class="c"># one goal, one session</span>
+devicesteer session start "turn on dark mode"
+export DEVICESTEER_SESSION=s4f9a21
+
+devicesteer screenshot -o screen.png
+devicesteer ui            <span class="c"># elements with @eN refs</span>
+devicesteer tap @e12 --label "open Display settings"
+
+<span class="c"># needs a person? hand off with a reason</span>
+devicesteer session handoff --reason "enter the passcode"
+devicesteer session resume
+
+devicesteer session finish</code></pre>
+  </div>
+</section>
+
+<section id="safety" class="block" aria-labelledby="safety-title">
+  <div class="wrap">
+    <h2 id="safety-title">Built for personal devices</h2>
+    <p class="lede small">The phone on your desk has your messages, accounts and money on it. DeviceSteer and its
+      agent guide are written with that in mind.</p>
+    <div class="grid three">
+      <article>
+        <h3>You're always in charge</h3>
+        <p>Take over or stop an agent at any time from the viewer. Its input is refused until you hand back,
+          and it's told to stop and wait for you.</p>
+      </article>
+      <article>
+        <h3>No approvals on your behalf</h3>
+        <p>The agent never approves permission, consent, sign-in or payment prompts and never enters a
+          passcode. It hands the device to you instead.</p>
+      </article>
+      <article>
+        <h3>One driver at a time</h3>
+        <p>While an agent drives, your touches on the viewer are held back so you don't collide; one session
+          per device keeps other agents off it too.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="block alt" aria-labelledby="req-title">
+  <div class="wrap">
+    <h2 id="req-title">Requirements</h2>
+    <ul class="reqs">
+      <li><strong>Device:</strong> iPhone or iPad on iOS / iPadOS 17 or later. Wi-Fi pairing without a cable needs iOS 27 or later.</li>
+      <li><strong>macOS:</strong> nothing extra.</li>
+      <li><strong>Windows:</strong> Apple Devices or iTunes for USB; a device paired over Wi-Fi needs neither.</li>
+      <li><strong>No Xcode:</strong> the developer disk image comes from Xcode's copy when there is one, or is downloaded and checked on your computer. Apple signs it for your device.</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <div class="brand small">
+      <img src="/icon.svg" alt="" width="20" height="20">
+      <span>DeviceSteer</span>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://github.com/sunghyun-k/devicesteer">GitHub</a>
+      <a href="https://github.com/sunghyun-k/devicesteer/blob/main/LICENSE">MIT License</a>
+      <a href="/llms.txt">llms.txt</a>
+    </nav>
+    <p>by <a href="https://sunghyunkim.com">Sunghyun Kim</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
