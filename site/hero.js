@@ -33,6 +33,9 @@
   const tipLabel = cursor.querySelector('.vlabel');
   const buttonLabel = overlay.querySelector('.vlabel.bottom');
   const poster = screen.querySelector('.hv-poster');
+  // The inspector's Appearance reads what the device has: Dark from the tap on Dark on.
+  const appearance = root.querySelector('.va-appearance');
+  const darkAt = INPUTS.find((i) => i.label === 'Switch to Dark mode').t;
   root.querySelector('.vgoal').textContent = GOAL;
   // The markup puts the arrow at the first tap for the still; from here it moves by transform.
   cursor.style.left = cursor.style.top = '0';
@@ -45,6 +48,8 @@
   // Where the overlay is at video time `ms`: everything is worked out from the time alone, so a
   // seek or a loop needs no bookkeeping.
   function render(ms) {
+    const mode = ms >= darkAt ? 'Dark' : 'Light';
+    if (appearance && appearance.textContent !== mode) appearance.textContent = mode;
     const w = overlay.clientWidth;
     const h = overlay.clientHeight;
     const next = taps.find((i) => i.t > ms);

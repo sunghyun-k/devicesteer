@@ -73,10 +73,12 @@
 <main id="main">
 
 <section class="hero" aria-labelledby="hero-title">
-  <div class="wrap hero-grid">
-    <div class="hero-text">
+  <div class="wrap hero-top">
+    <div class="hero-lead">
       <h1 id="hero-title">Your iPhone, on your computer.</h1>
       <p class="sub-title">For you, and for your agent.</p>
+    </div>
+    <div class="hero-act">
       <p class="lede">DeviceSteer shows the live screen of a real iPhone or iPad and lets you use it with
         your mouse and keyboard. Your coding agent drives the same device through a CLI, in a session you
         can watch, take over, hand back or stop.</p>
@@ -90,29 +92,111 @@
       <p class="get-alt" id="get-alt">On Windows? <a href="#windows">Get it for Windows</a>.</p>
       <p class="meta">Free and open source (MIT) · iOS / iPadOS 27 or later · USB or Wi-Fi · no Xcode</p>
     </div>
-    <!-- The viewer, drawn, playing a recording of an agent session on a real device. The
-         media lives at MEDIA_BASE in hero.js (the poster's src here too); hero.js plays it and
-         moves the overlay. Without it the poster shows with the first label. -->
+  </div>
+  <div class="wrap hero-view">
+    <!-- The viewer, drawn as the app looks (app/src/style.css on main), playing a recording of an
+         agent session on a real device. The media lives at MEDIA_BASE in hero.js (the poster's
+         src here too); hero.js plays it and moves the overlay. Without it the poster shows with
+         the first label. -->
     <figure class="hv" id="hero-viewer" role="img"
       aria-label="The DeviceSteer viewer playing a recording: an agent opens Settings, switches the iPhone to Dark mode and goes back to the Home Screen, each touch labelled, while a bar under the screen reads 'Agent is in control' with Stop and Take over">
-      <div class="hv-title" aria-hidden="true"><i></i><i></i><i></i><span>iPhone</span></div>
-      <div class="hv-stage" aria-hidden="true">
-        <div class="hv-dev">
-          <div class="vglow"></div>
-          <div class="hv-screen">
-            <img class="hv-poster" src="/media/hero-poster.webp" width="720" height="1048" alt="">
+      <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-sidebar" viewBox="0 0 20 20"><rect x="2.75" y="4" width="14.5" height="12" rx="2.5" /><path d="M7.75 4v12M4.9 7h1M4.9 9.25h1" /></symbol>
+      <symbol id="i-inspector" viewBox="0 0 20 20"><rect x="2.75" y="4" width="14.5" height="12" rx="2.5" /><path d="M12.25 4v12M14.1 7h1M14.1 9.25h1" /></symbol>
+      <symbol id="i-search" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.25" /><path d="m13 13 3.5 3.5" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 10a6 6 0 1 1-1.9-4.4M16.25 3.75v3.5h-3.5" /></symbol>
+      <symbol id="i-zoom-in" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5" /><path d="m13.2 13.2 3.3 3.3M9 6.6v4.8M6.6 9h4.8" /></symbol>
+      <symbol id="i-zoom-out" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5" /><path d="m13.2 13.2 3.3 3.3M6.6 9h4.8" /></symbol>
+      <symbol id="i-zoom-actual" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5" /><path d="m13.2 13.2 3.3 3.3M8.1 7.4 9.3 6.6v4.8" /></symbol>
+      <symbol id="i-fit" viewBox="0 0 20 20"><path d="M3.5 7.5v-4h4M16.5 7.5v-4h-4M3.5 12.5v4h4M16.5 12.5v4h-4" /><rect x="7.25" y="6.5" width="5.5" height="7" rx="1.2" /></symbol>
+      <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.75" cy="10" r=".9" fill="currentColor" /><circle cx="10" cy="10" r=".9" fill="currentColor" /><circle cx="15.25" cy="10" r=".9" fill="currentColor" /></symbol>
+      <symbol id="i-sliders" viewBox="0 0 20 20"><path d="M3 6h8.5M15 6h2M3 14h2M8.5 14H17" /><circle cx="13.25" cy="6" r="1.75" /><circle cx="6.75" cy="14" r="1.75" /></symbol>
+      <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" /><path d="M10 9v4.5M10 6.4v.1" /></symbol>
+      <symbol id="i-home" viewBox="0 0 20 20"><g fill="currentColor" stroke="none"><circle cx="5.5" cy="5.5" r="1.45" /><circle cx="10" cy="5.5" r="1.45" /><circle cx="14.5" cy="5.5" r="1.45" /><circle cx="5.5" cy="10" r="1.45" /><circle cx="10" cy="10" r="1.45" /><circle cx="14.5" cy="10" r="1.45" /><circle cx="5.5" cy="14.5" r="1.45" /><circle cx="10" cy="14.5" r="1.45" /><circle cx="14.5" cy="14.5" r="1.45" /></g></symbol>
+      <symbol id="i-camera" viewBox="0 0 20 20"><path d="M2.75 8.25a2 2 0 0 1 2-2h1.9l1.2-1.75h4.3l1.2 1.75h1.9a2 2 0 0 1 2 2v6.25a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" /><circle cx="10" cy="11.1" r="2.85" /></symbol>
+      <symbol id="i-record" viewBox="0 0 20 20"><circle cx="10" cy="10" r="5.5" fill="currentColor" stroke="none" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m6.5 8.25 3.5 3.5 3.5-3.5" /></symbol>
+      <symbol id="i-power" viewBox="0 0 20 20"><path d="M10 3v6.5M6.2 5.6a6 6 0 1 0 7.6 0" /></symbol>
+      <symbol id="i-vol-down" viewBox="0 0 20 20"><path d="M3 8v4h3l4 3.5v-11L6 8Z" /><path d="M13 10h4.5" /></symbol>
+      <symbol id="i-vol-up" viewBox="0 0 20 20"><path d="M3 8v4h3l4 3.5v-11L6 8Z" /><path d="M13 10h4.5M15.25 7.75v4.5" /></symbol>
+      <symbol id="i-keyboard" viewBox="0 0 20 20"><rect x="2.25" y="5" width="15.5" height="10" rx="2" /><path d="M5.2 8h.1M8.07 8h.1M10.93 8h.1M13.8 8h.1M5.2 10h.1M8.07 10h.1M10.93 10h.1M13.8 10h.1M6.5 12.4h7" /></symbol>
+      <symbol id="i-phone" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="16" rx="2.2" /><path d="M8.8 4.4h2.4" /></symbol>
+      <symbol id="i-tablet" viewBox="0 0 20 20"><rect x="3" y="2.5" width="14" height="15" rx="2" /></symbol>
+      <symbol id="i-wifi" viewBox="0 0 20 20"><path d="M2.75 8.1a10.5 10.5 0 0 1 14.5 0M5.35 10.9a6.75 6.75 0 0 1 9.3 0M7.95 13.7a3 3 0 0 1 4.1 0" /><circle cx="10" cy="16" r=".9" fill="currentColor" stroke="none" /></symbol>
+      </svg>
+      <div class="va" aria-hidden="true">
+        <aside class="va-side">
+          <div class="va-head"><span class="va-lights"><i></i><i></i><i></i></span><span class="va-ib"><svg class="va-i"><use href="#i-sidebar"/></svg></span></div>
+          <div class="va-side-title"><span>Devices</span><span class="va-ib small"><svg class="va-i"><use href="#i-refresh"/></svg></span></div>
+          <div class="va-search"><svg class="va-i"><use href="#i-search"/></svg><span>Search</span></div>
+          <div class="va-list">
+            <p class="va-group">Available</p>
+            <p class="va-dev sel"><svg class="va-glyph"><use href="#i-phone"/></svg><span class="va-name">Test iPhone</span><span class="va-status">iPhone Duo · Wi-Fi</span><i class="va-busy"></i></p>
+            <p class="va-dev"><svg class="va-glyph"><use href="#i-tablet"/></svg><span class="va-name">Test iPad</span><span class="va-status">iPad Pro 11-inch (4th generation) · Wi-Fi</span></p>
+            <p class="va-dev"><svg class="va-glyph"><use href="#i-phone"/></svg><span class="va-name">QA iPhone</span><span class="va-status">iPhone 16 Pro Max · USB</span></p>
+            <p class="va-group">Unavailable</p>
+            <p class="va-dev off"><svg class="va-glyph"><use href="#i-phone"/></svg><span class="va-name">iPhone 14 Pro</span><span class="va-status">Unavailable</span></p>
+            <p class="va-dev off"><svg class="va-glyph"><use href="#i-phone"/></svg><span class="va-name">Drawer iPhone</span><span class="va-status">Needs iOS 27 or later</span></p>
           </div>
-          <div class="hv-overlay">
-            <span class="vcursor"><span class="press"></span><svg class="arrow" viewBox="0 0 20 27" width="20" height="27"><path d="M1.5 1.5 V20.6 L6.1 16.3 L9.3 23.9 L12.6 22.5 L9.4 15.1 H15.6 Z"/></svg><span class="vlabel">Open the Settings app</span></span>
-            <span class="vlabel bottom" hidden></span>
+          <div class="va-side-foot"><span class="va-ghost"><svg class="va-i"><use href="#i-wifi"/></svg>Pair over Wi-Fi…</span></div>
+        </aside>
+        <div class="va-center">
+          <div class="va-center-head">
+            <span class="va-lights"><i></i><i></i><i></i></span><span class="va-ib va-narrow-pin"><svg class="va-i"><use href="#i-sidebar"/></svg></span>
+            <svg class="va-head-glyph"><use href="#i-phone"/></svg>
+            <span class="va-title"><b>Test iPhone</b><span>iPhone Duo · iOS 27.3</span></span>
+            <span class="va-tools"><span class="va-zoom"><span class="va-ib"><svg class="va-i"><use href="#i-zoom-out"/></svg></span><span class="va-ib on"><svg class="va-i"><use href="#i-fit"/></svg></span><span class="va-ib"><svg class="va-i"><use href="#i-zoom-actual"/></svg></span><span class="va-ib"><svg class="va-i"><use href="#i-zoom-in"/></svg></span></span><span class="va-ib"><svg class="va-i"><use href="#i-keyboard"/></svg></span><span class="va-ib"><svg class="va-i"><use href="#i-more"/></svg></span></span>
+          </div>
+          <div class="hv-stage">
+            <div class="hv-dev">
+              <div class="vglow"></div>
+              <div class="hv-screen">
+                <img class="hv-poster" src="/media/hero-poster.webp" width="720" height="1048" alt="">
+              </div>
+              <div class="hv-overlay">
+                <span class="vcursor"><span class="press"></span><svg class="arrow" viewBox="0 0 20 27" width="20" height="27"><path d="M1.5 1.5 V20.6 L6.1 16.3 L9.3 23.9 L12.6 22.5 L9.4 15.1 H15.6 Z"/></svg><span class="vlabel">Open the Settings app</span></span>
+                <span class="vlabel bottom" hidden></span>
+              </div>
+            </div>
+          </div>
+          <div class="va-bottom">
+            <div class="vsession">
+              <span class="vdot"></span>
+              <span class="vstate">Agent is in control</span>
+              <span class="vgoal">Turn on dark mode</span>
+              <b class="vghost">Stop</b><b class="vbtn">Take over</b>
+            </div>
+            <div class="va-bar">
+              <span class="va-tool"><svg class="va-i"><use href="#i-home"/></svg><span>Home</span></span>
+              <span class="va-tool"><svg class="va-i"><use href="#i-power"/></svg><span>Lock</span></span>
+              <span class="va-tool"><svg class="va-i"><use href="#i-vol-down"/></svg><span>Volume −</span></span>
+              <span class="va-tool"><svg class="va-i"><use href="#i-vol-up"/></svg><span>Volume +</span></span>
+              <i class="va-sep"></i>
+              <span class="va-tool"><svg class="va-i"><use href="#i-camera"/></svg><span>Screenshot</span></span>
+              <span class="va-tool rec"><svg class="va-i"><use href="#i-record"/></svg><span>Record</span></span>
+            </div>
           </div>
         </div>
-        <div class="vsession">
-          <span class="vdot"></span>
-          <span class="vstate">Agent is in control</span>
-          <span class="vgoal">Turn on dark mode</span>
-          <b class="vghost">Stop</b><b class="vbtn">Take over</b>
-        </div>
+        <aside class="va-insp">
+          <div class="va-insp-head"><span class="va-tab on"><svg class="va-i"><use href="#i-sliders"/></svg></span><span class="va-tab"><svg class="va-i"><use href="#i-info"/></svg></span><span class="va-ib va-pin"><svg class="va-i"><use href="#i-inspector"/></svg></span></div>
+          <div class="va-pane">
+            <div class="va-grp"><h4>Display</h4>
+              <p class="va-row"><span>Appearance</span><span class="va-select"><span class="va-appearance">Light</span><svg class="va-i"><use href="#i-chevron"/></svg></span></p>
+              <p class="va-row"><span>Liquid Glass</span><span class="va-slider" style="--p: 0.5; --default: 0.5"><i></i></span></p>
+              <p class="va-row"><span>Text Size</span><span class="va-slider ticks" style="--p: calc(3 / 11); --default: calc(3 / 11)"><i></i></span></p>
+            </div>
+            <div class="va-grp"><h4>Accessibility</h4>
+              <p class="va-row"><span>Reduce Motion</span><i class="va-switch"></i></p>
+              <p class="va-row"><span>Increase Contrast</span><i class="va-switch"></i></p>
+              <p class="va-row"><span>Button Shapes</span><i class="va-switch"></i></p>
+              <p class="va-row"><span>Reduce Transparency</span><i class="va-switch"></i></p>
+              <p class="va-row"><span>VoiceOver</span><i class="va-switch"></i></p>
+            </div>
+            <div class="va-grp"><h4>Location</h4>
+              <p class="va-row"><span>Simulated Location</span><span class="va-select"><span>None</span><svg class="va-i"><use href="#i-chevron"/></svg></span></p>
+            </div>
+          </div>
+        </aside>
       </div>
     </figure>
   </div>
