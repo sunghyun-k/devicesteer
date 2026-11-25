@@ -1995,11 +1995,11 @@ function item(name: string): HTMLElement {
   return settingsPane.querySelector<HTMLElement>(`[data-item="${name}"]`)!;
 }
 
-/** Fills a slider's track up to its thumb. */
+/** Fills a slider's track up to its thumb: `--p` is how far along it is, from 0 to 1. */
 function fill(s: HTMLInputElement): void {
   const min = Number(s.min);
   const max = Number(s.max);
-  s.style.setProperty("--p", `${((Number(s.value) - min) / (max - min)) * 100}%`);
+  s.style.setProperty("--p", String((Number(s.value) - min) / (max - min)));
 }
 
 /** Shows the settings, merged into what is known (an event may carry one key). */

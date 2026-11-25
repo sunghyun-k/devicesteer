@@ -644,28 +644,35 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .select select:hover { background: var(--hover); }
 .select .icon { position: absolute; right: 8px; width: 14px; height: 14px; pointer-events: none; color: var(--fg-3); stroke-width: 1.8; }
 
-/* A slider like a level picker's: a thick pill that fills with the accent up to a white knob,
-   with dots for the steps of a stepped one. 132 pixels wide so the dots land on the steps. */
+/* A slider like a macOS one: a 4-pixel track that fills with the accent up to a 16-pixel white
+   knob, the switch's knob, so it weighs no more than the switches and dropdowns around it. A
+   stepped one has short tick marks below the track, one per step. The engines don't centre a
+   restyled knob on a thinner track (WebKit on macOS, Chromium in WebView2 on Windows), hence the
+   negative margin. The fill and the ticks assume these sizes: 140 wide, a 16 knob, 12 steps. */
 .slider {
-  --p: 50%; --track-c: var(--track);
-  -webkit-appearance: none; appearance: none; flex: none; width: 132px; height: 20px; margin: 0; background: transparent;
+  --p: 0.5; --w: 140px; --knob: 16px;
+  -webkit-appearance: none; appearance: none; flex: none; width: var(--w); height: 28px; margin: 0;
+  background: transparent; --knob-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 }
 .slider::-webkit-slider-runnable-track {
-  height: 20px; border-radius: 10px;
-  background: linear-gradient(90deg, var(--accent) 0 calc(var(--p) * 0.85 + 10px), var(--track-c) 0);
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent) 0 calc(var(--knob) / 2 + (100% - var(--knob)) * var(--p)), var(--track) 0);
 }
-.slider.ticks::-webkit-slider-runnable-track {
-  background:
-    radial-gradient(circle, rgba(128, 128, 128, 0.55) 1.3px, transparent 1.8px) 4.91px 50% / 10.18px 100% repeat-x,
-    linear-gradient(90deg, var(--accent) 0 calc(var(--p) * 0.85 + 10px), var(--track-c) 0);
+/* The ticks sit on the input's own box, under the track, at each step's knob centre. */
+.slider.ticks {
+  --step: calc((var(--w) - var(--knob)) / 11);
+  background: linear-gradient(90deg, transparent calc(50% - 0.5px), color-mix(in srgb, var(--fg-3) 70%, transparent) 0 calc(50% + 0.5px), transparent 0)
+    calc(var(--knob) / 2 - var(--step) / 2) 100% / var(--step) 5px repeat-x;
 }
 .slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
-  background: #fff; border: 0.5px solid rgba(0, 0, 0, 0.12); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  -webkit-appearance: none; width: var(--knob); height: var(--knob); margin-top: calc((4px - var(--knob)) / 2);
+  border: 0; border-radius: 50%; background: #fff; box-shadow: var(--knob-shadow);
 }
-.slider::-moz-range-track { height: 20px; border-radius: 10px; background: var(--track-c); }
-.slider::-moz-range-progress { height: 20px; border-radius: 10px; background: var(--accent); }
-.slider::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+.slider:focus-visible { outline: none; }
+.slider:focus-visible::-webkit-slider-thumb { box-shadow: var(--knob-shadow), 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+.slider::-moz-range-track { height: 4px; border-radius: 2px; background: var(--track); }
+.slider::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+.slider::-moz-range-thumb { width: var(--knob); height: var(--knob); border: 0; border-radius: 50%; background: #fff; box-shadow: var(--knob-shadow); }
 .slider:disabled { cursor: default; }
 
 /* A switch: 32 by 20, the accent when on. */
