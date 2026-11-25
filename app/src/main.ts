@@ -538,12 +538,23 @@ function drawFrame(frame: VideoFrame): void {
   // in its native orientation whichever way the interface is turned (PITFALLS #27): the
   // transform turns it upright, and the padding then lies outside the canvas on every side.
   const [pw, ph] = config.display_px;
-  const [sx, sy, sw, sh] = screenRect(frame);
+  // A visible rect smaller than the screen it holds is the decoder's mistake, not a crop
+  // (PITFALLS #57): draw the screen from the coded picture instead.
+  const v = frame.visibleRect;
+  const cut =
+    v && (v.width < pw || v.height < ph) && frame.codedWidth >= pw && frame.codedHeight >= ph
+      ? new VideoFrame(frame, { visibleRect: { x: 0, y: 0, width: pw, height: ph }, displayWidth: pw, displayHeight: ph })
+      : undefined;
+  const src = cut ?? frame;
+  // On the decoder's own frame first, so viewer.log shows what the decoder gave.
+  let [sx, sy, sw, sh] = screenRect(frame);
+  if (cut) [sx, sy, sw, sh] = screenRect(cut);
   const kx = pw / sw;
   const ky = ph / sh;
   ctx.setTransform(...panelToCanvas(config.rotation, pw, ph));
-  ctx.drawImage(frame, -sx * kx, -sy * ky, frame.displayWidth * kx, frame.displayHeight * ky);
+  ctx.drawImage(src, -sx * kx, -sy * ky, src.displayWidth * kx, src.displayHeight * ky);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  cut?.close();
 }
 
 /** The screen turned: the canvas takes the new shape and the last picture is drawn again turned,
@@ -601,6 +612,10 @@ async function configure(cfg: Config): Promise<void> {
   const decoderConfig: VideoDecoderConfig = {
     codec: cfg.codec,
     description: b64(cfg.description),
+    // Without the size, WebView2 (Chromium) gave every frame a 1280x720 visible rect and display
+    // size, a corner of the real picture (PITFALLS #57).
+    codedWidth: cfg.coded[0],
+    codedHeight: cfg.coded[1],
     optimizeForLatency: true,
     hardwareAcceleration: "prefer-hardware",
   };

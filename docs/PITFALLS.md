@@ -22,10 +22,10 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23, #26, #27, #29, #33, #34 |
+| Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
-| Windows host | #51, #52, #53, #54 |
+| Windows host | #51, #52, #53, #54, #57 |
 
 ## Entries
 
@@ -1038,3 +1038,16 @@ the image was mounted. That check opens its own `mobile_image_mounter` connectio
 `setup::disk_image` now drops both before the check, and retries a failed check once after a
 second, saying the mount itself succeeded if it fails again. Not confirmed on the device yet: the
 image stays mounted until the device restarts, so the failing run couldn't be repeated.
+
+### 57. WebView2 gave every decoded frame a 1280x720 visible rect: the viewer showed a corner
+
+Windows PC, viewer in WebView2 (Chromium 158), iPad on iPadOS 27.2.1 held in landscape, USB. The
+screen looked zoomed in. `viewer.log` had `frame.coded` 2736x2064 but `frame.visible` 0,0,1280x720
+and `frame.display` 1280x720: the decoder (configured with codec and description only) gave the
+frames a visible rect of what looks like a default size, not the stream's, and `drawImage` draws
+only the visible rect. The viewer, scaling that to the screen (#26), stretched the picture's
+top-left 1280x720 over the whole canvas. WebKit (#26) reports the whole coded picture instead.
+
+The decoder is now configured with `codedWidth` and `codedHeight` from the daemon's `config`, and a
+frame whose visible rect is smaller than the screen it holds is redrawn from a `VideoFrame` cut to
+the screen (`drawFrame` in `app/src/main.ts`). `viewer.log` still shows the decoder's own rect.
