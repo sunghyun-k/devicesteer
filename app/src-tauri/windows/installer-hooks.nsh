@@ -19,3 +19,24 @@
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro DEVICESTEER_STOP_CLI
 !macroend
+
+; Builds up to 1.0.0-beta.2 kept their state in %LOCALAPPDATA%\devicesteer, which is also the
+; default install folder; later ones keep it in %LOCALAPPDATA%\<identifier> and move it there
+; (crates/core/src/paths.rs), and Tauri's "Delete the application data" box deletes that folder.
+; Honour the box for state a later build hasn't moved yet (it never ran), then remove the old
+; folder if that leaves it empty. Not on an update, which runs this uninstaller too.
+!macro NSIS_HOOK_POSTUNINSTALL
+  ${If} $DeleteAppDataCheckboxState = 1
+  ${AndIf} $UpdateMode <> 1
+    SetShellVarContext current
+    RMDir /r "$LOCALAPPDATA\devicesteer\remote-pairing"
+    RMDir /r "$LOCALAPPDATA\devicesteer\ddi"
+    Delete "$LOCALAPPDATA\devicesteer\preferences.json"
+    Delete "$LOCALAPPDATA\devicesteer\app_path"
+    Delete "$LOCALAPPDATA\devicesteer\*.media"
+    Delete "$LOCALAPPDATA\devicesteer\*.refs.json"
+    Delete "$LOCALAPPDATA\devicesteer\*.record.*"
+    Delete "$LOCALAPPDATA\devicesteer\*.log"
+    RMDir "$LOCALAPPDATA\devicesteer"
+  ${EndIf}
+!macroend

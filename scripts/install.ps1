@@ -32,11 +32,16 @@ function Fail([string]$message) {
     throw "DeviceSteer: $message"
 }
 
-# Downloads with curl.exe (Windows 10 1803 and later), else Invoke-WebRequest.
+# Downloads with curl.exe (Windows 10 1803 and later), else Invoke-WebRequest. Windows' own curl
+# first: another one can come earlier on PATH (Git for Windows puts its own there), and then
+# Get-Command returns them all, so take only the first.
 function Get-File([string]$url, [string]$out) {
-    $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue
+    $curl = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'System32\curl.exe' }
+    if (-not ($curl -and (Test-Path -LiteralPath $curl -PathType Leaf))) {
+        $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+    }
     if ($curl) {
-        & $curl.Source --fail --location --silent --show-error --retry 3 --output $out $url
+        & $curl --fail --location --silent --show-error --retry 3 --output $out $url
         if ($LASTEXITCODE -ne 0) { Fail "could not download $url (curl exit code $LASTEXITCODE)" }
     } else {
         Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing

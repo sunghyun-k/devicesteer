@@ -82,7 +82,7 @@ downloaded on the user's computer, never committed or bundled. `setup disk-image
    through its first-launch platform install). Skipped when its manifest doesn't list the device,
    so an old Xcode doesn't block a newer phone.
 3. The download cache: `<state dir>/ddi/<commit>/` (`~/Library/Application Support/devicesteer` on
-   macOS, `%LOCALAPPDATA%\devicesteer` on Windows).
+   macOS, `%LOCALAPPDATA%\com.sunghyunkim.devicesteer` on Windows).
 4. A download of Apple's files from the
    [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) project
    (`PersonalizedImages/Xcode_iOS_DDI_Personalized`, the same files pymobiledevice3 uses), pinned
@@ -145,8 +145,11 @@ The installer itself, `DeviceSteer_<version>_x64-setup.exe` on
 [Releases](https://github.com/sunghyun-k/devicesteer/releases/latest), is an NSIS installer for x64
 Windows 10 and 11. It installs for the current user, without administrator rights, into
 `%LOCALAPPDATA%\DeviceSteer`: the app (`devicesteer-app.exe`), the CLI (`devicesteer.exe`, which
-also runs the daemons) and the skill (`skills\devicesteer`). WebView2 comes with Windows; on the
-rare system without it, the installer downloads it.
+also runs the daemons) and the skill (`skills\devicesteer`). Pairing records, the disk image and
+logs are kept apart, in `%LOCALAPPDATA%\com.sunghyunkim.devicesteer`: updates and uninstalling keep
+them, unless you tick "Delete the application data" when you uninstall. (Up to 1.0.0-beta.2 they
+were in the install folder; a later version moves them the first time it runs.) WebView2 comes
+with Windows; on the rare system without it, the installer downloads it.
 
 It isn't code-signed yet. SmartScreen shows "Windows protected your PC" for an unsigned installer
 a browser downloaded: **More info**, then **Run anyway**. Expect it again for each new version, since an

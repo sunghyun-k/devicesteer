@@ -46,6 +46,10 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --agent: #ff9f0a;
   --human: #0a84ff;
+  /* Named Windows fonts before the generic `monospace`: WebView2 has no ui-monospace, and the
+     generic one follows the page's language, so Korean and Japanese pages got a CJK font whose
+     backslash (U+005C) is a won or yen sign, and ~\.local\bin read as ~₩.local₩bin. */
+  --font-mono: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace;
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   font-size: var(--fs-md);
@@ -455,7 +459,7 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .pair-code { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 10px 0 4px; }
 .pair-code-label { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-3); }
 .pair-code-digits {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 40px; font-weight: 600; line-height: 1.15;
+  font-family: var(--font-mono); font-size: 40px; font-weight: 600; line-height: 1.15;
   letter-spacing: 0.1em; margin-right: -0.1em; font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap;
 }
 .pair .with-code .wait-msg { text-align: center; color: var(--fg-2); }
@@ -752,7 +756,7 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .group.info output .code { color: var(--fg-3); font-size: var(--fs-sm); }
 .group.info .row.stack { flex-direction: column; align-items: stretch; gap: 2px; padding: 10px 0; }
 .group.info .row.stack output { text-align: left; white-space: normal; overflow-wrap: anywhere; }
-.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: var(--fs-sm); }
+.mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
 
 /* The Settings window's Agents pane and the first-launch sheet: a switch row per link, with the name over its path and, when
    something needs the person, a line saying what. */

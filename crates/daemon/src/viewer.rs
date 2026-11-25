@@ -122,10 +122,11 @@ fn app_candidates() -> Vec<PathBuf> {
         out.push(PathBuf::from(p.trim()));
     }
     if cfg!(windows) {
-        // The installer's default places, per user and for all users.
+        // The installer's default places, per user and for all users. The app's file is named
+        // after its crate, not the product.
         for base in ["LOCALAPPDATA", "ProgramFiles"] {
             if let Some(b) = std::env::var_os(base) {
-                out.push(PathBuf::from(b).join("DeviceSteer").join("DeviceSteer.exe"));
+                out.push(PathBuf::from(b).join("DeviceSteer").join("devicesteer-app.exe"));
             }
         }
     }
