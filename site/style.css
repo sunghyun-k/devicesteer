@@ -107,8 +107,12 @@ ul { margin: 0; }
 
 /* hero: the headline beside the lede and buttons, then the viewer across the page */
 .hero { padding: 88px 0 104px; }
-.hero-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: end; }
-h1 { font-size: var(--t-2xl); line-height: 1.04; letter-spacing: -0.025em; margin-bottom: 22px; }
+.hero-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: start; }
+h1 { font-size: var(--t-2xl); line-height: 1.04; letter-spacing: -0.025em; margin-bottom: 22px; text-wrap: balance; }
+/* Optical alignment: the headline's cap height and the lede's first line start at the same
+   height. Trimming both boxes to the cap top drops their different half-leadings; browsers
+   without text-box fall back to the box tops, a few pixels apart. */
+.hero-top h1, .hero-act > :first-child { text-box: trim-start cap alphabetic; }
 .sub-title { font-size: var(--t-lg); line-height: 1.3; font-weight: 500; color: var(--mute); margin: 0; }
 .lede { font-size: var(--t-md); line-height: 1.55; color: var(--mute); margin-bottom: 28px; }
 .cta { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
