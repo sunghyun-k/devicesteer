@@ -1065,5 +1065,5 @@ Swift implementation turned every touch by `nativeOrientation` (`rot270`: `(u, v
 
 `Display::report_point` now turns a point by `currentOrientation` onto the panel and then by
 `nativeOrientation` (`touch_rotation`) onto the touchscreen. Phones and both panels of a foldable
-say `rot0` there (#48), so nothing changes for them. Only the landscape-held iPad was tried; the
-iPad turned to portrait (`currentOrientation` other than `rot0`) was not.
+say `rot0` there (#48), so nothing changes for them. The owner then dragged in the viewer with the
+iPad held in landscape and turned to portrait: both went the right way.
