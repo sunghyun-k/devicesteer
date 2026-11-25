@@ -18,15 +18,23 @@ browser; `setup=deny|fail` makes the steps end badly.
 `devices` lists a device that isn't ready with `setup: <first step left>`. Observations behind the
 code: `docs/PITFALLS.md` #30 and #31.
 
+**Older than iOS 17: unsupported.** DeviceSteer reaches everything through CoreDeviceProxy, RSD and
+RemoteXPC, which a device has only from iOS 17. Such a device is listed with `unsupported` (a
+sentence saying why) and no `setup`: no step is checked or run, `setup status` says `ready: false`
+with every step `blocked`, the setup commands refuse it, and the daemon client and `Session::open`
+refuse it before any tunnel is tried (the message doesn't say "connection", so the daemon doesn't
+retry it). The viewer lists it under Unavailable as "Needs iOS 17 or later" and explains instead of
+showing setup (`?mock&select=9`). The OS version comes from lockdown's public values, so this works
+before trust too. PITFALLS #49.
+
 ## How each step is detected
 
 - **trust**: usbmuxd has a pair record for the UDID (`ReadPairRecord`) and lockdown accepts a
   session with it. A record the device rejects (`InvalidHostID`: Trust settings reset, the device
   erased) counts as not trusted.
-- **developer_mode**: lockdown value `DeveloperModeStatus` in domain `com.apple.security.mac.amfi`
-  (treated as on before iOS 16, which has no Developer Mode).
-- **disk_image**: `mobile_image_mounter` `CopyDevices` lists a mounted image at `/System/Developer`
-  (`/Developer` before iOS 17). Not `LookupImage` (PITFALLS #31).
+- **developer_mode**: lockdown value `DeveloperModeStatus` in domain `com.apple.security.mac.amfi`.
+- **disk_image**: `mobile_image_mounter` `CopyDevices` lists a mounted image at `/System/Developer`.
+  Not `LookupImage` (PITFALLS #31).
 
 All three go through lockdown, not the tunnel, so they work before the developer services exist.
 

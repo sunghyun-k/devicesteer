@@ -61,6 +61,9 @@ impl Session {
     ///
     /// USB is preferred when the device is reachable both ways.
     pub async fn open(udid: Option<&str>) -> Result<Self> {
+        // Before the tunnel: an iOS 16 device fails somewhere inside it with an error that reads
+        // like a dropped connection, which the daemon would keep retrying.
+        ensure_supported(udid).await?;
         match Self::open_tunnel(udid).await {
             Ok(s) => Ok(s),
             // A device that isn't set up fails somewhere along the way with an error that doesn't
@@ -289,6 +292,18 @@ impl Clipboard {
             Clipboard::Empty => "empty",
             Clipboard::Other => "other",
         }
+    }
+}
+
+/// Errors when the device `udid` names (or the only one) is too old for DeviceSteer, with a
+/// message that doesn't read as a connection failure. Reads only what lockdown tells anyone, so it
+/// works before trust; when even that can't be read it lets the caller go on and fail as it would.
+pub async fn ensure_supported(udid: Option<&str>) -> Result<()> {
+    let device = pick_device(mux_devices().await?, udid)?;
+    let provider = device.to_provider(mux_addr(), "devicesteer");
+    match crate::devices::unsupported_in(&crate::setup::public_values(&provider).await) {
+        Some(r) => bail!("{r}, so it can't be used: tell the user"),
+        None => Ok(()),
     }
 }
 

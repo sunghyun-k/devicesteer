@@ -19,6 +19,8 @@ interface DeviceInfo {
   build_version?: string;
   /** The first setup step the device still needs; absent when it is ready. */
   setup?: SetupStep;
+  /** Why DeviceSteer can't work with it at all (older than iOS 17). It has no `setup`. */
+  unsupported?: string;
   error?: string;
 }
 
@@ -218,6 +220,15 @@ function deviceName(d: DeviceInfo): string {
 /** What Apple calls the model, or its identifier when the core doesn't know it. */
 const modelName = (d: DeviceInfo) => d.model_name ?? d.product_type;
 
+/** A device that can't be opened: unreadable, or too old. Listed under Unavailable. */
+const unusable = (d: DeviceInfo | undefined) => !!d?.error || !!d?.unsupported;
+
+/** What the stage says about a device that is too old. */
+function unsupportedText(d: DeviceInfo): string {
+  const os = osLabel(d);
+  return `DeviceSteer works only with iOS 17 or later${os ? `, and this device runs ${os}` : ""}. It needs the developer services iOS 17 added. Update the device in Settings › General › Software Update, if its model can run iOS 17.`;
+}
+
 const isTablet = (d: DeviceInfo | undefined) => d?.device_class === "iPad" || !!d?.product_type?.startsWith("iPad");
 
 function row(d: DeviceInfo, disconnected = false): HTMLLIElement {
@@ -229,6 +240,8 @@ function row(d: DeviceInfo, disconnected = false): HTMLLIElement {
   // it can't be used. Other states (setting a device up, say) belong in the status too.
   const status = disconnected
     ? "Disconnected"
+    : d.unsupported
+    ? "Needs iOS 17 or later"
     : d.error
     ? "Unavailable"
     : d.setup
@@ -239,8 +252,8 @@ function row(d: DeviceInfo, disconnected = false): HTMLLIElement {
   li.append(icon(isTablet(d) ? "i-tablet" : "i-phone", "icon glyph"), text);
   li.title = disconnected
     ? "Disconnected. Connect the cable again and unlock the device."
-    : d.error ?? (d.setup ? `Needs setup: ${SETUP_TITLE[d.setup]}` : [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · "));
-  if (d.error || disconnected) li.classList.add("unavailable");
+    : d.unsupported ?? d.error ?? (d.setup ? `Needs setup: ${SETUP_TITLE[d.setup]}` : [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · "));
+  if (unusable(d) || disconnected) li.classList.add("unavailable");
   li.addEventListener("click", () => void select(d));
   li.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -264,9 +277,9 @@ function renderList(): void {
   // The selected device stays listed while it is unplugged, so its view doesn't lose its row;
   // under Unavailable once it has left the list.
   const extra = selected && !devices.some((d) => d.udid === selected!.udid) && match(selected) ? selected : undefined;
-  const ok = shown.filter((d) => !d.error);
-  const bad = shown.filter((d) => d.error);
-  if (extra && !gone && !extra.error) ok.unshift(extra);
+  const ok = shown.filter((d) => !unusable(d));
+  const bad = shown.filter(unusable);
+  if (extra && !gone && !unusable(extra)) ok.unshift(extra);
   else if (extra) bad.unshift(extra);
   availableList.replaceChildren(...ok.map((d) => row(d)));
   unavailableList.replaceChildren(...bad.map((d) => row(d, d === extra && !!gone)));
@@ -330,12 +343,12 @@ async function loadDevices(): Promise<void> {
   } else if (now && gone) {
     onSelectedBack(now);
   } else if (now && selected) {
-    const wasError = !!selected.error;
+    const wasError = unusable(selected);
     const wasSetup = !!selected.setup;
     selected = now;
     showDeviceText();
     if (now.setup && !setupRun) showSetup(now);
-    if ((wasError || wasSetup) && !now.error && !now.setup && !setupRun) {
+    if ((wasError || wasSetup) && !unusable(now) && !now.setup && !setupRun) {
       // It became usable: attach now, as if just picked.
       const d = now;
       selected = undefined;
@@ -430,7 +443,7 @@ function showDeviceText(): void {
   $<HTMLParagraphElement>("#intro-meta").textContent = d ? ([d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ")) : "";
   introArt.classList.toggle("tablet", isTablet(d));
   $("#device-glyph use").setAttribute("href", isTablet(d) ? "#i-tablet" : "#i-phone");
-  introArt.classList.toggle("unavailable", !!d?.error || !!gone);
+  introArt.classList.toggle("unavailable", unusable(d) || !!gone);
   showInfo();
 }
 
@@ -2446,7 +2459,13 @@ async function select(d: DeviceInfo, opts: { view?: boolean } = {}): Promise<voi
   showDeviceText();
   renderList();
   if (narrow(720)) showPanel("sidebar", false, false);
-  settingsPane.classList.toggle("disabled", !!d.error || !!d.setup);
+  settingsPane.classList.toggle("disabled", unusable(d) || !!d.setup);
+  if (d.unsupported) {
+    // Not even setup: no step makes it usable, and the daemon refuses it.
+    settingsMessage("This device can't be used with DeviceSteer.");
+    stageState("unavailable", unsupportedText(d));
+    return;
+  }
   if (d.error) {
     settingsMessage("Settings show once the device is available.");
     stageState("unavailable", d.error);
@@ -2494,7 +2513,7 @@ async function attach(d: DeviceInfo): Promise<void> {
 }
 
 async function view(): Promise<void> {
-  if (!selected || selected.error || selected.setup || gone) return;
+  if (!selected || unusable(selected) || selected.setup || gone) return;
   wantView = true;
   if (stage.dataset.state !== "live") stageState("connecting", "Starting the screen…");
   if (!attachedUdid) {
@@ -2621,7 +2640,7 @@ void (async () => {
     return;
   }
   const last = prefs.get("device");
-  const pick = devices.find((d) => d.udid === last && !d.error) ?? devices.find((d) => !d.error);
+  const pick = devices.find((d) => d.udid === last && !unusable(d)) ?? devices.find((d) => !unusable(d));
   if (pick) void select(pick);
   else showDeviceText();
 })();

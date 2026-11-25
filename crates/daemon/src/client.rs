@@ -79,6 +79,9 @@ impl Client {
         let stream = match transport::connect(&udid).await {
             Ok(s) => s,
             Err(_) => {
+                // No daemon yet: refuse a device it couldn't serve before starting one, so the
+                // caller gets the reason rather than a daemon that fails every request.
+                devicesteer_core::ensure_supported(Some(&udid)).await?;
                 spawn_daemon(&udid)?;
                 let began = Instant::now();
                 loop {
