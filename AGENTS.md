@@ -88,7 +88,12 @@ app/src-tauri/      Tauri shell (workspace member), a daemon client. agent_setup
                     CLI and skill links; tauri.bundle.conf.json adds the CLI and the skill to
                     bundles. A new command also goes in build.rs's COMMANDS and the
                     capabilities/*.json of each window that calls it, or the window can't
-scripts/            build-cli.sh (the CLI for the bundle), release.sh (release Mac only)
+scripts/            build-cli.sh (the CLI for the bundle), release.sh (release Mac only),
+                    check-version.sh (shared with CI), install.ps1 (Windows PowerShell installer,
+                    attached to releases)
+.github/workflows/  build-windows.yml (Windows installer, checked on PRs), release-windows.yml
+                    (attaches it to a draft release; see docs/RELEASING.md)
+app/src-tauri/windows/  installer-hooks.nsh: additions to Tauri's NSIS installer
 site/               The product homepage, devicesteer.sunghyunkim.com: static HTML/CSS with no build
                     step, served by Vercel from this folder (production branch main); llms.txt
                     summarises the product for agents; images/ holds its pictures

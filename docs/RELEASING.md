@@ -4,6 +4,11 @@ Releases are built on one Mac, the **release Mac**: the one whose keychain holds
 certificate, the notarization credentials and the updater signing key. `scripts/release.sh` does
 the whole release there and stops at a **draft** GitHub release; publishing it is a human step.
 
+The Windows installer is built on GitHub Actions (`.github/workflows/release-windows.yml`), which
+attaches it to the draft. Its updater signature is still made on the release Mac, so the updater
+key never leaves that Mac's keychain: `scripts/release.sh --windows` starts the workflow, waits for
+it, signs the installer and adds it to `latest.json`.
+
 ## What a release contains
 
 | Asset | For |
@@ -11,7 +16,11 @@ the whole release there and stops at a **draft** GitHub release; publishing it i
 | `DeviceSteer_<version>_universal.dmg` | People installing for the first time (README). Signed, notarized, stapled. |
 | `DeviceSteer.app.tar.gz` | The in-app updater: the same notarized, stapled app. |
 | `DeviceSteer.app.tar.gz.sig` | Its updater signature (minisign, made with the updater key). |
-| `latest.json` | What the updater reads: version, notes, and the archive's URL and signature for `darwin-aarch64` and `darwin-x86_64` (one universal archive serves both). |
+| `DeviceSteer_<version>_x64-setup.exe` | Windows: the NSIS installer, for first installs and for the in-app updater. Not code-signed yet (see "Windows" below). |
+| `DeviceSteer_<version>_x64-setup.exe.sig` | Its updater signature, made on the release Mac. |
+| `install.ps1` | The PowerShell installer (`scripts/install.ps1` at the release's commit): `irm https://github.com/<repo>/releases/latest/download/install.ps1 \| iex`. |
+| `SHA256SUMS` | SHA-256 of the Windows installer and `install.ps1`; `install.ps1` checks the installer against it. |
+| `latest.json` | What the updater reads: version, notes, and the archive's URL and signature for `darwin-aarch64` and `darwin-x86_64` (one universal archive serves both), and `windows-x86_64` for the installer. |
 
 The app is universal (arm64 + x86_64). Inside it:
 
@@ -28,6 +37,10 @@ Both extras come from `app/src-tauri/tauri.bundle.conf.json`, which bundling pas
 The app's Settings window (Agents) links `~/.local/bin/devicesteer` and each agent's skill folder to these
 through `~/.local/share/devicesteer/current` (see `app/src-tauri/src/agent_setup.rs` for why), so
 an update replaces the CLI and the skill along with the app.
+
+The Windows installer puts the same three in the app's folder (`%LOCALAPPDATA%\DeviceSteer` by
+default, per user): `devicesteer-app.exe`, `devicesteer.exe` next to it, and
+`skills\devicesteer\`. `app/src-tauri/windows/installer-hooks.nsh` adds to Tauri's installer.
 
 ## One-time setup on the release Mac
 
@@ -77,7 +90,10 @@ Nothing here goes into the repository except the updater's **public** key.
 
 4. **Tools:** Xcode command-line tools, Rust (`rustup`; the script adds the `aarch64-apple-darwin`
    and `x86_64-apple-darwin` targets), Node.js 20+, and `gh` signed in to GitHub with permission
-   to create releases (`gh auth login`).
+   to create releases and run workflows (`gh auth login`).
+
+Windows needs nothing on the release Mac beyond this: the installer is built by GitHub's Windows
+runner, which holds no secret.
 
 ## Cutting a release
 
@@ -108,6 +124,26 @@ Nothing here goes into the repository except the updater's **public** key.
    6. writes `latest.json` and creates the draft release `v<version>` with all four files.
 
    Artifacts stay in `target/release-artifacts/<version>/`.
+
+   With `--windows` (`scripts/release.sh --windows 0.2.0`), it then also checks that
+   `release-windows.yml` is on the release branch (before building anything) and, after the draft
+   exists:
+
+   7. starts the **Windows release** workflow for the version unless the draft already has
+      `DeviceSteer_<version>_x64-setup.exe`, and waits for it. The workflow reads the draft's
+      commit, checks the three versions there, builds the NSIS installer from that commit on a
+      GitHub-hosted Windows runner (`build-windows.yml`) and uploads it to the draft with
+      `install.ps1` and `SHA256SUMS`. It refuses a release that isn't a draft;
+   8. downloads the installer and the draft's `latest.json`, signs the installer for the updater
+      (bound to the version, like the macOS archive), adds `windows-x86_64` (its URL and
+      signature) to `latest.json`, and uploads `latest.json` and the `.sig` to the draft.
+
+   `scripts/release.sh --windows-only 0.2.0` does only 7 and 8, for a draft made without
+   `--windows` or after a failed Windows build. It needs the draft and changes nothing on a
+   published release. The workflow can also be run by hand (Actions › Windows release › Run
+   workflow, or `gh workflow run release-windows.yml -f version=0.2.0`); the installer then waits
+   on the draft until `--windows-only` signs it. Without the Windows steps the release is macOS
+   only, as before: `latest.json` has no `windows-x86_64` and Windows apps aren't offered it.
 4. On GitHub, review the draft's notes and assets, then **publish** it. The updater reads
    `releases/latest/download/latest.json`, which ignores drafts, so nobody is offered the update
    before that.
@@ -121,11 +157,30 @@ Nothing here goes into the repository except the updater's **public** key.
   Install and Restart; both install and relaunch. Device daemons are separate processes
   and keep running the old code until they stop (`devicesteer daemon stop`, or they exit when
   idle).
-- Windows releases are not set up yet: `scripts/build-cli.sh` builds the `.exe` sidecar, but
-  signing, the installer and the agent setup (which needs symlinks) are still to do.
+- Release builds on Windows: `build-windows.yml` also runs on pull requests and pushes to `main`
+  that touch the app, the crates or the skill, and keeps the installer as a workflow artifact for a
+  week, which is the way to try a change on a Windows PC before a release. `scripts/build-cli.sh`
+  runs there under Git for Windows' `sh`.
 - A local, unsigned bundle for checking what goes into the app:
 
   ```sh
   cd app
   npm run bundle -- --debug --bundles app
   ```
+
+## Windows
+
+- **Not code-signed.** SmartScreen warns about the installer ("More info", then "Run anyway") and
+  Smart App Control on Windows 11 blocks it; README tells users. The plan is SignPath's free
+  signing for open-source projects, once the project qualifies: `build-windows.yml` has the
+  outline where its steps go. NSIS can't be signed from the outside only, so the exes inside are
+  signed before bundling and the installer after it (two signing requests, each approved by hand).
+  The updater signature is made after both, on the release Mac, so it covers the final file.
+- **Version information.** SignPath requires every signed file to name the product and its version:
+  Tauri gives `devicesteer-app.exe` both, `crates/cli/build.rs` gives `devicesteer.exe` ProductName
+  `DeviceSteer` and ProductVersion (the package version). `build-windows.yml` checks both.
+- **Why the updater key stays on the Mac:** the Windows build could sign with the key in GitHub
+  secrets, but then the key would live in two places, one of them a CI service. Signing on the
+  Mac costs a download and an upload per release.
+- **Installer contents** are checked by the workflow with 7-Zip (`devicesteer-app.exe`,
+  `devicesteer.exe`, `skills\devicesteer\SKILL.md`), as is the CLI's `--version`.

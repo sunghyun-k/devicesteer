@@ -3,7 +3,14 @@
 # whose keychain holds the Developer ID Application identity, the `devicesteer-notary` notarytool
 # profile and the updater signing key. See docs/RELEASING.md.
 #
-#   scripts/release.sh 0.2.0
+#   scripts/release.sh 0.2.0                  macOS only
+#   scripts/release.sh --windows 0.2.0        macOS, then Windows
+#   scripts/release.sh --windows-only 0.2.0   Windows, added to the existing draft v0.2.0
+#
+# Windows: the installer is built on GitHub Actions (.github/workflows/release-windows.yml), which
+# attaches it to the draft; this script starts that workflow when the draft lacks the installer,
+# waits for it, then signs the installer for the updater here (the key never leaves this Mac) and
+# adds `windows-x86_64` to the draft's latest.json.
 #
 # It never prints a secret: the updater key and its password are read into variables, exported
 # only to the one command that signs, and never echoed. Don't add `set -x`.
@@ -12,7 +19,14 @@ set -euo pipefail
 die() { printf 'release: %s\n' "$*" >&2; exit 1; }
 step() { printf '\n==> %s\n' "$*"; }
 
-[ $# -eq 1 ] || die "usage: scripts/release.sh <version>   (for example 0.2.0)"
+usage="usage: scripts/release.sh [--windows | --windows-only] <version>   (for example 0.2.0)"
+mac=1 windows=0
+case ${1-} in
+  --windows) windows=1; shift ;;
+  --windows-only) mac=0 windows=1; shift ;;
+  -*) die "$usage" ;;
+esac
+[ $# -eq 1 ] || die "$usage"
 version=${1#v}
 tag="v$version"
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || die "'$1' isn't a version like 0.2.0"
@@ -29,10 +43,16 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 step "Checking the machine"
 [ "$(uname -s)" = Darwin ] || die "releases are built on macOS"
-for tool in git gh node npm npx cargo rustup lipo codesign xcrun hdiutil ditto security; do
+tools="git gh node npm npx security"
+[ "$mac" = 1 ] && tools="$tools cargo rustup lipo codesign xcrun hdiutil ditto"
+for tool in $tools; do
   command -v "$tool" >/dev/null 2>&1 || die "'$tool' is missing"
 done
 gh auth status >/dev/null 2>&1 || die "gh isn't signed in: run 'gh auth login'"
+repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+installer="DeviceSteer_${version}_x64-setup.exe"
+
+if [ "$mac" = 1 ]; then
 
 step "Checking the tree"
 [ "$(git rev-parse --abbrev-ref HEAD)" = "$branch" ] \
@@ -46,17 +66,11 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null || [ -n "$(git ls-remot
 fi
 
 step "Checking the version"
-cargo_version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-tauri_version=$(node -p 'require("./app/src-tauri/tauri.conf.json").version')
-npm_version=$(node -p 'require("./app/package.json").version')
-for v in "$cargo_version" "$tauri_version" "$npm_version"; do
-  [ "$v" = "$version" ] || die "versions disagree: Cargo.toml $cargo_version, tauri.conf.json $tauri_version, package.json $npm_version; set all three to $version and commit"
-done
+scripts/check-version.sh "$version" || die "fix the versions first"
 
 pubkey=$(node -p 'require("./app/src-tauri/tauri.conf.json").plugins.updater.pubkey')
 [ "$pubkey" != "UPDATER_PUBLIC_KEY_NOT_SET" ] && [ -n "$pubkey" ] \
   || die "plugins.updater.pubkey in tauri.conf.json is still the placeholder: see docs/RELEASING.md, 'One-time setup'"
-repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 node -e 'process.exit(require("./app/src-tauri/tauri.conf.json").plugins.updater.endpoints.some(e => e.includes("github.com/" + process.argv[1] + "/")) ? 0 : 1)' "$repo" \
   || die "the updater endpoint in tauri.conf.json isn't on github.com/$repo"
 
@@ -74,6 +88,20 @@ echo "Signing as: $identity"
 step "Checking notarization credentials"
 xcrun notarytool history --keychain-profile "$notary_profile" >/dev/null 2>&1 \
   || die "notarytool profile '$notary_profile' is missing or invalid: see docs/RELEASING.md"
+fi # mac
+
+if [ "$windows" = 1 ]; then
+  step "Checking the Windows workflow"
+  git fetch --quiet origin "$branch"
+  git cat-file -e "origin/$branch:.github/workflows/release-windows.yml" 2>/dev/null \
+    || die "origin/$branch has no .github/workflows/release-windows.yml, which builds the installer"
+fi
+
+if [ "$mac" = 0 ]; then
+  step "Checking the draft $tag"
+  [ "$(gh release view "$tag" --json isDraft -q .isDraft 2>/dev/null)" = true ] \
+    || die "no draft release $tag: run scripts/release.sh $version (or --windows) first; a published release isn't changed"
+fi
 
 step "Checking the updater key"
 updater_key=${TAURI_SIGNING_PRIVATE_KEY:-${TAURI_SIGNING_PRIVATE_KEY_PATH:-}}
@@ -85,16 +113,36 @@ updater_key_password=${TAURI_SIGNING_PRIVATE_KEY_PASSWORD-}
 if [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD+set}" ]; then
   updater_key_password=$(security find-generic-password -s "$key_password_item" -w 2>/dev/null || true)
 fi
-# Only the signing command gets them (below); nothing else inherits them.
+# Only the signing command gets them (sign_updater); nothing else inherits them.
 unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PATH TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 
+# Signs `file` for the updater, writing `file.sig`. The key may be the key itself or the path of its
+# file. --app-version binds the signature to this version (the updater's requireSignedVersion
+# checks it).
+sign_updater() {
+  local file=$1
+  (
+    cd "$root/app"
+    if [ -f "$updater_key" ]; then
+      TAURI_SIGNING_PRIVATE_KEY_PATH="$updater_key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$updater_key_password" \
+        npx tauri signer sign --app-version "$version" "$file" >/dev/null
+    else
+      TAURI_SIGNING_PRIVATE_KEY="$updater_key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$updater_key_password" \
+        npx tauri signer sign --app-version "$version" "$file" >/dev/null
+    fi
+  )
+  [ -s "$file.sig" ] || die "signing $(basename "$file") for the updater made no signature"
+}
+
+out="$root/target/release-artifacts/$version"
+
+# ---------- macOS ----------
+
+if [ "$mac" = 1 ]; then
 for t in aarch64-apple-darwin x86_64-apple-darwin; do
   rustup target list --installed | grep -qx "$t" || rustup target add "$t"
 done
 
-# ---------- build ----------
-
-out="$root/target/release-artifacts/$version"
 rm -rf "$out"
 mkdir -p "$out"
 
@@ -151,20 +199,7 @@ step "Making the updater archive"
 # After stapling, so updates install a notarized app that opens offline too.
 archive="$out/DeviceSteer.app.tar.gz"
 COPYFILE_DISABLE=1 tar -czf "$archive" -C "$out" DeviceSteer.app
-(
-  cd app
-  # The key may be the key itself or the path of its file. --app-version binds the signature to
-  # this version (the updater's requireSignedVersion checks it).
-  if [ -f "$updater_key" ]; then
-    TAURI_SIGNING_PRIVATE_KEY_PATH="$updater_key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$updater_key_password" \
-      npx tauri signer sign --app-version "$version" "$archive" >/dev/null
-  else
-    TAURI_SIGNING_PRIVATE_KEY="$updater_key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$updater_key_password" \
-      npx tauri signer sign --app-version "$version" "$archive" >/dev/null
-  fi
-)
-unset updater_key updater_key_password
-[ -s "$archive.sig" ] || die "signing the updater archive made no signature"
+sign_updater "$archive"
 
 step "Making the disk image"
 dmg="$out/DeviceSteer_${version}_universal.dmg"
@@ -198,6 +233,68 @@ step "Creating the draft release $tag"
 gh release create "$tag" --draft --target "$(git rev-parse HEAD)" --title "DeviceSteer $version" --generate-notes \
   "$dmg" "$archive" "$archive.sig" "$out/latest.json"
 
+fi # mac
+
+# ---------- Windows ----------
+
+# Starts release-windows.yml for this version and waits for it; it attaches the installer to the
+# draft. The workflow file is read from $branch, so it must be on that branch.
+run_windows_workflow() {
+  local since started id
+  since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  started=$(gh workflow run release-windows.yml --ref "$branch" -f version="$version" 2>&1) \
+    || die "could not start the Windows workflow: $started"
+  # gh prints the new run's URL; older versions print nothing useful, so fall back to the newest
+  # dispatched run.
+  id=$(sed -n 's|.*/actions/runs/\([0-9][0-9]*\).*|\1|p' <<<"$started" | head -1)
+  if [ -z "$id" ]; then
+    for _ in 1 2 3 4 5 6; do
+      sleep 5
+      id=$(gh run list --workflow release-windows.yml --event workflow_dispatch --branch "$branch" --created ">=$since" --limit 1 --json databaseId -q '.[0].databaseId')
+      [ -n "$id" ] && break
+    done
+  fi
+  [ -n "$id" ] || die "started the Windows workflow but couldn't find its run: watch it on GitHub, then run scripts/release.sh --windows-only $version"
+  echo "Waiting for https://github.com/$repo/actions/runs/$id (the build takes a while)"
+  gh run watch "$id" --exit-status --interval 30 >/dev/null \
+    || die "the Windows workflow failed: see https://github.com/$repo/actions/runs/$id, then run scripts/release.sh --windows-only $version"
+}
+
+if [ "$windows" = 1 ]; then
+  # Captured first: with pipefail, `grep -q` quitting early would fail the pipeline on SIGPIPE.
+  has_installer() { local names; names=$(gh release view "$tag" --json assets -q '.assets[].name') && grep -qxF "$installer" <<<"$names"; }
+  if has_installer; then
+    step "Using the Windows installer already on the draft"
+  else
+    step "Building the Windows installer on GitHub Actions"
+    run_windows_workflow
+    has_installer || die "the Windows workflow finished but the draft has no $installer"
+  fi
+
+  step "Signing the Windows installer for the updater"
+  win="$out/windows"
+  rm -rf "$win"
+  mkdir -p "$win"
+  gh release download "$tag" --pattern "$installer" --pattern latest.json --dir "$win"
+  [ -s "$win/$installer" ] && [ -s "$win/latest.json" ] || die "could not download $installer and latest.json from the draft"
+  sign_updater "$win/$installer"
+
+  step "Adding windows-x86_64 to latest.json"
+  url="https://github.com/$repo/releases/download/$tag/$installer"
+  node -e '
+    const fs = require("fs");
+    const [version, url, sigFile, file] = process.argv.slice(1);
+    const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (manifest.version !== version) throw new Error(`latest.json on the draft is for ${manifest.version}, not ${version}`);
+    // The updater looks up "<os>-<arch>-<installer>" first, then "<os>-<arch>".
+    manifest.platforms["windows-x86_64"] = { signature: fs.readFileSync(sigFile, "utf8").trim(), url };
+    fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + "\n");
+  ' "$version" "$url" "$win/$installer.sig" "$win/latest.json"
+  gh release upload "$tag" "$win/$installer.sig" "$win/latest.json" --clobber
+fi
+unset updater_key updater_key_password
+
 printf '\nDraft release %s is ready: review the notes and assets on GitHub, then publish it.\n' "$tag"
 printf 'Installed apps see the update once it is published (the updater reads releases/latest).\n'
+[ "$windows" = 1 ] || printf 'No Windows build: add it to this draft with scripts/release.sh --windows-only %s\n' "$version"
 printf 'Artifacts: %s\n' "$out"

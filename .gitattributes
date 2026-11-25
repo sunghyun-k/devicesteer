@@ -1,0 +1,4 @@
+# Shell scripts run under Git for Windows' sh on the Windows runner (and on Windows developers'
+# machines): with CRLF line endings, which checkouts on Windows default to, `sh` reads `set -eu\r`
+# and fails.
+*.sh text eol=lf
