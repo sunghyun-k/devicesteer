@@ -5,6 +5,7 @@
   "common.listSeparator": "、",
   "common.notNow": "以后",
   "common.tryAgain": "重试",
+  "common.dismiss": "关闭",
 
   "menu.about": "关于{app}",
   "menu.services": "服务",
@@ -50,7 +51,8 @@
   "list.emptyDetail": "使用数据线连接 iPhone 或 iPad，将其解锁并信任此电脑。也可以通过 Wi-Fi 配对，无需数据线。",
   "list.noMatches": "无匹配项",
   "list.noMatchesDetail": "没有与“{query}”匹配的项目。",
-  "list.sessionRuns": "此设备上正在运行智能体会话",
+  "list.sessionWaiting": "等待你操作",
+  "list.sessionGoal": "{state}：{goal}",
   "list.noUsbmuxd.title": "安装 Apple 设备",
   "list.noUsbmuxd.detail": "要通过数据线连接，Windows 需要 Apple 设备（或 iTunes）。请安装并打开一次、接受其许可协议，然后重新连接设备。",
   "list.noUsbmuxd.store": "打开 Microsoft Store",
@@ -122,12 +124,15 @@
 
   "note.showInFinder": "在访达中显示",
   "note.showInExplorer": "在文件资源管理器中显示",
+  "notice.agentStarted": "代理已在“{device}”上开始：",
+  "notice.view": "查看",
 
   "stage.viewScreen": "查看屏幕",
   "stage.starting": "正在启动屏幕…",
   "stage.disconnected": "请重新连接数据线并解锁设备。如果设备正在重新启动，请稍候：恢复后会在此处继续。",
   "stage.connectFailed": "无法连接到{device}：{error}",
   "stage.startFailed": "无法启动屏幕：{error}",
+  "stage.daemonClosed": "与设备的连接再次断开。请重试以重新连接。",
 
   "session.none": "无智能体会话",
   "session.region": "智能体会话",
@@ -313,6 +318,9 @@
   "prefs.language": "App 语言",
   "prefs.languageSystem": "系统默认",
   "prefs.languageNote": "来自设备连接和命令行工具的部分信息仍显示为英文。",
+  "prefs.sessionsSection": "代理会话",
+  "prefs.openOnSession": "代理开始会话时打开查看器",
+  "prefs.openOnSessionNote": "查看器会打开该设备；如果已打开，则会移到前面，且不会抢走你正在输入的 App 的键盘焦点。",
   "prefs.agentsLead": "此 Mac 上的编程智能体通过 DeviceSteer 的命令行工具和技能操作你的设备。两者都是指向此 App 的链接，因此会随 App 一起更新。",
   "prefs.moveToApplications": "移到“应用程序”文件夹…",
   "prefs.commandLineTool": "命令行工具",

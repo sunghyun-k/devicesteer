@@ -37,6 +37,8 @@
     "allow-app-version",
     "allow-set-show-touches",
     "allow-open-settings",
-    "allow-set-menu-labels"
+    "allow-set-menu-labels",
+    "allow-known-sessions",
+    "allow-probe-sessions"
   ]
 }

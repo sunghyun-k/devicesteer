@@ -5,6 +5,7 @@
   "common.listSeparator": ", ",
   "common.notNow": "Plus tard",
   "common.tryAgain": "Réessayer",
+  "common.dismiss": "Fermer",
 
   "menu.about": "À propos de {app}",
   "menu.services": "Services",
@@ -50,7 +51,8 @@
   "list.emptyDetail": "Connectez un iPhone ou un iPad avec un câble, déverrouillez-le et faites confiance à cet ordinateur. Ou jumelez-en un via Wi-Fi, sans câble.",
   "list.noMatches": "Aucun résultat",
   "list.noMatchesDetail": "Aucun résultat pour « {query} ».",
-  "list.sessionRuns": "Une session d’agent est en cours sur cet appareil",
+  "list.sessionWaiting": "En attente de vous",
+  "list.sessionGoal": "{state} : {goal}",
   "list.noUsbmuxd.title": "Installez Appareils Apple",
   "list.noUsbmuxd.detail": "Pour une connexion par câble, Windows a besoin d’Appareils Apple (ou d’iTunes). Installez-le, ouvrez-le une fois et acceptez sa licence, puis rebranchez l’appareil.",
   "list.noUsbmuxd.store": "Ouvrir le Microsoft Store",
@@ -122,12 +124,15 @@
 
   "note.showInFinder": "Afficher dans le Finder",
   "note.showInExplorer": "Afficher dans l’Explorateur de fichiers",
+  "notice.agentStarted": "Un agent a commencé sur {device} :",
+  "notice.view": "Afficher",
 
   "stage.viewScreen": "Afficher l’écran",
   "stage.starting": "Démarrage de l’écran…",
   "stage.disconnected": "Rebranchez le câble et déverrouillez l’appareil. S’il redémarre, patientez : tout reprend ici dès qu’il est de retour.",
   "stage.connectFailed": "Impossible de se connecter à {device} : {error}",
   "stage.startFailed": "Impossible de démarrer l’écran : {error}",
+  "stage.daemonClosed": "La connexion à l’appareil s’est de nouveau fermée. Réessayez pour vous reconnecter.",
 
   "session.none": "Aucune session d’agent",
   "session.region": "Session d’agent",
@@ -313,6 +318,9 @@
   "prefs.language": "Langue de l’app",
   "prefs.languageSystem": "Langue du système",
   "prefs.languageNote": "Certains messages de la connexion à l’appareil et de l’outil en ligne de commande restent en anglais.",
+  "prefs.sessionsSection": "Sessions d’agent",
+  "prefs.openOnSession": "Ouvrir le visualiseur quand un agent démarre une session",
+  "prefs.openOnSessionNote": "Le visualiseur s’ouvre sur cet appareil, ou passe au premier plan s’il est ouvert, sans retirer le clavier à l’app dans laquelle vous tapez.",
   "prefs.agentsLead": "Les agents de codage de ce Mac pilotent vos appareils grâce à l’outil en ligne de commande et à la compétence de DeviceSteer. Ce sont des liens vers cette app : ils sont mis à jour avec elle.",
   "prefs.moveToApplications": "Déplacer dans Applications…",
   "prefs.commandLineTool": "Outil en ligne de commande",

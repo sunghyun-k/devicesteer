@@ -47,7 +47,9 @@ usbmuxd (USB or Wi-Fi) -> lockdown -> CoreDeviceProxy -> CDTunnel
 ```
 
 Shape: one daemon per device owns the tunnel, the screen-sharing media session, HID and the
-accessibility subscription; the CLI, the Tauri viewer (live screen, human control, touch indicators
+accessibility subscription, and tells the viewer (its own socket, `crates/daemon/src/viewer.rs`)
+when its agent session starts, changes owner or ends, opening the viewer for a new session when
+none runs; the CLI, the Tauri viewer (live screen, human control, touch indicators
 with the agent's labels, and a panel to take over, hand back or stop an agent's session) and later
 an MCP server all attach to it.
 
@@ -142,8 +144,8 @@ anything else from that Mac's keychain.
 `HOME`, never against your real agent folders.
 
 A running daemon keeps the code it started with: after changing `crates/daemon` or `crates/core`,
-run `devicesteer daemon stop` (the next command starts the new build) and reopen the device in the
-viewer. `tauri dev` restarts the viewer itself when the daemon crate changes.
+run `devicesteer daemon stop` (the next command starts the new build); a viewer attached to it
+attaches again by itself, which starts the new build. `tauri dev` restarts the viewer itself when the daemon crate changes.
 
 There is no test suite against devices; a clean `cargo build` and `cargo clippy --workspace` is the
 minimum for every change, plus `npm run build` and `npm test` in `app/` for a change to the

@@ -109,7 +109,14 @@ Output is JSON. Device commands go through a per-device daemon that the first co
 (`daemon status`, `daemon stop`). `screenshot` saves an 8-bit PNG; `--raw` keeps the device's
 16-bit one. The viewer app (`app/`) shows the live screen; while an agent
 session runs it glows around the screen and shows the session at the bottom, with Take over / Hand
-back (Done after a handoff) and Stop. Its interface is in English, Korean, Japanese, Simplified and
+back (Done after a handoff) and Stop. An agent's `session start` shows that device's screen at
+once: the viewer selects it (or, while the person watches another device, shows a notice with
+View), comes forward without taking the keyboard, and is opened for the device when it isn't
+running (Settings › General › "Open the viewer when an agent starts a session", on by default;
+`DEVICESTEER_NO_VIEWER=1` turns it off for scripts and CI). The sidebar marks every device with a
+session: blue while the agent works, amber while it waits for the person or they have it. A
+device whose screen was showing when the person switched away shows it again when they come back.
+Its interface is in English, Korean, Japanese, Simplified and
 Traditional Chinese, Spanish, French, German, Brazilian Portuguese and Italian: it follows the
 system's language, and Settings › General picks another (`app/src/locales/`; the CLI stays in
 English):

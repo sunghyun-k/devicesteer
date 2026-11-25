@@ -9,6 +9,7 @@ mod client;
 pub mod control;
 mod server;
 mod transport;
+pub mod viewer;
 pub mod wire;
 
 pub use client::Client;

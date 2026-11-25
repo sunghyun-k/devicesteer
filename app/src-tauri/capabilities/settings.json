@@ -15,6 +15,8 @@
     "allow-agent-setup-change",
     "allow-app-location",
     "allow-app-version",
-    "allow-show-move-sheet"
+    "allow-show-move-sheet",
+    "allow-open-on-session",
+    "allow-set-open-on-session"
   ]
 }

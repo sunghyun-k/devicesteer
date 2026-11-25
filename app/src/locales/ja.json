@@ -5,6 +5,7 @@
   "common.listSeparator": "、",
   "common.notNow": "今はしない",
   "common.tryAgain": "もう一度試す",
+  "common.dismiss": "閉じる",
 
   "menu.about": "{app}について",
   "menu.services": "サービス",
@@ -50,7 +51,8 @@
   "list.emptyDetail": "iPhoneまたはiPadをケーブルで接続し、ロックを解除して、このコンピュータを信頼してください。ケーブルなしでWi-Fi経由でペアリングすることもできます。",
   "list.noMatches": "一致する項目なし",
   "list.noMatchesDetail": "「{query}」に一致する項目はありません。",
-  "list.sessionRuns": "このデバイスでエージェントのセッションが実行中です",
+  "list.sessionWaiting": "あなたの対応待ち",
+  "list.sessionGoal": "{state}: {goal}",
   "list.noUsbmuxd.title": "Appleデバイスをインストール",
   "list.noUsbmuxd.detail": "ケーブルで接続するには、WindowsにAppleデバイス（またはiTunes）が必要です。インストールして一度開き、使用許諾契約に同意してから、デバイスを接続し直してください。",
   "list.noUsbmuxd.store": "Microsoft Storeを開く",
@@ -122,12 +124,15 @@
 
   "note.showInFinder": "Finderで表示",
   "note.showInExplorer": "エクスプローラーで表示",
+  "notice.agentStarted": "{device}でエージェントが開始:",
+  "notice.view": "表示",
 
   "stage.viewScreen": "画面を表示",
   "stage.starting": "画面を開始中…",
   "stage.disconnected": "ケーブルをもう一度接続し、デバイスのロックを解除してください。再起動中の場合はお待ちください。再起動が終わるとここから再開します。",
   "stage.connectFailed": "{device}に接続できませんでした: {error}",
   "stage.startFailed": "画面を開始できませんでした: {error}",
+  "stage.daemonClosed": "デバイスとの接続が再び切れました。もう一度試して再接続してください。",
 
   "session.none": "エージェントのセッションなし",
   "session.region": "エージェントのセッション",
@@ -313,6 +318,9 @@
   "prefs.language": "アプリの言語",
   "prefs.languageSystem": "システムのデフォルト",
   "prefs.languageNote": "デバイス接続やコマンドラインツールからの一部のメッセージは英語のまま表示されます。",
+  "prefs.sessionsSection": "エージェントセッション",
+  "prefs.openOnSession": "エージェントがセッションを開始したらビューアを開く",
+  "prefs.openOnSessionNote": "ビューアがそのデバイスで開くか、開いている場合は前面に表示されます。入力中のAppのキーボードは奪いません。",
   "prefs.agentsLead": "このMac上のコーディングエージェントは、DeviceSteerのコマンドラインツールとスキルを通じてデバイスを操作します。どちらもこのアプリへのリンクなので、アプリと一緒にアップデートされます。",
   "prefs.moveToApplications": "アプリケーションフォルダに移動…",
   "prefs.commandLineTool": "コマンドラインツール",

@@ -175,7 +175,16 @@
             <svg class="icon"><use href="#i-download" /></svg>
             <p id="update-banner-text"></p>
             <button id="update-install" class="btn small" type="button" data-i18n="update.restart">Restart to Update</button>
-            <button id="update-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss">
+            <button id="update-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss" data-i18n-aria-label="common.dismiss" data-i18n-title="common.dismiss">
+              <svg class="icon"><use href="#i-close" /></svg>
+            </button>
+          </div>
+          <!-- An agent session started on a device other than the one on screen (main.ts). -->
+          <div id="session-notice" class="banner" role="status" hidden>
+            <span class="notice-dot" aria-hidden="true"></span>
+            <p id="session-notice-text"></p>
+            <button id="session-notice-view" class="btn small" type="button" data-i18n="notice.view">View</button>
+            <button id="session-notice-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss" data-i18n-aria-label="common.dismiss" data-i18n-title="common.dismiss">
               <svg class="icon"><use href="#i-close" /></svg>
             </button>
           </div>
@@ -183,7 +192,7 @@
             <svg class="icon" id="note-icon"><use href="#i-check" /></svg>
             <p id="note-text"></p>
             <button id="note-reveal" class="btn small" type="button">Show in Finder</button>
-            <button id="note-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss">
+            <button id="note-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss" data-i18n-aria-label="common.dismiss" data-i18n-title="common.dismiss">
               <svg class="icon"><use href="#i-close" /></svg>
             </button>
           </div>

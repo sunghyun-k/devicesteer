@@ -37,4 +37,4 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 # Agent setup links without Developer Mode: directory junctions, and recognizing the CLI's hard link.
 junction = "1"
 same-file = "1"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging"] }

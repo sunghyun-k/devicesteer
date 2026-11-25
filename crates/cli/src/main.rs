@@ -478,11 +478,20 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             };
             let started = args["action"] == "start";
             let mut v = client.request("session", args).await?;
-            if started && let Some(id) = v["id"].as_str() {
+            if started && let Some(id) = v["id"].as_str().map(str::to_string) {
+                // What the daemon did about the viewer (notified it, opened it, or why not).
+                let viewer = v.as_object_mut().and_then(|o| o.remove("viewer"));
+                let note = v.as_object_mut().and_then(|o| o.remove("note"));
                 v = json!({
                     "session": v.clone(),
                     "next": format!("pass --session {id} with every command of this goal (or export DEVICESTEER_SESSION={id}), and run `devicesteer session finish --session {id}` when the goal is done"),
                 });
+                if let Some(viewer) = viewer {
+                    v["viewer"] = viewer;
+                }
+                if let Some(note) = note {
+                    v["note"] = note;
+                }
             }
             v
         }
