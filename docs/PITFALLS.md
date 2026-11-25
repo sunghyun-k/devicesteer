@@ -17,7 +17,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screen streams (displayservice) | #1, #2, #7, #11, #13, #27, #28 |
 | Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
-| Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39 |
+| Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39, #58 |
 | Display info | #9, #27 |
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
@@ -1051,3 +1051,19 @@ top-left 1280x720 over the whole canvas. WebKit (#26) reports the whole coded pi
 The decoder is now configured with `codedWidth` and `codedHeight` from the daemon's `config`, and a
 frame whose visible rect is smaller than the screen it holds is redrawn from a `VideoFrame` cut to
 the screen (`drawFrame` in `app/src/main.ts`). `viewer.log` still shows the decoder's own rect.
+
+### 58. An iPad's touchscreen is turned from its panel: every drag's axis was swapped
+
+iPad Pro 13-inch (M4), iPadOS 27.2.1, USB, held in landscape, from the viewer on Windows (the
+mapping is the same code on macOS). Horizontal drags scrolled vertically and vertical ones
+horizontally. `getdisplayinfo` gave the primary display `bounds` 2752x2064 (landscape),
+`currentOrientation` `rot0` and `nativeOrientation` `rot270`; the video picture is landscape too.
+Only `currentOrientation` was used to place touches, so they went to the panel unturned, while the
+touch reports follow `nativeOrientation`: on this iPad they are portrait. This is old #23: the
+Swift implementation turned every touch by `nativeOrientation` (`rot270`: `(u, v)` lands on
+`(1 - v, u)`, checked on an iPad by tapping an icon), and the rewrite had dropped it.
+
+`Display::report_point` now turns a point by `currentOrientation` onto the panel and then by
+`nativeOrientation` (`touch_rotation`) onto the touchscreen. Phones and both panels of a foldable
+say `rot0` there (#48), so nothing changes for them. Only the landscape-held iPad was tried; the
+iPad turned to portrait (`currentOrientation` other than `rot0`) was not.

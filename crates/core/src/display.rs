@@ -67,6 +67,9 @@ pub struct Display {
     /// Pixels per point.
     pub scale: f64,
     pub rotation: Rotation,
+    /// How the touchscreen is turned from the panel (`nativeOrientation`): `rot270` on an iPad,
+    /// whose touch reports stay portrait while its panel is landscape (PITFALLS #58).
+    pub touch_rotation: Rotation,
 }
 
 impl Display {
@@ -116,7 +119,7 @@ impl Display {
     /// sees it. Out-of-range points are clamped: the device drops them silently (PITFALLS #6).
     pub fn report_point(&self, (x, y): (f64, f64)) -> (u16, u16) {
         let (w, h) = self.size();
-        let (u, v) = self.rotation.turn_share((x / w, y / h));
+        let (u, v) = self.touch_rotation.turn_share(self.rotation.turn_share((x / w, y / h)));
         let unit = |s: f64| (s * 65535.0).round().clamp(0.0, 65535.0) as u16;
         (unit(u), unit(v))
     }
@@ -208,6 +211,12 @@ fn parse(output: &plist::Value) -> Result<Display> {
             // only the device's orientation follows (PITFALLS #48).
             if marks_active { device_rotation(output).unwrap_or(panel) } else { panel }
         },
+        // Phones and both panels of a foldable say `rot0`, or nothing on older systems.
+        touch_rotation: display
+            .get("nativeOrientation")
+            .and_then(|v| v.as_string())
+            .and_then(|r| Rotation::parse(r).ok())
+            .unwrap_or(Rotation::R0),
     })
 }
 
@@ -271,7 +280,23 @@ mod tests {
             panel: (400.0, 800.0),
             scale: 3.0,
             rotation,
+            touch_rotation: Rotation::R0,
         }
+    }
+
+    #[test]
+    fn an_ipad_touchscreen_is_turned_from_its_panel() {
+        // Seen on an iPad Pro 13-inch held in landscape: the panel 1376x1032 points, rot0,
+        // nativeOrientation rot270; points sent unturned swapped every drag's axis (PITFALLS #58).
+        // The old implementation's rot270 rule, checked there by tapping an icon: (u, v) lands on
+        // (1 - v, u).
+        let d = Display { panel: (1376.0, 1032.0), touch_rotation: Rotation::R270, ..display(Rotation::R0) };
+        assert_eq!(d.report_point((0.0, 0.0)), (65535, 0));
+        assert_eq!(d.report_point((1376.0, 1032.0)), (0, 65535));
+        // A drag along the screen's width moves along the touchscreen's height.
+        let (a, b) = (d.report_point((100.0, 516.0)), d.report_point((1200.0, 516.0)));
+        assert_eq!(a.0, b.0);
+        assert!(b.1 > a.1);
     }
 
     #[test]
