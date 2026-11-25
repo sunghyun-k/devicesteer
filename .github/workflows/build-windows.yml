@@ -159,11 +159,21 @@ jobs:
             $p = Start-Process -FilePath $env:SETUP -ArgumentList '/S' -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "the installer exited with $($p.ExitCode)" }
           }
+          # State an older build left in the install folder (crates/core/src/paths.rs): the first
+          # CLI run moves it to the state folder, and the uninstall keeps it there.
+          $state = Join-Path $env:LOCALAPPDATA 'com.sunghyunkim.devicesteer'
+          New-Item -ItemType Directory -Force (Join-Path $dir 'remote-pairing') | Out-Null
+          Set-Content (Join-Path $dir 'remote-pairing\test.plist') 'test'
           Install
           foreach ($f in 'devicesteer-app.exe', 'devicesteer.exe', 'skills\devicesteer\SKILL.md', 'uninstall.exe') {
             if (-not (Test-Path (Join-Path $dir $f))) { Get-ChildItem -Recurse $dir; throw "the install lacks $f" }
           }
           & (Join-Path $dir 'devicesteer.exe') --version
+          # `devices` reads the Wi-Fi pairings; without usbmuxd it may fail, which doesn't matter here.
+          & (Join-Path $dir 'devicesteer.exe') devices 2>&1 | Out-Host
+          $global:LASTEXITCODE = 0
+          if (-not (Test-Path (Join-Path $state 'remote-pairing\test.plist'))) { throw "the CLI didn't move the old state to $state" }
+          if (Test-Path (Join-Path $dir 'remote-pairing')) { throw 'the CLI left the old state in the install folder' }
 
           # Where Settings › Agents puts it; a hard link must be on the install's volume (the
           # runner's temp folder is on another drive).
@@ -197,6 +207,7 @@ jobs:
           foreach ($f in 'devicesteer-app.exe', 'devicesteer.exe', 'skills\devicesteer\SKILL.md') {
             if (Test-Path (Join-Path $dir $f)) { throw "the uninstall left $f" }
           }
+          if (-not (Test-Path (Join-Path $state 'remote-pairing\test.plist'))) { throw 'the uninstall deleted the state' }
 
       - name: Check install.ps1 parses
         shell: pwsh
