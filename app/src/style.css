@@ -109,6 +109,10 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* Korean puts spaces between words, so lines break there as in Korean text elsewhere, not inside a
+   word (the default breaks between any two syllables). A token too long for its line still breaks:
+   break-word, not anywhere, so it doesn't let flex items shrink below their words. */
+:lang(ko) { word-break: keep-all; overflow-wrap: break-word; }
 body { margin: 0; background: var(--bg); color: var(--fg); overflow: hidden; user-select: none; -webkit-user-select: none; cursor: default; }
 button, input, select { font: inherit; color: inherit; }
 p, h2, h3, h4 { margin: 0; }
