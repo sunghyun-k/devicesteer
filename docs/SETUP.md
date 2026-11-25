@@ -1,6 +1,6 @@
 # Device setup without Xcode
 
-`iphone-use setup` makes a freshly connected iPhone or iPad usable. Three steps, in order:
+`devicesteer setup` makes a freshly connected iPhone or iPad usable. Three steps, in order:
 
 | Step | JSON name | What happens | Who acts |
 |---|---|---|---|
@@ -8,7 +8,7 @@
 | Developer Mode | `developer_mode` | AMFI shows the switch in Settings > Privacy & Security; setup waits while the device restarts | the user turns it on, taps Restart, then Turn On and the passcode |
 | Developer tools | `disk_image` | the personalized Developer Disk Image (DDI) is signed for the device by Apple's TSS server, uploaded and mounted | nobody; may be needed again after a restart (PITFALLS #32) |
 
-Code: `crates/core/src/setup.rs`. CLI: `iphone-use setup [status|trust|developer-mode|disk-image]`.
+Code: `crates/core/src/setup.rs`. CLI: `devicesteer setup [status|trust|developer-mode|disk-image]`.
 Viewer: a device that isn't ready is listed with "Needs setup: <step>", and selecting it shows a
 card with the three steps instead of View Screen (`renderSetup` in `app/src/main.ts`, Tauri
 commands `setup_status`, `setup_run` with progress, `setup_cancel`). The card re-reads the state
@@ -36,13 +36,13 @@ Apple ships the iOS 17+ personalized DDI only inside Xcode; there is no separate
 Apple. **This repository contains no Apple files**: the image is read from Xcode's copy or
 downloaded on the user's computer, never committed or bundled. `setup disk-image` looks, in order:
 
-1. `--ddi <folder>` or `IPHONE_USE_DDI`: a folder with `BuildManifest.plist` and the files it
+1. `--ddi <folder>` or `DEVICESTEER_DDI`: a folder with `BuildManifest.plist` and the files it
    names (or `Image.dmg` and `Image.dmg.trustcache`).
 2. On macOS, `/Library/Developer/DeveloperDiskImages/iOS_DDI/Restore`, which Xcode installs (also
    through its first-launch platform install). Skipped when its manifest doesn't list the device,
    so an old Xcode doesn't block a newer phone.
-3. The download cache: `<state dir>/ddi/<commit>/` (`~/Library/Application Support/iphone-use` on
-   macOS, `%LOCALAPPDATA%\iphone-use` on Windows).
+3. The download cache: `<state dir>/ddi/<commit>/` (`~/Library/Application Support/devicesteer` on
+   macOS, `%LOCALAPPDATA%\devicesteer` on Windows).
 4. A download of Apple's files from the
    [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) project
    (`PersonalizedImages/Xcode_iOS_DDI_Personalized`, the same files pymobiledevice3 uses), pinned

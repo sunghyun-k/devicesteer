@@ -38,7 +38,7 @@ pub struct DeviceInfo {
     pub os_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub build_version: Option<String>,
-    /// The first setup step the device still needs (`iphone-use setup status` says more). Absent
+    /// The first setup step the device still needs (`devicesteer setup status` says more). Absent
     /// when it is ready.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub setup: Option<SetupStep>,
@@ -102,7 +102,7 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
 
     let mut list = Vec::with_capacity(out.len());
     for (mut info, dev) in out {
-        let provider = dev.to_provider(mux_addr(), "iphone-use");
+        let provider = dev.to_provider(mux_addr(), "devicesteer");
         match crate::setup::probe(&provider).await {
             Ok(p) => {
                 info.setup = p.step();

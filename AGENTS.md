@@ -22,8 +22,8 @@ Guide for anyone changing the code of this repository: coding agents and human c
 
 ## What this is
 
-A rewrite of iphone-use (formerly a Swift CLI on Xcode's private CoreDevice stack) as a Rust core
-that works on macOS and Windows, with no Xcode dependency. The device layer is
+DeviceSteer (formerly a Swift CLI on Xcode's private CoreDevice stack) is a rewrite as a
+Rust core that works on macOS and Windows, with no Xcode dependency. The device layer is
 [idevice](https://github.com/jkcoxson/idevice):
 
 ```text
@@ -37,7 +37,7 @@ with the agent's labels, and a panel to take over, hand back or stop an agent's 
 an MCP server all attach to it.
 
 **Agent sessions** (`crates/daemon/src/control.rs`): an agent runs `session start "<goal>"` and
-sends input with the id (`--session` or `IPHONE_USE_SESSION`). One session per device; its owner is
+sends input with the id (`--session` or `DEVICESTEER_SESSION`). One session per device; its owner is
 `agent`, `delegated_to_user` (the agent ran `session handoff`), `user` (the human pressed Take over)
 or `finished`. Agent input is refused unless the owner is `agent`, and the refusal tells the agent
 to stop and tell the user. Sessions expire when their agent goes quiet (10 min; 30 while the human
@@ -51,17 +51,17 @@ truth.** `docs/PITFALLS.md` records why things are the way they are.
 
 ```text
 Cargo.toml          Workspace; pins idevice to a git commit (see below)
-crates/core/        iphone-use-core: all device I/O. Tunnel session, display info, media streams
+crates/core/        devicesteer-core: all device I/O. Tunnel session, display info, media streams
                     (media.rs), HID input, keyboard (keyboard.rs: key names and layouts;
                     typing.rs: `type` and `paste`), accessibility tree (ax/), video frames, MP4
                     recording, and Controller, which ties them together for one device
-crates/daemon/      iphone-use-daemon: the per-device daemon (Unix socket; Windows pipe still to
+crates/daemon/      devicesteer-daemon: the per-device daemon (Unix socket; Windows pipe still to
                     do), its wire format, agent/human control state, and the Client both the CLI
                     and the viewer use
-crates/cli/         binary `iphone-use`: JSON CLI. Device commands go through the daemon, which
+crates/cli/         binary `devicesteer`: JSON CLI. Device commands go through the daemon, which
                     it starts on demand (`--no-daemon` for the direct path). `src/skill.md` is the
-                    agent guide `iphone-use skill` prints: keep it in step with the commands
-skills/iphone-use/  SKILL.md: a bootstrap that tells agents to run `iphone-use skill`
+                    agent guide `devicesteer skill` prints: keep it in step with the commands
+skills/devicesteer/  SKILL.md: a bootstrap that tells agents to run `devicesteer skill`
 app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC decoding)
 app/src-tauri/      Tauri shell (workspace member), a daemon client
 THIRD_PARTY_NOTICES.md  Code adapted from other projects, with their licenses
@@ -88,7 +88,7 @@ with the source path, and add the project's MIT notice to `THIRD_PARTY_NOTICES.m
 
 ```sh
 cargo build                                    # core + CLI + Tauri shell
-./target/debug/iphone-use devices
+./target/debug/devicesteer devices
 
 cd app && npm install
 npx tauri dev                                  # viewer, hot reload
@@ -96,7 +96,7 @@ npx tauri build --bundles app                  # macOS .app (use nsis on Windows
 ```
 
 A running daemon keeps the code it started with: after changing `crates/daemon` or `crates/core`,
-run `iphone-use daemon stop` (the next command starts the new build) and reopen the device in the
+run `devicesteer daemon stop` (the next command starts the new build) and reopen the device in the
 viewer. `tauri dev` restarts the viewer itself when the daemon crate changes.
 
 There is no test suite against devices; a clean `cargo build` and `cargo clippy --workspace` is the

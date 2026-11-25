@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 // Vite replaces `import.meta.env.DEV` with false in builds, which drops the mock entirely.
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("mock")) (await import("./mock")).installMock();
 
-/** Mirrors `iphone_use_core::DeviceInfo`. */
+/** Mirrors `devicesteer_core::DeviceInfo`. */
 interface DeviceInfo {
   udid: string;
   transports: ("usb" | "wifi")[];
@@ -21,7 +21,7 @@ interface DeviceInfo {
   error?: string;
 }
 
-/** Mirrors `iphone_use_core::setup`: the steps that make a device ready, in order. */
+/** Mirrors `devicesteer_core::setup`: the steps that make a device ready, in order. */
 type SetupStep = "trust" | "developer_mode" | "disk_image";
 
 interface SetupStatus {
@@ -33,7 +33,7 @@ interface SetupStatus {
   next: string;
 }
 
-/** What a running setup step reports (`iphone_use_core::setup::Progress`). */
+/** What a running setup step reports (`devicesteer_core::setup::Progress`). */
 interface SetupProgress {
   step: SetupStep;
   /** The device waits for the person holding it. */
@@ -42,7 +42,7 @@ interface SetupProgress {
   fraction?: number;
 }
 
-/** How the interface is turned from the panel's native orientation (`iphone_use_core::Rotation`). */
+/** How the interface is turned from the panel's native orientation (`devicesteer_core::Rotation`). */
 type Rotation = "rot0" | "rot90" | "rot180" | "rot270";
 
 /** How the screen is turned: the daemon's `orientation` event, also part of `config`. */
@@ -63,7 +63,7 @@ interface Config extends Orientation {
   display_px: [number, number];
 }
 
-/** An agent session as the daemon reports it (`iphone_use_daemon::control::AgentSession`). */
+/** An agent session as the daemon reports it (`devicesteer_daemon::control::AgentSession`). */
 interface AgentSession {
   id: string;
   name: string;
@@ -100,12 +100,12 @@ interface RecordingEvent {
   path: string;
   /** While it runs: seconds since it started. */
   seconds?: number;
-  /** When it stopped (`iphone_use_core::RecordSummary`), or why it failed. */
+  /** When it stopped (`devicesteer_core::RecordSummary`), or why it failed. */
   summary?: { seconds: number; bytes: number; frames: number };
   error?: string;
 }
 
-/** Mirrors `iphone_use_core::DeviceSettings`, plus the location the daemon simulated. `null`:
+/** Mirrors `devicesteer_core::DeviceSettings`, plus the location the daemon simulated. `null`:
  * unknown or unsupported (named in `unsupported`). A `settings` event can carry only some keys. */
 interface Settings {
   appearance: "light" | "dark" | null;
@@ -146,14 +146,14 @@ function icon(name: string, className = "icon"): SVGSVGElement {
 const prefs = {
   get(key: string): string | null {
     try {
-      return localStorage.getItem(`iphone-use.${key}`);
+      return localStorage.getItem(`devicesteer.${key}`);
     } catch {
       return null;
     }
   },
   set(key: string, value: string): void {
     try {
-      localStorage.setItem(`iphone-use.${key}`, value);
+      localStorage.setItem(`devicesteer.${key}`, value);
     } catch {
       // Not kept; the default comes back next time.
     }
@@ -974,7 +974,7 @@ function onInput(e: InputEvent): void {
   }
 }
 
-/** Parses one wire message (see `iphone_use_daemon::wire`). */
+/** Parses one wire message (see `devicesteer_daemon::wire`). */
 function onMessage(buf: Uint8Array): void {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const kind = buf[4];
@@ -1769,7 +1769,7 @@ const locationEdit = $<HTMLDivElement>("#location-edit");
 const latitude = $<HTMLInputElement>("#latitude");
 const longitude = $<HTMLInputElement>("#longitude");
 
-/** Text sizes from smallest to largest, as the CLI names them (`iphone_use_core::TEXT_SIZES`). */
+/** Text sizes from smallest to largest, as the CLI names them (`devicesteer_core::TEXT_SIZES`). */
 const TEXT_SIZES = ["xs", "s", "m", "l", "xl", "xxl", "xxxl", "ax1", "ax2", "ax3", "ax4", "ax5"];
 const TEXT_SIZE_NAMES = ["Extra Small", "Small", "Medium", "Large (default)", "Extra Large", "XXL", "XXXL", "AX1", "AX2", "AX3", "AX4", "AX5"];
 /** On/off items: the field in `Settings` and the name `settings_set` takes. */
@@ -2108,12 +2108,12 @@ async function runSetup(step: SetupStep): Promise<void> {
   }
 }
 
-/** A setup error as the viewer shows it: the core writes for agents ("run `iphone-use setup
+/** A setup error as the viewer shows it: the core writes for agents ("run `devicesteer setup
  * trust` again"); here the step's own button does that. */
 function setupErrorText(e: unknown): string {
   const t = String(e)
-    .replace(/:? run `iphone-use setup[^`]*` first/g, "")
-    .replace(/,? (?:then )?run `iphone-use setup(?: [\w-]+)?`( again)?/g, (_m, again) => (again ? ", then press Try Again" : ""))
+    .replace(/:? run `devicesteer setup[^`]*` first/g, "")
+    .replace(/,? (?:then )?run `devicesteer setup(?: [\w-]+)?`( again)?/g, (_m, again) => (again ? ", then press Try Again" : ""))
     .replace(/`([^`]+)`/g, "$1");
   return t.charAt(0).toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? "" : ".");
 }
@@ -2418,7 +2418,7 @@ showDeviceText();
 renderList();
 updateMenu();
 void (async () => {
-  // A device to open right away (`IPHONE_USE_VIEWER_UDID`): selected and shown.
+  // A device to open right away (`DEVICESTEER_VIEWER_UDID`): selected and shown.
   const udid = await invoke<string | null>("initial_udid");
   await loadDevices();
   if (udid) {

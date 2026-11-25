@@ -836,6 +836,68 @@ dependencies = [
 ]
 
 [[package]]
+name = "devicesteer-app"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "devicesteer-core",
+ "devicesteer-daemon",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tokio",
+]
+
+[[package]]
+name = "devicesteer-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "devicesteer-core",
+ "devicesteer-daemon",
+ "plist",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "devicesteer-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "idevice",
+ "libc",
+ "plist",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "shiguredo_mp4",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "devicesteer-daemon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "devicesteer-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1893,68 +1955,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4200d433cbd5178df7797c9c2e75b348b728e39631cf14520d1e2fc424201f4"
 dependencies = [
  "cfb",
-]
-
-[[package]]
-name = "iphone-use-app"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "iphone-use-core",
- "iphone-use-daemon",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tokio",
-]
-
-[[package]]
-name = "iphone-use-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "iphone-use-core",
- "iphone-use-daemon",
- "plist",
- "serde",
- "serde_json",
- "tokio",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "iphone-use-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "idevice",
- "libc",
- "plist",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "shiguredo_mp4",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "iphone-use-daemon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "iphone-use-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
 ]
 
 [[package]]

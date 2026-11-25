@@ -1,4 +1,4 @@
-//! Input timing trace, a debug option: with `IPHONE_USE_INPUT_TRACE=<file>` in the daemon's (or
+//! Input timing trace, a debug option: with `DEVICESTEER_INPUT_TRACE=<file>` in the daemon's (or
 //! a `--no-daemon` command's) environment, every live touch step and HID touch report appends a
 //! line `<monotonic µs> <stage> <fields>` to that file:
 //!
@@ -20,7 +20,7 @@ static FILE: OnceLock<Option<(Instant, Mutex<std::fs::File>)>> = OnceLock::new()
 
 fn file() -> Option<&'static (Instant, Mutex<std::fs::File>)> {
     FILE.get_or_init(|| {
-        let p = std::env::var_os("IPHONE_USE_INPUT_TRACE")?;
+        let p = std::env::var_os("DEVICESTEER_INPUT_TRACE")?;
         let f = std::fs::OpenOptions::new()
             .create(true)
             .append(true)

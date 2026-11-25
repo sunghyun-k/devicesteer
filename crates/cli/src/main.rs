@@ -1,4 +1,4 @@
-//! `iphone-use`: command-line access to a connected iPhone or iPad.
+//! `devicesteer`: command-line access to a connected iPhone or iPad.
 //!
 //! Output is JSON on stdout (except `skill`, which prints the agent guide as Markdown). Errors go
 //! to stderr as `{"error": "..."}` with exit code 1.
@@ -9,16 +9,16 @@ mod record;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use iphone_use_core::{
+use devicesteer_core::{
     Button, Controller, MediaMode, Motion, Session, Setting,
     ax::{BuildOptions, Screen},
     list_devices,
 };
-use iphone_use_daemon::{Client, Source};
+use devicesteer_daemon::{Client, Source};
 use serde_json::json;
 
 #[derive(Parser)]
-#[command(name = "iphone-use", version, about = "Operate a real iPhone or iPad over USB or Wi-Fi")]
+#[command(name = "devicesteer", version, about = "Operate a real iPhone or iPad over USB or Wi-Fi")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -34,7 +34,7 @@ struct Target {
     #[arg(long, global = true)]
     no_daemon: bool,
     /// The agent session the command belongs to (printed by `session start`).
-    #[arg(long, global = true, env = "IPHONE_USE_SESSION")]
+    #[arg(long, global = true, env = "DEVICESTEER_SESSION")]
     session: Option<String>,
 }
 
@@ -265,11 +265,11 @@ enum Command {
         #[arg(long, global = true, default_value_t = 180)]
         wait: u64,
         /// A folder with a personalized Developer Disk Image (BuildManifest.plist and the files it
-        /// names) to use instead of Xcode's copy or the download. Also `IPHONE_USE_DDI`.
+        /// names) to use instead of Xcode's copy or the download. Also `DEVICESTEER_DDI`.
         #[arg(long, global = true)]
         ddi: Option<PathBuf>,
     },
-    /// Print the guide for agents that matches this version of iphone-use (Markdown).
+    /// Print the guide for agents that matches this version of DeviceSteer (Markdown).
     Skill,
     /// Screen-sharing media streams on the device.
     Media {
@@ -397,19 +397,19 @@ fn main() {
         print!("{}", skill_guide());
         return;
     }
-    // The daemon runs on a runtime of its own (see `iphone_use_daemon::run_blocking`).
+    // The daemon runs on a runtime of its own (see `devicesteer_daemon::run_blocking`).
     if let Command::Daemon { target, action: None } = &cli.command {
         tracing_subscriber::fmt()
             .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_env("IPHONE_USE_LOG")
+                tracing_subscriber::EnvFilter::try_from_env("DEVICESTEER_LOG")
                     .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
             )
             .with_writer(std::io::stderr)
             .init();
         let r = tokio::runtime::Runtime::new()
             .map_err(anyhow::Error::from)
-            .and_then(|rt| rt.block_on(iphone_use_core::resolve_udid(target.udid.as_deref())))
-            .and_then(|udid| iphone_use_daemon::run_blocking(&udid));
+            .and_then(|rt| rt.block_on(devicesteer_core::resolve_udid(target.udid.as_deref())))
+            .and_then(|udid| devicesteer_daemon::run_blocking(&udid));
         if let Err(e) = r {
             eprintln!("{}", json!({ "error": format!("{e:#}") }));
             std::process::exit(1);
@@ -443,14 +443,14 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             if started && let Some(id) = v["id"].as_str() {
                 v = json!({
                     "session": v.clone(),
-                    "next": format!("pass --session {id} with every command of this goal (or export IPHONE_USE_SESSION={id}), and run `iphone-use session finish --session {id}` when the goal is done"),
+                    "next": format!("pass --session {id} with every command of this goal (or export DEVICESTEER_SESSION={id}), and run `devicesteer session finish --session {id}` when the goal is done"),
                 });
             }
             v
         }
         Command::Devices => json!({ "devices": list_devices().await? }),
         Command::Setup { target, action, wait, ddi } => {
-            use iphone_use_core::setup;
+            use devicesteer_core::setup;
             let udid = target.udid.as_deref();
             let wait_for = Duration::from_secs(wait);
             // Progress goes to stderr, one JSON object per line, so stdout stays one result.
@@ -521,14 +521,14 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                 let Some(m) = next else { break };
                 let at = began.elapsed().as_millis() as u64;
                 match m {
-                    iphone_use_daemon::wire::Message::Json(mut v) => {
+                    devicesteer_daemon::wire::Message::Json(mut v) => {
                         v["t_ms"] = json!(at);
                         if let Some(d) = v.get_mut("description") {
                             *d = json!("<hvcC>");
                         }
                         println!("{v}");
                     }
-                    iphone_use_daemon::wire::Message::Frame { mut header, data } => {
+                    devicesteer_daemon::wire::Message::Frame { mut header, data } => {
                         n += 1;
                         bytes += data.len() as u64;
                         header["bytes"] = json!(data.len());
@@ -696,7 +696,7 @@ async fn run(command: Command) -> Result<serde_json::Value> {
         Command::Media { target, action } => match action {
             MediaAction::Status => {
                 let session = Session::open(target.udid.as_deref()).await?;
-                let status = iphone_use_core::server_status(session.adapter(), session.rsd()).await?;
+                let status = devicesteer_core::server_status(session.adapter(), session.rsd()).await?;
                 json!({ "udid": session.udid, "status": plist_to_json(&status) })
             }
             MediaAction::Probe { seconds, video } => {
@@ -726,7 +726,7 @@ async fn run(command: Command) -> Result<serde_json::Value> {
 fn skill_guide() -> String {
     let v = env!("CARGO_PKG_VERSION");
     format!(
-        "[iphone-use:skill] iphone-use usage guide v{v}\n\n{}\n[iphone-use:skill] end of guide v{v}\n",
+        "[devicesteer:skill] DeviceSteer usage guide v{v}\n\n{}\n[devicesteer:skill] end of guide v{v}\n",
         include_str!("skill.md").trim_end()
     )
 }
@@ -750,7 +750,7 @@ async fn with_controller(
 /// Where the last `ui` reading's refs are kept between CLI runs. Only refs, roles and frames:
 /// labels and values can be personal data and stay out of files.
 fn refs_path(udid: &str) -> PathBuf {
-    iphone_use_core::paths::state_dir().join(format!("{udid}.refs.json"))
+    devicesteer_core::paths::state_dir().join(format!("{udid}.refs.json"))
 }
 
 fn save_refs(udid: &str, screen: &Screen) {

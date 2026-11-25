@@ -1,6 +1,6 @@
 # Third-party notices
 
-iphone-use adapts code from the projects below. Files that copy or closely follow their code say
+DeviceSteer adapts code from the projects below. Files that copy or closely follow their code say
 so at the top, with the source path.
 
 ## iphone-cli

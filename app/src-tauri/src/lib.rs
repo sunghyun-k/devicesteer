@@ -6,8 +6,8 @@ mod shared_clip;
 
 use std::sync::Arc;
 
-use iphone_use_core::DeviceInfo;
-use iphone_use_daemon::{Client, Source};
+use devicesteer_core::DeviceInfo;
+use devicesteer_daemon::{Client, Source};
 use serde_json::Value;
 use tauri::{
     State,
@@ -30,13 +30,13 @@ struct Viewer {
 /// Lists the devices usbmuxd sees. Errors come back to the page as strings.
 #[tauri::command]
 async fn list_devices() -> Result<Vec<DeviceInfo>, String> {
-    iphone_use_core::list_devices().await.map_err(|e| format!("{e:#}"))
+    devicesteer_core::list_devices().await.map_err(|e| format!("{e:#}"))
 }
 
-/// Which setup steps `udid` still needs (see `iphone_use_core::setup`). Reads only.
+/// Which setup steps `udid` still needs (see `devicesteer_core::setup`). Reads only.
 #[tauri::command]
-async fn setup_status(udid: String) -> Result<iphone_use_core::SetupStatus, String> {
-    iphone_use_core::setup::status(Some(&udid)).await.map_err(|e| format!("{e:#}"))
+async fn setup_status(udid: String) -> Result<devicesteer_core::SetupStatus, String> {
+    devicesteer_core::setup::status(Some(&udid)).await.map_err(|e| format!("{e:#}"))
 }
 
 /// How long a step waits for the person holding the device (tap Trust; turn on Developer Mode,
@@ -49,10 +49,10 @@ const SETUP_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
 async fn setup_run(
     udid: String,
     step: String,
-    channel: Channel<iphone_use_core::setup::Progress>,
+    channel: Channel<devicesteer_core::setup::Progress>,
     viewer: State<'_, Viewer>,
-) -> Result<iphone_use_core::SetupStatus, String> {
-    use iphone_use_core::setup::{self, SetupStep};
+) -> Result<devicesteer_core::SetupStatus, String> {
+    use devicesteer_core::setup::{self, SetupStep};
     let step = SetupStep::parse(&step).map_err(|e| format!("{e:#}"))?;
     let progress: setup::ProgressFn = Arc::new(move |p| {
         let _ = channel.send(p);
@@ -85,7 +85,7 @@ async fn setup_cancel(viewer: State<'_, Viewer>) -> Result<(), String> {
 }
 
 /// Attaches to `udid`'s daemon (starting it if needed) and streams its events, and its video
-/// frames when `frames`, to `channel`, each as one wire message (see `iphone_use_daemon::wire`),
+/// frames when `frames`, to `channel`, each as one wire message (see `devicesteer_daemon::wire`),
 /// so the page parses one format for both. A selected device is attached without frames: its
 /// settings and agent session show before anyone asks for the screen.
 #[tauri::command]
@@ -196,17 +196,17 @@ async fn clipboard_sync(on: bool, viewer: State<'_, Viewer>) -> Result<bool, Str
 #[tauri::command]
 fn report(stats: Value) {
     use std::io::Write;
-    let path = iphone_use_core::paths::state_dir().join("viewer.log");
+    let path = devicesteer_core::paths::state_dir().join("viewer.log");
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "{stats}");
     }
 }
 
-/// A device to open right away (`IPHONE_USE_VIEWER_UDID`), for launching the viewer on one device
+/// A device to open right away (`DEVICESTEER_VIEWER_UDID`), for launching the viewer on one device
 /// from a script.
 #[tauri::command]
 fn initial_udid() -> Option<String> {
-    std::env::var("IPHONE_USE_VIEWER_UDID").ok().filter(|u| !u.is_empty())
+    std::env::var("DEVICESTEER_VIEWER_UDID").ok().filter(|u| !u.is_empty())
 }
 
 /// Where a recording started from the viewer goes: the user's videos folder (Movies on macOS),
@@ -220,7 +220,7 @@ fn recording_path(app: tauri::AppHandle, stamp: String) -> Result<String, String
         .or_else(|_| app.path().home_dir())
         .map_err(|e| format!("no folder for recordings: {e}"))?;
     let name: String = stamp.chars().filter(|c| c.is_ascii_alphanumeric() || " -.".contains(*c)).collect();
-    Ok(dir.join(format!("iphone-use {name}.mp4")).to_string_lossy().into_owned())
+    Ok(dir.join(format!("DeviceSteer {name}.mp4")).to_string_lossy().into_owned())
 }
 
 /// Saves a PNG of the screen the page drew (the request body) to the user's pictures folder (or
@@ -238,7 +238,7 @@ fn save_screenshot(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> R
         .picture_dir()
         .or_else(|_| app.path().home_dir())
         .map_err(|e| format!("no folder for screenshots: {e}"))?;
-    let path = dir.join(format!("iphone-use {name}.png"));
+    let path = dir.join(format!("DeviceSteer {name}.png"));
     std::fs::write(&path, png).map_err(|e| format!("could not save {}: {e}", path.display()))?;
     Ok(path.to_string_lossy().into_owned())
 }
@@ -275,5 +275,5 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source])
         .run(tauri::generate_context!())
-        .expect("error while running the iphone-use app");
+        .expect("error while running the DeviceSteer app");
 }

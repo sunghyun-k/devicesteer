@@ -1,4 +1,4 @@
-//! Device layer for iphone-use.
+//! Device layer for DeviceSteer.
 //!
 //! Everything goes through [idevice](https://github.com/jkcoxson/idevice), with no dependency on
 //! Xcode or CoreDevice on the host:

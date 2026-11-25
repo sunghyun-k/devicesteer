@@ -35,14 +35,14 @@ pub struct Client {
     _writer: tokio::task::JoinHandle<()>,
 }
 
-/// The `iphone-use` binary that runs daemons: `IPHONE_USE_BIN`, this executable when it is the
-/// CLI, the CLI next to this executable (the viewer ships with it), or `iphone-use` on PATH.
+/// The `devicesteer` binary that runs daemons: `DEVICESTEER_BIN`, this executable when it is the
+/// CLI, the CLI next to this executable (the viewer ships with it), or `devicesteer` on PATH.
 fn cli_binary() -> PathBuf {
-    if let Some(p) = std::env::var_os("IPHONE_USE_BIN") {
+    if let Some(p) = std::env::var_os("DEVICESTEER_BIN") {
         return PathBuf::from(p);
     }
     let exe = std::env::current_exe().ok();
-    let name = if cfg!(windows) { "iphone-use.exe" } else { "iphone-use" };
+    let name = if cfg!(windows) { "devicesteer.exe" } else { "devicesteer" };
     if let Some(exe) = &exe {
         if exe.file_name().is_some_and(|n| n == name) {
             return exe.clone();
@@ -57,7 +57,7 @@ fn cli_binary() -> PathBuf {
 }
 
 fn spawn_daemon(udid: &str) -> Result<()> {
-    let log = iphone_use_core::paths::state_dir().join(format!("{udid}.daemon.log"));
+    let log = devicesteer_core::paths::state_dir().join(format!("{udid}.daemon.log"));
     let mut cmd = std::process::Command::new(cli_binary());
     cmd.args(["daemon", "--udid", udid])
         .stdin(std::process::Stdio::null())
@@ -73,7 +73,7 @@ fn spawn_daemon(udid: &str) -> Result<()> {
 impl Client {
     /// Connects to the daemon for `udid` (or the only device), starting it if it isn't running.
     pub async fn connect(udid: Option<&str>, source: Source) -> Result<Self> {
-        let udid = iphone_use_core::resolve_udid(udid).await?;
+        let udid = devicesteer_core::resolve_udid(udid).await?;
         let stream = match transport::connect(&udid).await {
             Ok(s) => s,
             Err(_) => {
@@ -85,7 +85,7 @@ impl Client {
                         break s;
                     }
                     if began.elapsed() > Duration::from_secs(5) {
-                        let log = iphone_use_core::paths::state_dir().join(format!("{udid}.daemon.log"));
+                        let log = devicesteer_core::paths::state_dir().join(format!("{udid}.daemon.log"));
                         bail!("the daemon did not come up within 5 s; see {}", log.display());
                     }
                 }

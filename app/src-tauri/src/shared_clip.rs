@@ -25,7 +25,7 @@ use std::{
     time::Duration,
 };
 
-use iphone_use_daemon::Client;
+use devicesteer_daemon::Client;
 use serde_json::json;
 use tokio::sync::{Mutex, Notify};
 

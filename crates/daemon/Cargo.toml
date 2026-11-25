@@ -1,13 +1,13 @@
 [package]
-name = "iphone-use-daemon"
-description = "Per-device resident process for iphone-use, and the client the CLI and the viewer use"
+name = "devicesteer-daemon"
+description = "Per-device resident process for DeviceSteer, and the client the CLI and the viewer use"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-iphone-use-core.workspace = true
+devicesteer-core.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

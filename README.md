@@ -1,6 +1,7 @@
-# iPhone Use
+# DeviceSteer
 
-Operate a **real iPhone or iPad** connected over USB or Wi-Fi, from macOS or Windows.
+See and control your connected iPhone or iPad. DeviceSteer operates a **real iPhone or iPad**
+connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
 
 > **Status:** rewrite in progress. The Swift/macOS version (up to v0.7.1) was removed; this branch
 > rebuilds it as a Rust core with a CLI and a Tauri viewer, talking to the device through
@@ -11,7 +12,7 @@ Operate a **real iPhone or iPad** connected over USB or Wi-Fi, from macOS or Win
 
 ## Requirements
 
-- An iPhone or iPad on iOS 17 or later. `iphone-use setup` makes a new one ready without Xcode:
+- An iPhone or iPad on iOS 17 or later. `devicesteer setup` makes a new one ready without Xcode:
   it pairs ("Trust This Computer"), shows the Developer Mode switch, and mounts the Developer Disk
   Image (from Xcode's copy when there is one, else Apple's files downloaded from a pinned commit of
   [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) and checked by SHA-256).
@@ -23,28 +24,28 @@ Operate a **real iPhone or iPad** connected over USB or Wi-Fi, from macOS or Win
 
 ```sh
 cargo build
-./target/debug/iphone-use devices
-./target/debug/iphone-use setup      --udid <UDID>            # trust, Developer Mode, disk image
-./target/debug/iphone-use session start --udid <UDID> "turn on dark mode"   # prints a session id
-export IPHONE_USE_SESSION=<id>                                # or --session <id> on each command
-./target/debug/iphone-use services   --udid <UDID>
-./target/debug/iphone-use screenshot --udid <UDID> -o screen.png
-./target/debug/iphone-use ui         --udid <UDID>            # elements with @eN refs
-./target/debug/iphone-use tap        --udid <UDID> @e3 --label "open Display settings"
+./target/debug/devicesteer devices
+./target/debug/devicesteer setup      --udid <UDID>            # trust, Developer Mode, disk image
+./target/debug/devicesteer session start --udid <UDID> "turn on dark mode"   # prints a session id
+export DEVICESTEER_SESSION=<id>                                # or --session <id> on each command
+./target/debug/devicesteer services   --udid <UDID>
+./target/debug/devicesteer screenshot --udid <UDID> -o screen.png
+./target/debug/devicesteer ui         --udid <UDID>            # elements with @eN refs
+./target/debug/devicesteer tap        --udid <UDID> @e3 --label "open Display settings"
                                                               # or a label, or x,y in points
-./target/debug/iphone-use swipe      --udid <UDID> 200,700 200,300 --place
-./target/debug/iphone-use button     --udid <UDID> home
-./target/debug/iphone-use launch     --udid <UDID> com.apple.calculator
-./target/debug/iphone-use record start --udid <UDID> -o screen.mp4   # then: record stop
-./target/debug/iphone-use settings   --udid <UDID>            # appearance, text size, switches, ...
-./target/debug/iphone-use settings set --udid <UDID> appearance dark   # or text-size ax1, voiceover off,
+./target/debug/devicesteer swipe      --udid <UDID> 200,700 200,300 --place
+./target/debug/devicesteer button     --udid <UDID> home
+./target/debug/devicesteer launch     --udid <UDID> com.apple.calculator
+./target/debug/devicesteer record start --udid <UDID> -o screen.mp4   # then: record stop
+./target/debug/devicesteer settings   --udid <UDID>            # appearance, text size, switches, ...
+./target/debug/devicesteer settings set --udid <UDID> appearance dark   # or text-size ax1, voiceover off,
                                                               # location set 37.3349 -122.0090, ...
-./target/debug/iphone-use session handoff --udid <UDID> --reason "enter the passcode"
-./target/debug/iphone-use session finish  --udid <UDID>
+./target/debug/devicesteer session handoff --udid <UDID> --reason "enter the passcode"
+./target/debug/devicesteer session finish  --udid <UDID>
 ```
 
-**Agents:** run `iphone-use skill` for the usage guide that matches the binary (sessions, handing off
-to the user, reading the screen, labels). `skills/iphone-use/SKILL.md` is a bootstrap that points
+**Agents:** run `devicesteer skill` for the usage guide that matches the binary (sessions, handing off
+to the user, reading the screen, labels). `skills/devicesteer/SKILL.md` is a bootstrap that points
 there.
 
 Output is JSON. Device commands go through a per-device daemon that the first command starts

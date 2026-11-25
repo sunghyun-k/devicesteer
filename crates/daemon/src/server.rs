@@ -19,7 +19,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
-use iphone_use_core::{
+use devicesteer_core::{
     Button, Clipboard, Controller, TypeMethod, DeviceSettings, Display, DisplayPoller, Frame, FrameStream, MediaMode, Motion, RecordSummary,
     Recorder, Resampler, Session, Setting, TAP_HOLD, Toggle, TouchPhase,
     ax::{BuildOptions, Screen},
@@ -553,7 +553,7 @@ impl Daemon {
     /// answer means it joined the path, not that it reached the device.
     async fn touch(self: &Arc<Self>, dev: &mut Device, req: &Request) -> Result<Value> {
         let a = &req.args;
-        iphone_use_core::trace::line("req", format_args!("{} {}", req.conn, a.get("phase").and_then(Value::as_str).unwrap_or("?")));
+        devicesteer_core::trace::line("req", format_args!("{} {}", req.conn, a.get("phase").and_then(Value::as_str).unwrap_or("?")));
         let phase: TouchPhase = serde_json::from_value(a.get("phase").cloned().unwrap_or_default())
             .map_err(|_| anyhow!("touch needs a phase: down, move or up"))?;
         let at = a.get("point").map(point).transpose()?;
@@ -849,7 +849,7 @@ impl Daemon {
                 Ok(self.warn_voiceover(dev, r?).await)
             }
             // The clipboard on its own, with no paste: the viewer's "Send Clipboard", "Get
-            // Clipboard" and shared clipboard, and `iphone-use clipboard`. The contents go only to
+            // Clipboard" and shared clipboard, and `devicesteer clipboard`. The contents go only to
             // the client that asked; nothing here logs them.
             "clipboard_set" => {
                 let text = a.get("text").and_then(|v| v.as_str()).context("clipboard_set needs text")?;
@@ -1174,7 +1174,7 @@ impl Daemon {
         let a = &req.args;
         let action = a.get("action").and_then(Value::as_str).unwrap_or("status");
         let id = req.session.as_deref();
-        let need_id = || id.context("say which session with --session (or IPHONE_USE_SESSION); `session start` prints its id");
+        let need_id = || id.context("say which session with --session (or DEVICESTEER_SESSION); `session start` prints its id");
         let text = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
         let r = {
             let mut c = self.control.lock().unwrap();
@@ -1233,7 +1233,7 @@ impl Daemon {
                 }
             };
             if req.cmd == "touch" {
-                iphone_use_core::trace::line("recv", format_args!("{conn}"));
+                devicesteer_core::trace::line("recv", format_args!("{conn}"));
             }
             let result = match req.cmd.as_str() {
                 "ping" => Ok(json!({ "udid": self.udid, "pid": std::process::id() })),

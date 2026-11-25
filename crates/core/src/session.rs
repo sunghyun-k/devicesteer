@@ -75,7 +75,7 @@ impl Session {
     async fn open_tunnel(udid: Option<&str>) -> Result<Self> {
         let device = pick_device(mux_devices().await?, udid)?;
         let transport = transport_of(&device.connection_type).context("unknown usbmuxd connection type")?;
-        let provider = device.to_provider(mux_addr(), "iphone-use");
+        let provider = device.to_provider(mux_addr(), "devicesteer");
 
         // Over Wi-Fi the device closes CoreDeviceProxy (and the tunnel with it) unless some client
         // answers its heartbeat. USB needs none.
@@ -126,7 +126,7 @@ impl Session {
             bail!(
                 "the device does not advertise {name}. If it is a developer service, the Developer \
                  Disk Image is probably not mounted (a restart can unmount it): run \
-                 `iphone-use setup`, then retry"
+                 `devicesteer setup`, then retry"
             );
         }
         step(&format!("{name} connection"), T::connect_rsd(&mut self.adapter, &mut self.rsd)).await

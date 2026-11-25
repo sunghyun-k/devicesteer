@@ -270,7 +270,7 @@ test iPhone (iOS 27.2.1, USB) in Settings:
 ### 18. Live touch: steps must reach the device as an even path
 
 Dragging in the viewer scrolled the phone's list in visible jerks. Measured on the test iPhone
-(iOS 27.2.1, USB, 60 Hz panel) with `IPHONE_USE_INPUT_TRACE` (`crates/core/src/trace.rs`), the
+(iOS 27.2.1, USB, 60 Hz panel) with `DEVICESTEER_INPUT_TRACE` (`crates/core/src/trace.rs`), the
 viewer's own per-press counts, and `examples/touch_bench.rs`:
 
 - **The viewer sent two moves a second.** pointermove fired 60 to 100 times a second, but after
@@ -611,7 +611,7 @@ is checked only after Developer Mode reads on.
 
 iPhone, iOS 27.2.1, USB, the image from #31 (backing image in cryptexd's MobileAsset store):
 `mobile_image_mounter` `UnmountImage` for `/System/Developer` failed with MobileStorage error -2,
-"Failed to unload launchd jobs", and the image stayed mounted. Same with iphone-use's daemon
+"Failed to unload launchd jobs", and the image stayed mounted. Same with DeviceSteer's daemon
 stopped (no tunnel of ours open); macOS's own `CoreDeviceService` and `remotepairingd` were running,
 as they do whenever a device is connected. Nothing on the device changed.
 
@@ -623,7 +623,7 @@ once a DDI arrived as a MobileAsset (here through Xcode 27), it stays across res
 setups (an image uploaded through the mounter, as `setup disk-image` does) are documented to go
 away at every restart; this was not observed here.
 
-After the restart iphone-use's daemon (left running) reported `connected: false`, and the next
+After the restart DeviceSteer's daemon (left running) reported `connected: false`, and the next
 `ui` reconnected it (2.8 s); `ui`, `tap` and a video `media probe` worked.
 
 So: the code never unmounts, and the upload-and-mount path of `setup disk-image` can only be tried
@@ -645,7 +645,7 @@ change with Tauri or macOS.
 ### 34. Touch indicators: the end has to start when the finger lifts
 
 The viewer's touch disc grows and fades when the finger lifts. It started visibly late. Measured
-on the test iPhone (iOS 27.2.1, USB) with `IPHONE_USE_INPUT_TRACE` (`hid` lines) against the
+on the test iPhone (iOS 27.2.1, USB) with `DEVICESTEER_INPUT_TRACE` (`hid` lines) against the
 viewer's own times on the same wall clock:
 
 - **Agent tap: ~270 ms late.** The daemon sent the `tap` event before `Controller::tap`, which

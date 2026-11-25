@@ -8,7 +8,7 @@
 // touches, settings and the VoiceOver warning.
 //
 // URL options: `devices=normal|empty|error|slow`, `open=1` (show the first device's screen at
-// once, as IPHONE_USE_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
+// once, as DEVICESTEER_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
 // (no floating panel, for screenshots), `rotation=rot270` (start turned), `theme=light|dark`,
 // `session=agent|delegated_to_user|user` (a session already runs when the device is attached),
 // `lights=0` (no stand-in for the macOS traffic lights), `setup=ok|deny|fail` (how the setup
@@ -287,9 +287,9 @@ const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 function setupStatus(d: MockDevice) {
   const at = d.setup ? SETUP_ORDER.indexOf(d.setup) : SETUP_ORDER.length;
   const next: Record<SetupStep, string> = {
-    trust: `run \`iphone-use setup trust --udid ${d.udid}\` and ask the user to unlock the device, tap Trust and enter its passcode`,
-    developer_mode: `run \`iphone-use setup developer-mode --udid ${d.udid}\`, then ask the user to turn on Developer Mode`,
-    disk_image: `run \`iphone-use setup disk-image --udid ${d.udid}\` (no action on the device is needed)`,
+    trust: `run \`devicesteer setup trust --udid ${d.udid}\` and ask the user to unlock the device, tap Trust and enter its passcode`,
+    developer_mode: `run \`devicesteer setup developer-mode --udid ${d.udid}\`, then ask the user to turn on Developer Mode`,
+    disk_image: `run \`devicesteer setup disk-image --udid ${d.udid}\` (no action on the device is needed)`,
   };
   return {
     udid: d.udid,
@@ -320,7 +320,7 @@ async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number })
     say("Unlock the device, then tap Trust and enter its passcode", true);
     await wait(2500);
     if (state.setupEnd === "deny")
-      throw "the user tapped Don't Trust. Unplug the cable and plug it back in so the device asks again, then run `iphone-use setup trust` again";
+      throw "the user tapped Don't Trust. Unplug the cable and plug it back in so the device asks again, then run `devicesteer setup trust` again";
     fail("pairing failed (connection error: the device closed the connection)");
     say("Trusted. Saving the pair record");
     await wait(500);
@@ -402,12 +402,12 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       state.channel = undefined;
       return null;
     case "save_screenshot":
-      return "/Users/me/Pictures/iphone-use 2026-11-24 18.52.07.png";
+      return "/Users/me/Pictures/DeviceSteer 2026-11-24 18.52.07.png";
     case "report":
       state.lastReport = args.stats;
       return null;
     case "recording_path":
-      return `/Users/me/Movies/iphone-use ${args.stamp}.mp4`;
+      return `/Users/me/Movies/DeviceSteer ${args.stamp}.mp4`;
     case "reveal":
       return null;
     case "clipboard_to_device":

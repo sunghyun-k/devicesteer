@@ -4,14 +4,14 @@
 //! out the pictures around a turn. Used for PITFALLS #27.
 //!
 //! ```sh
-//! cargo run -p iphone-use-core --example rotation_probe -- <udid> <seconds> <out.h265>
+//! cargo run -p devicesteer-core --example rotation_probe -- <udid> <seconds> <out.h265>
 //! ```
 //!
 //! It puts no input on the device; turn it by hand while it runs.
 
 use std::{io::Write, time::Instant};
 
-use iphone_use_core::{DisplayPoller, FrameStream, MediaMode, MediaSession, Session};
+use devicesteer_core::{DisplayPoller, FrameStream, MediaMode, MediaSession, Session};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -109,7 +109,7 @@ async fn probe() -> anyhow::Result<()> {
                     Ok(p) => p,
                     Err(e) => { println!("{:>6} packets: {e}", ms()); continue }
                 };
-                if p.kind != iphone_use_core::StreamKind::Video {
+                if p.kind != devicesteer_core::StreamKind::Video {
                     sec_audio += 1;
                     continue;
                 }

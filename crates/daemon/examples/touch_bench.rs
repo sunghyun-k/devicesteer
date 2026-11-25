@@ -1,13 +1,13 @@
 //! Drives live touches through the daemon as the viewer does (one step in flight, each move with
 //! its time, the video subscribed) and prints how the device's frames came while the finger moved,
-//! and the steps' round trips. Used for PITFALLS #18; together with `IPHONE_USE_INPUT_TRACE` (see
-//! `iphone_use_core::trace`) it shows where steps get lost or bunched.
+//! and the steps' round trips. Used for PITFALLS #18; together with `DEVICESTEER_INPUT_TRACE` (see
+//! `devicesteer_core::trace`) it shows where steps get lost or bunched.
 //!
 //! Swipes go up and down 400 pt in the middle of the screen over 0.6 s, so open a long list first
 //! (Settings). On a personal device, follow AGENTS.md: this puts input on the screen.
 //!
 //! ```sh
-//! cargo run -p iphone-use-daemon --example touch_bench -- <udid> [hz=60] [swipes=4] [jitter_ms=0] [flick]
+//! cargo run -p devicesteer-daemon --example touch_bench -- <udid> [hz=60] [swipes=4] [jitter_ms=0] [flick]
 //! ```
 //!
 //! `jitter_ms` delays each step by up to that much, as the page and IPC do; `flick` lifts while
@@ -15,7 +15,7 @@
 
 use std::time::{Duration, Instant};
 
-use iphone_use_daemon::{Client, Source};
+use devicesteer_daemon::{Client, Source};
 use serde_json::json;
 
 #[tokio::main]
@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     let flog = log.clone();
     let frames = tokio::spawn(async move {
         while let Some(m) = events.recv().await {
-            if let iphone_use_daemon::wire::Message::Frame { header, .. } = m {
+            if let devicesteer_daemon::wire::Message::Frame { header, .. } = m {
                 let pts = header.get("pts_us").and_then(|v| v.as_u64()).unwrap_or(0);
                 flog.lock().unwrap().push((Instant::now(), pts));
             }

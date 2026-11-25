@@ -1,6 +1,6 @@
-# iphone-use
+# DeviceSteer
 
-`iphone-use` operates a **real iPhone or iPad** connected over USB or Wi-Fi. It is not a simulator:
+`devicesteer` operates a **real iPhone or iPad** connected over USB or Wi-Fi. It is not a simulator:
 the device is usually someone's personal phone, with their messages, accounts and money on it.
 
 Every command prints JSON on stdout. A failure exits 1 and prints `{"error": "..."}` on stderr.
@@ -8,13 +8,13 @@ Every command prints JSON on stdout. A failure exits 1 and prints `{"error": "..
 an error that says the user took over, stopped you, or is waiting.
 
 Device commands go through a per-device daemon that the first command starts. The person may be
-watching the device in the iphone-use viewer, where they see your session, your touches and their
+watching the device in the DeviceSteer viewer, where they see your session, your touches and their
 labels, and can take over or stop you at any time.
 
 ## Pick the device
 
 ```sh
-iphone-use devices                     # udid, name, model, OS, usb/wifi
+devicesteer devices                     # udid, name, model, OS, usb/wifi
 ```
 
 Pass `--udid <UDID>` with every command whenever more than one device is listed. If you don't know
@@ -28,11 +28,11 @@ A device needs three steps before the other commands work: it trusts this comput
 is on, and the Developer Disk Image is mounted (a restart can unmount it). No Xcode is needed.
 
 ```sh
-iphone-use setup status --udid <UDID>          # reads only: which steps are done, and `next`
-iphone-use setup --udid <UDID>                 # does every step that isn't done, in order
-iphone-use setup trust --udid <UDID>           # pair over USB; waits for the user to tap Trust
-iphone-use setup developer-mode --udid <UDID>  # shows the switch; waits while the user turns it on
-iphone-use setup disk-image --udid <UDID>      # mounts the disk image; nothing to do on the device
+devicesteer setup status --udid <UDID>          # reads only: which steps are done, and `next`
+devicesteer setup --udid <UDID>                 # does every step that isn't done, in order
+devicesteer setup trust --udid <UDID>           # pair over USB; waits for the user to tap Trust
+devicesteer setup developer-mode --udid <UDID>  # shows the switch; waits while the user turns it on
+devicesteer setup disk-image --udid <UDID>      # mounts the disk image; nothing to do on the device
 ```
 
 - **The first two steps need the person holding the device.** Before you run one, tell the user
@@ -56,12 +56,12 @@ Everything you do for one user goal happens in **one session**. The session is w
 shows, what the user can take over or stop, and what keeps other agents off the device meanwhile.
 
 ```sh
-iphone-use session start "turn on dark mode"      # prints the session id, such as s4f9a21
-export IPHONE_USE_SESSION=s4f9a21                 # or pass --session s4f9a21 to every command
-iphone-use ui
-iphone-use tap @e12 --label "open Display settings"
+devicesteer session start "turn on dark mode"      # prints the session id, such as s4f9a21
+export DEVICESTEER_SESSION=s4f9a21                 # or pass --session s4f9a21 to every command
+devicesteer ui
+devicesteer tap @e12 --label "open Display settings"
 ...
-iphone-use session finish                         # at the end of your reply
+devicesteer session finish                         # at the end of your reply
 ```
 
 - **Name the session after the goal**, in a few words the user would recognize.
@@ -112,7 +112,7 @@ Hand the device to the user, with what they should do, when the next step needs 
 - a judgement only the user can make (which contact, which photo, whether to delete or send)
 
 ```sh
-iphone-use session handoff --reason "enter your passcode to unlock"
+devicesteer session handoff --reason "enter your passcode to unlock"
 ```
 
 Then end your reply and tell the user what to do. The viewer shows your reason. When they press
@@ -122,9 +122,9 @@ Then end your reply and tell the user what to do. The viewer shows your reason. 
 ## Read the screen before you act
 
 ```sh
-iphone-use ui                 # the accessibility tree: elements with @eN refs, role, label, frame
-iphone-use ui --full          # also accessibility identifiers (slower)
-iphone-use screenshot -o /absolute/path/screen.png
+devicesteer ui                 # the accessibility tree: elements with @eN refs, role, label, frame
+devicesteer ui --full          # also accessibility identifiers (slower)
+devicesteer screenshot -o /absolute/path/screen.png
 ```
 
 - **Read the screen before your first input** in a session. The user may have just been in another
@@ -149,17 +149,17 @@ never turn points yourself.
   rotates in front); the home screen of most iPhones stays portrait. **After a turn, read the
   screen again**: refs and points from before it point at the wrong places. The daemon notices a
   turn within about half a second.
-- `iphone-use display` shows the current `rotation` and `orientation` without reading the screen.
+- `devicesteer display` shows the current `rotation` and `orientation` without reading the screen.
 
 ## Input
 
 ```sh
-iphone-use tap @e12 --label "open Wi-Fi settings"       # by ref from the last ui
-iphone-use tap "Wi-Fi" --label "open Wi-Fi settings"    # by label: exact, then a unique substring
-iphone-use tap 200,400 --label "dismiss the banner"     # x,y in screen points
-iphone-use swipe 200,700 200,300 --place --label "scroll down the list"
-iphone-use button home --label "go to the home screen"  # home, lock, volume_up, volume_down, eject
-iphone-use launch com.apple.Preferences
+devicesteer tap @e12 --label "open Wi-Fi settings"       # by ref from the last ui
+devicesteer tap "Wi-Fi" --label "open Wi-Fi settings"    # by label: exact, then a unique substring
+devicesteer tap 200,400 --label "dismiss the banner"     # x,y in screen points
+devicesteer swipe 200,700 200,300 --place --label "scroll down the list"
+devicesteer button home --label "go to the home screen"  # home, lock, volume_up, volume_down, eject
+devicesteer launch com.apple.Preferences
 ```
 
 - **Give every tap, swipe and button a `--label`** of 3 to 6 words saying what it is for. The viewer
@@ -176,7 +176,7 @@ iphone-use launch com.apple.Preferences
 
 If an input's result carries a `warning` about VoiceOver, taps only select elements and double taps
 activate them, so your input doesn't do what you expect. Don't work around it with double taps. Ask
-the user whether to turn it off (`iphone-use settings set voiceover off`), and turn it back on at the
+the user whether to turn it off (`devicesteer settings set voiceover off`), and turn it back on at the
 end if you did.
 
 ## Type text and press keys
@@ -184,12 +184,12 @@ end if you did.
 Tap the field first (so the keyboard is up), then:
 
 ```sh
-iphone-use type "Hello 안녕하세요 1호선!" --label "enter the search text"
-iphone-use type "Bluetooth" --enter                 # Return after the text
-iphone-use key return --label "submit the form"     # also backspace, tab, escape, arrows, space
-iphone-use key cmd+a                                 # combinations: cmd+c, cmd+v, cmd+z, shift+tab
-iphone-use paste "🙂 thanks" --label "add the emoji" # what type can't send; see below
-iphone-use clipboard get --out "$TMPDIR/clip.txt"     # only when the user asks; see below
+devicesteer type "Hello 안녕하세요 1호선!" --label "enter the search text"
+devicesteer type "Bluetooth" --enter                 # Return after the text
+devicesteer key return --label "submit the form"     # also backspace, tab, escape, arrows, space
+devicesteer key cmd+a                                 # combinations: cmd+c, cmd+v, cmd+z, shift+tab
+devicesteer paste "🙂 thanks" --label "add the emoji" # what type can't send; see below
+devicesteer clipboard get --out "$TMPDIR/clip.txt"     # only when the user asks; see below
 ```
 
 - `type` sends Latin letters, digits, symbols and Hangul, whatever language the on-screen keyboard
@@ -216,14 +216,14 @@ iphone-use clipboard get --out "$TMPDIR/clip.txt"     # only when the user asks;
 ## Settings and location
 
 ```sh
-iphone-use settings                                   # current values; unsupported ones are null
-iphone-use settings set appearance dark               # light | dark
-iphone-use settings set text-size l                   # xs s m l xl xxl xxxl ax1..ax5
-iphone-use settings set reduce-motion on              # also increase-contrast, show-borders,
+devicesteer settings                                   # current values; unsupported ones are null
+devicesteer settings set appearance dark               # light | dark
+devicesteer settings set text-size l                   # xs s m l xl xxl xxxl ax1..ax5
+devicesteer settings set reduce-motion on              # also increase-contrast, show-borders,
                                                       # reduce-transparency, voiceover
-iphone-use settings set liquid-glass 0.5              # 0 (clear) .. 1 (tinted)
-iphone-use settings set location set 37.3349 -122.0090
-iphone-use settings set location clear
+devicesteer settings set liquid-glass 0.5              # 0 (clear) .. 1 (tinted)
+devicesteer settings set location set 37.3349 -122.0090
+devicesteer settings set location clear
 ```
 
 - Change a setting only when the task needs it, and **put it back** before you finish: note the
@@ -233,8 +233,8 @@ iphone-use settings set location clear
 ## Record the screen
 
 ```sh
-iphone-use record start -o /absolute/path/screen.mp4
-iphone-use record stop                                # prints the summary
+devicesteer record start -o /absolute/path/screen.mp4
+devicesteer record stop                                # prints the summary
 ```
 
 The viewer shows that a recording runs, and the person watching can stop it there; `record stop`
@@ -245,7 +245,7 @@ beyond the task.
 
 - Restore what you changed: settings, location, a hardware keyboard you connected, text you typed
   that wasn't the task, the app you left the user in if they care.
-- `iphone-use session finish` as the last command of your reply.
+- `devicesteer session finish` as the last command of your reply.
 - Tell the user what you did and anything you left changed.
 
 ## Don't

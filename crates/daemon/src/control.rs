@@ -152,12 +152,12 @@ impl AgentSession {
             ),
             Some(Ended::Expired) => format!(
                 "session {id} '{name}' expired after {} min without a command. The user may have used the device \
-                 since: read the screen again (`ui`), then start a new session with `iphone-use session start \
+                 since: read the screen again (`ui`), then start a new session with `devicesteer session start \
                  \"<goal>\"`",
                 self.limit_at_end.unwrap_or(AGENT_IDLE).as_secs() / 60
             ),
             _ => format!(
-                "session {id} '{name}' has finished. Start a new session for new work: `iphone-use session start \
+                "session {id} '{name}' has finished. Start a new session for new work: `devicesteer session start \
                  \"<goal>\"`"
             ),
         }
@@ -166,8 +166,8 @@ impl AgentSession {
 
 /// Sent with input that came without a session.
 pub const NO_SESSION_NOTE: &str = "sent without a session: the viewer can't show who is driving or let the user \
-    stop you. Start one with `iphone-use session start \"<goal>\"` and pass its id with --session (or \
-    IPHONE_USE_SESSION)";
+    stop you. Start one with `devicesteer session start \"<goal>\"` and pass its id with --session (or \
+    DEVICESTEER_SESSION)";
 /// Sent with the first input after the human gave the device back.
 pub const RETURNED_NOTE: &str = "the user used the device and handed it back before this input; read the screen \
     (`ui`) again if you haven't";
@@ -237,8 +237,8 @@ impl ControlState {
     fn live_message(s: &AgentSession) -> String {
         format!(
             "session {} '{}' is using this device (owner: {}). If it is yours, pass its id with --session (or \
-             IPHONE_USE_SESSION). Otherwise wait until it finishes, or ask the user: if its agent is gone, they can \
-             end it with `iphone-use session finish --force`",
+             DEVICESTEER_SESSION). Otherwise wait until it finishes, or ask the user: if its agent is gone, they can \
+             end it with `devicesteer session finish --force`",
             s.id,
             s.name,
             serde_json::to_value(s.owner).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
@@ -284,7 +284,7 @@ impl ControlState {
                 if let Some(s) = live {
                     m.push_str(&format!("; {}", Self::live_message(s)));
                 } else {
-                    m.push_str("; start one with `iphone-use session start \"<goal>\"`");
+                    m.push_str("; start one with `devicesteer session start \"<goal>\"`");
                 }
                 Err(m)
             }
@@ -301,7 +301,7 @@ impl ControlState {
                 None => Ok(json!({ "ended": null, "note": "no session was running" })),
             };
         }
-        let id = id.ok_or("say which session to finish with --session (or IPHONE_USE_SESSION); to end another agent's session, the user can run `session finish --force`")?;
+        let id = id.ok_or("say which session to finish with --session (or DEVICESTEER_SESSION); to end another agent's session, the user can run `session finish --force`")?;
         if let Some(old) = self.recent.iter().rev().find(|s| s.id == id)
             && self.session.as_ref().is_none_or(|s| s.id != id)
         {
@@ -377,7 +377,7 @@ impl ControlState {
                 if self.stopped {
                     return Err("the user pressed Stop in the viewer. Stop now: don't retry, and don't route around \
                                 it. Tell the user where you stopped; continue only if they ask, in a new session \
-                                (`iphone-use session start \"<goal>\"`)"
+                                (`devicesteer session start \"<goal>\"`)"
                         .into());
                 }
                 Some(NO_SESSION_NOTE)
@@ -393,7 +393,7 @@ impl ControlState {
                         return Err(format!(
                             "the user took over session {} in the viewer; agent input is refused until they hand it \
                              back. Stop here: don't retry or work around it. Tell the user you are waiting, and run \
-                             `iphone-use session resume` once they press Hand back or tell you to continue",
+                             `devicesteer session resume` once they press Hand back or tell you to continue",
                             s.id
                         ));
                     }
@@ -401,7 +401,7 @@ impl ControlState {
                         return Err(format!(
                             "you handed session {} to the user (\"{}\"); agent input is refused until you take it \
                              back. Stop and tell the user what they need to do; once they press Done in the viewer or \
-                             tell you they are done, run `iphone-use session resume`",
+                             tell you they are done, run `devicesteer session resume`",
                             s.id,
                             s.reason.as_deref().unwrap_or("")
                         ));

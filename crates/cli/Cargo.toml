@@ -1,18 +1,18 @@
 [package]
-name = "iphone-use-cli"
-description = "Command-line interface for iphone-use"
+name = "devicesteer-cli"
+description = "Command-line interface for DeviceSteer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "iphone-use"
+name = "devicesteer"
 path = "src/main.rs"
 
 [dependencies]
-iphone-use-core.workspace = true
-iphone-use-daemon.workspace = true
+devicesteer-core.workspace = true
+devicesteer-daemon.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow.workspace = true
 serde.workspace = true

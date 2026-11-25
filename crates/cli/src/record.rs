@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use iphone_use_core::{FrameStream, MediaMode, MediaSession, Recorder, Session, paths};
+use devicesteer_core::{FrameStream, MediaMode, MediaSession, Recorder, Session, paths};
 use serde_json::{Value, json};
 
 /// The state files of a background recording: pid and path, stop request, the recorder's stdout

@@ -283,7 +283,7 @@ async fn pick(udid: Option<&str>) -> Result<(UsbmuxdDevice, Vec<Transport>)> {
 /// The setup state of `udid` (or the only connected device).
 pub async fn status(udid: Option<&str>) -> Result<SetupStatus> {
     let (device, transports) = pick(udid).await?;
-    let provider = device.to_provider(mux_addr(), "iphone-use");
+    let provider = device.to_provider(mux_addr(), "devicesteer");
     let p = probe(&provider).await?;
     Ok(describe(&device.udid, transports, &p))
 }
@@ -316,16 +316,16 @@ fn describe(udid: &str, transports: Vec<Transport>, p: &Probe) -> SetupStatus {
     let next = match step {
         None => "the device is ready".to_string(),
         Some(SetupStep::Trust) if !usb => {
-            "connect the device with a USB cable: it can only be paired over USB. Then run `iphone-use setup trust`".into()
+            "connect the device with a USB cable: it can only be paired over USB. Then run `devicesteer setup trust`".into()
         }
         Some(SetupStep::Trust) => format!(
-            "run `iphone-use setup trust {u}` and ask the user to unlock the device, tap Trust and enter its passcode"
+            "run `devicesteer setup trust {u}` and ask the user to unlock the device, tap Trust and enter its passcode"
         ),
         Some(SetupStep::DeveloperMode) => format!(
-            "run `iphone-use setup developer-mode {u}`, then ask the user to turn on Settings > Privacy & Security > \
+            "run `devicesteer setup developer-mode {u}`, then ask the user to turn on Settings > Privacy & Security > \
              Developer Mode and tap Restart; after the restart they unlock the device, tap Turn On and enter the passcode"
         ),
-        Some(SetupStep::DiskImage) => format!("run `iphone-use setup disk-image {u}` (no action on the device is needed)"),
+        Some(SetupStep::DiskImage) => format!("run `devicesteer setup disk-image {u}` (no action on the device is needed)"),
     };
     SetupStatus { udid: udid.to_string(), transports, ready: step.is_none(), step, steps, next }
 }
@@ -356,12 +356,12 @@ pub async fn run(udid: Option<&str>, wait: Duration, ddi: Option<&Path>, progres
 /// Waits up to `wait` for the user. Errors if they tap Don't Trust.
 pub async fn trust(udid: Option<&str>, wait: Duration, progress: ProgressFn) -> Result<SetupStatus> {
     let (device, transports) = pick(udid).await?;
-    let provider = device.to_provider(mux_addr(), "iphone-use");
+    let provider = device.to_provider(mux_addr(), "devicesteer");
     if probe(&provider).await?.untrusted.is_none() {
         return status(Some(&device.udid)).await;
     }
     if !transports.contains(&Transport::Usb) {
-        bail!("pairing works over USB only: connect the device with a cable, then run `iphone-use setup trust` again");
+        bail!("pairing works over USB only: connect the device with a cable, then run `devicesteer setup trust` again");
     }
     let s = SetupStep::Trust;
     let mut mux = step("usbmuxd connection", mux_addr().connect(0)).await?;
@@ -374,7 +374,7 @@ pub async fn trust(udid: Option<&str>, wait: Duration, progress: ProgressFn) -> 
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
             bail!(
-                "nobody tapped Trust on the device within {}s. Unlock it, then run `iphone-use setup trust` again \
+                "nobody tapped Trust on the device within {}s. Unlock it, then run `devicesteer setup trust` again \
                  and tap Trust when it asks",
                 wait.as_secs()
             );
@@ -391,7 +391,7 @@ pub async fn trust(udid: Option<&str>, wait: Duration, progress: ProgressFn) -> 
             }
             Ok(Err(IdeviceError::UserDeniedPairing)) => bail!(
                 "the user tapped Don't Trust. Unplug the cable and plug it back in so the device asks again, then \
-                 run `iphone-use setup trust` again"
+                 run `devicesteer setup trust` again"
             ),
             Ok(Err(e)) => bail!("pairing failed (connection error: {e:?})"),
         }
@@ -413,12 +413,12 @@ pub async fn developer_mode(udid: Option<&str>, wait: Option<Duration>, progress
     let before = status(udid).await?;
     match before.state(s) {
         StepState::Done => return Ok(before),
-        StepState::Blocked => bail!("the device doesn't trust this computer yet: run `iphone-use setup trust` first"),
+        StepState::Blocked => bail!("the device doesn't trust this computer yet: run `devicesteer setup trust` first"),
         StepState::Needed => {}
     }
     let udid = before.udid.clone();
     let (device, _) = pick(Some(&udid)).await?;
-    let provider = device.to_provider(mux_addr(), "iphone-use");
+    let provider = device.to_provider(mux_addr(), "devicesteer");
     let mut amfi = step("AMFI connection", AmfiClient::connect(&provider)).await?;
     step("revealing the Developer Mode switch", amfi.reveal_developer_mode_option_in_ui()).await?;
     report(
@@ -460,14 +460,14 @@ pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: Pro
     match before.state(s) {
         StepState::Done => return Ok(before),
         StepState::Blocked if before.step == Some(SetupStep::Trust) => {
-            bail!("the device doesn't trust this computer yet: run `iphone-use setup trust` first")
+            bail!("the device doesn't trust this computer yet: run `devicesteer setup trust` first")
         }
-        StepState::Blocked => bail!("Developer Mode is off: run `iphone-use setup developer-mode` first"),
+        StepState::Blocked => bail!("Developer Mode is off: run `devicesteer setup developer-mode` first"),
         StepState::Needed => {}
     }
     let udid = before.udid.clone();
     let (device, _) = pick(Some(&udid)).await?;
-    let provider = device.to_provider(mux_addr(), "iphone-use");
+    let provider = device.to_provider(mux_addr(), "devicesteer");
 
     let mut lockdown = step("lockdown connection", LockdownClient::connect(&provider)).await?;
     let pairing = step("pair record lookup", provider.get_pairing_file()).await?;
@@ -478,7 +478,7 @@ pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: Pro
         .context("the device did not report its UniqueChipID")?;
     let version = step("lockdown read", lockdown.get_value(Some("ProductVersion"), None)).await?;
     if version.as_string().and_then(|v| v.split('.').next()?.parse::<u32>().ok()).is_some_and(|v| v < 17) {
-        bail!("iphone-use needs iOS 17 or later; this device runs {}", version.as_string().unwrap_or("?"));
+        bail!("DeviceSteer needs iOS 17 or later; this device runs {}", version.as_string().unwrap_or("?"));
     }
 
     let mut mounter = step("image mounter connection", ImageMounter::connect(&provider)).await?;
@@ -549,11 +549,11 @@ const DDI_FILES: [(&str, &str); 3] = [
 ];
 
 /// The disk image for a device (`board`, `chip` from its personalization identifiers), from the
-/// first of: `source`; `IPHONE_USE_DDI`; Xcode's copy on macOS; the download cache; a download.
+/// first of: `source`; `DEVICESTEER_DDI`; Xcode's copy on macOS; the download cache; a download.
 /// A folder whose manifest doesn't list the device is skipped, so an old Xcode doesn't block a
 /// newer phone.
 pub async fn find_disk_image(source: Option<&Path>, board: u64, chip: u64, progress: &ProgressFn) -> Result<DiskImageFiles> {
-    if let Some(dir) = source.map(Path::to_path_buf).or_else(|| std::env::var_os("IPHONE_USE_DDI").map(PathBuf::from)) {
+    if let Some(dir) = source.map(Path::to_path_buf).or_else(|| std::env::var_os("DEVICESTEER_DDI").map(PathBuf::from)) {
         return disk_image_in(&dir, board, chip, &dir.display().to_string())
             .with_context(|| format!("{} holds no developer disk image for this device", dir.display()));
     }
@@ -708,7 +708,7 @@ mod tests {
 
     #[test]
     fn finds_files_by_manifest_path_or_mirror_name() {
-        let dir = std::env::temp_dir().join(format!("iphone-use-ddi-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("devicesteer-ddi-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("Firmware")).unwrap();
         let identity = |board: &str, dmg: &str| {

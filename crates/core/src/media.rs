@@ -485,7 +485,7 @@ impl MediaSession {
             bail!("no video stream runs in this media session");
         };
         self.fir_seq = self.fir_seq.wrapping_add(1);
-        let packet = idevice::core_device::build_keyframe_request(ours, "iphone-use", media_ssrc, &[], self.fir_seq);
+        let packet = idevice::core_device::build_keyframe_request(ours, "devicesteer", media_ssrc, &[], self.fir_seq);
         udp.send_to(VIDEO_SENDER_PORT, packet)
             .await
             .context("sending a keyframe request failed (tunnel closed)")
@@ -621,7 +621,7 @@ mod tests {
 
     #[test]
     fn the_marker_keeps_sessions_until_struck() {
-        let dir = std::env::temp_dir().join(format!("iphone-use-media-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("devicesteer-media-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let marker = dir.join("x.media");
         mark(&marker, "a");

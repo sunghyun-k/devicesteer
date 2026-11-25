@@ -39,8 +39,8 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
-iphone-use-core = { path = "crates/core" }
-iphone-use-daemon = { path = "crates/daemon" }
+devicesteer-core = { path = "crates/core" }
+devicesteer-daemon = { path = "crates/daemon" }
 uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 

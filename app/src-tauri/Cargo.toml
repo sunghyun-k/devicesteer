@@ -1,21 +1,21 @@
 [package]
-name = "iphone-use-app"
-description = "iphone-use viewer"
+name = "devicesteer-app"
+description = "DeviceSteer viewer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [lib]
-name = "iphone_use_app_lib"
+name = "devicesteer_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-iphone-use-core.workspace = true
-iphone-use-daemon.workspace = true
+devicesteer-core.workspace = true
+devicesteer-daemon.workspace = true
 tokio.workspace = true
 tauri = { version = "2", features = [] }
 serde.workspace = true

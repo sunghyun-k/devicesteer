@@ -1,5 +1,5 @@
 //! The local transport: a Unix socket in the state directory on macOS and Linux. Windows will use
-//! a named pipe (`\\.\pipe\iphone-use-<udid>`); that side is not written yet.
+//! a named pipe (`\\.\pipe\devicesteer-<udid>`); that side is not written yet.
 
 use std::path::PathBuf;
 
@@ -7,12 +7,12 @@ use anyhow::Result;
 
 /// Where the daemon for `udid` listens.
 pub fn socket_path(udid: &str) -> PathBuf {
-    let p = iphone_use_core::paths::state_dir().join(format!("{udid}.sock"));
+    let p = devicesteer_core::paths::state_dir().join(format!("{udid}.sock"));
     // Unix socket paths are limited to about 104 bytes on macOS.
     if p.as_os_str().len() < 100 {
         p
     } else {
-        std::env::temp_dir().join(format!("iphone-use-{udid}.sock"))
+        std::env::temp_dir().join(format!("devicesteer-{udid}.sock"))
     }
 }
 
