@@ -96,7 +96,8 @@ scripts/            build-cli.sh (the CLI for the bundle), release.sh (release M
 app/src-tauri/windows/  installer-hooks.nsh: additions to Tauri's NSIS installer
 site/               The product homepage, devicesteer.sunghyunkim.com: static HTML/CSS with no build
                     step, served by Vercel from this folder (production branch main); llms.txt
-                    summarises the product for agents; images/ holds its pictures
+                    summarises the product for agents; images/ holds its pictures; fonts/ holds
+                    the Geist typefaces (OFL)
 THIRD_PARTY_NOTICES.md  Code adapted from other projects, with their licenses
 docs/PITFALLS.md    Numbered observations, cited from code as PITFALLS #N
 docs/SETUP.md       Device setup without Xcode: steps, detection, where the disk image comes from
