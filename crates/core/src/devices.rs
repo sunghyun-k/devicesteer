@@ -42,10 +42,44 @@ pub struct DeviceInfo {
     /// when it is ready.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub setup: Option<SetupStep>,
+    /// Why DeviceSteer can't work with this device (its OS is older than iOS 17), as a sentence to
+    /// show. Such a device has no `setup`: no step would make it usable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsupported: Option<String>,
     /// Why the device could not be read (connection dropped, lockdown failed). A device that is
     /// only waiting for setup has `setup` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// The oldest major OS version DeviceSteer works with. Everything goes through CoreDeviceProxy,
+/// RSD and RemoteXPC, which the device only has from iOS 17.
+pub const MIN_OS_MAJOR: u32 = 17;
+
+/// The major version in a lockdown `ProductVersion` such as `15.8.8`.
+fn os_major(version: &str) -> Option<u32> {
+    version.trim().split('.').next()?.parse().ok()
+}
+
+/// Why a device running `version` can't be used, or `None` when it can (or the version doesn't
+/// parse: the later steps then say what is wrong). `device_class` is lockdown's `DeviceClass`, to
+/// name the OS as the owner knows it.
+///
+/// The wording must not say "connection" or "tunnel": the daemon would take it for a dropped
+/// connection and keep retrying (lib.rs `step`).
+pub fn unsupported_reason(version: &str, device_class: Option<&str>) -> Option<String> {
+    let major = os_major(version)?;
+    if major >= MIN_OS_MAJOR {
+        return None;
+    }
+    let os = if device_class == Some("iPad") { "iPadOS" } else { "iOS" };
+    Some(format!("DeviceSteer needs iOS {MIN_OS_MAJOR} or later; this device runs {os} {}", version.trim()))
+}
+
+/// [`unsupported_reason`] for a device's lockdown values.
+pub(crate) fn unsupported_in(values: &plist::Dictionary) -> Option<String> {
+    let s = |k: &str| values.get(k).and_then(|v| v.as_string());
+    unsupported_reason(s("ProductVersion")?, s("DeviceClass"))
 }
 
 pub(crate) fn transport_of(c: &Connection) -> Option<Transport> {
@@ -93,6 +127,7 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
                     os_version: None,
                     build_version: None,
                     setup: None,
+                    unsupported: None,
                     error: None,
                 },
                 d,
@@ -106,6 +141,7 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
         match crate::setup::probe(&provider).await {
             Ok(p) => {
                 info.setup = p.step();
+                info.unsupported = p.unsupported.clone();
                 let values = &p.values;
                 let s = |k: &str| values.get(k).and_then(|v| v.as_string()).map(str::to_owned);
                 info.name = s("DeviceName");
@@ -120,4 +156,47 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
         list.push(info);
     }
     Ok(list)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn versions_below_17_are_unsupported() {
+        assert_eq!(os_major("15.8.8"), Some(15));
+        assert_eq!(os_major("17"), Some(17));
+        assert_eq!(os_major("27.3"), Some(27));
+        assert_eq!(os_major(""), None);
+        assert_eq!(os_major("beta"), None);
+
+        assert_eq!(
+            unsupported_reason("15.8.8", Some("iPhone")).as_deref(),
+            Some("DeviceSteer needs iOS 17 or later; this device runs iOS 15.8.8")
+        );
+        assert_eq!(
+            unsupported_reason("16.7.10", Some("iPad")).as_deref(),
+            Some("DeviceSteer needs iOS 17 or later; this device runs iPadOS 16.7.10")
+        );
+        assert!(unsupported_reason("17.0", Some("iPhone")).is_none());
+        assert!(unsupported_reason("26.1", None).is_none());
+        // Unreadable: not refused here.
+        assert!(unsupported_reason("x.y", None).is_none());
+    }
+
+    #[test]
+    fn reason_does_not_read_as_a_connection_failure() {
+        let r = unsupported_reason("12.5.7", None).unwrap();
+        assert!(!r.contains("connection") && !r.contains("tunnel"));
+    }
+
+    #[test]
+    fn reason_comes_from_lockdown_values() {
+        let values = plist::Dictionary::from_iter([
+            ("ProductVersion".to_string(), plist::Value::String("15.8.8".into())),
+            ("DeviceClass".to_string(), plist::Value::String("iPhone".into())),
+        ]);
+        assert!(unsupported_in(&values).unwrap().ends_with("iOS 15.8.8"));
+        assert!(unsupported_in(&plist::Dictionary::new()).is_none());
+    }
 }

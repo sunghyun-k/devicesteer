@@ -15,7 +15,7 @@
 // the setup steps end: done, the user taps Don't Trust, an error, nobody ever acts on the device,
 // or the wait runs out; pair `timeout` with `setupwait=15` to shorten it), `select=<udid suffix>`
 // (pick that device first, such as `select=6` for the one that needs Trust, `select=7` for
-// Developer Mode), `update=1` (a newer version is out).
+// Developer Mode, `select=9` for one too old for DeviceSteer), `update=1` (a newer version is out).
 //
 // The Settings window: http://localhost:1420/settings.html?mock (also `theme`, `agents`,
 // `location`, `update`, `tab=agents|updates`). In the main window, the More menu's Settings… opens
@@ -47,6 +47,7 @@ interface MockDevice {
   os_version?: string;
   build_version?: string;
   setup?: SetupStep;
+  unsupported?: string;
   error?: string;
 }
 
@@ -57,6 +58,8 @@ const DEVICES: MockDevice[] = [
   { udid: "00000000-0000000000000004", transports: ["usb"], name: "QA iPhone", product_type: "iPhone17,2", model_name: "iPhone 16 Pro Max", device_class: "iPhone", os_version: "26.2" },
   { udid: "00000000-0000000000000005", transports: ["wifi"], name: "Old iPhone", product_type: "iPhone12,8", model_name: "iPhone SE (2nd generation)", device_class: "iPhone", os_version: "18.7" },
   { udid: "00000000-0000000000000003", transports: ["usb"], product_type: "iPhone15,2", model_name: "iPhone 14 Pro", error: "The device is locked. Unlock it and trust this computer, then refresh." },
+  // Too old for DeviceSteer: listed under Unavailable, never set up or attached.
+  { udid: "00000000-0000000000000009", transports: ["usb"], name: "Drawer iPhone", product_type: "iPhone9,4", model_name: "iPhone 7 Plus", device_class: "iPhone", os_version: "15.8.8", build_version: "19H422", unsupported: "DeviceSteer needs iOS 17 or later; this device runs iOS 15.8.8" },
   // One device per setup step. An untrusted device tells no name, only its model and OS.
   { udid: "00000000-0000000000000006", transports: ["usb"], product_type: "iPhone16,1", model_name: "iPhone 15 Pro", device_class: "iPhone", os_version: "26.1", setup: "trust" },
   { udid: "00000000-0000000000000007", transports: ["usb"], name: "Lab iPhone", product_type: "iPhone14,5", model_name: "iPhone 13", device_class: "iPhone", os_version: "26.0", setup: "developer_mode" },
@@ -510,6 +513,11 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       if (state.unplugged.has(state.current)) {
         await sleep(600);
         throw "connection to the device failed: the device is not connected (no usbmuxd connection)";
+      }
+      {
+        // Like the daemon client: refused before anything starts.
+        const d = DEVICES.find((x) => x.udid === state.current);
+        if (d?.unsupported) throw `${d.unsupported}, so it can't be used: tell the user`;
       }
       if (state.attach === "hang") return new Promise(() => {});
       await sleep(600);

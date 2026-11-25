@@ -948,3 +948,39 @@ stream as raw HEVC, one file per `config`, decoded with ffmpeg afterwards.
   14 rows at the bottom of the inner panel's picture (at the left once the track matrix turns a
   landscape recording). Cropping would need a conformance window in the SPS or a `clap` box; not
   done.
+
+### 49. A device older than iOS 17 looked ready
+
+iPhone 7 Plus (iOS 15.8.8, USB), trusted. `devices` listed it with no `setup` and no `error`: the
+probe treated Developer Mode as on before iOS 16 (there is none) and found an image mounted at
+`/Developer` (where iOS 16 and earlier mount theirs), so every step read as done, and the viewer
+would attach it and fail somewhere inside the tunnel with a "connection" error. Nothing DeviceSteer uses exists
+before iOS 17 (CoreDeviceProxy, RSD, RemoteXPC, the personalized image), so a device below 17 is
+now `unsupported` from lockdown's public `ProductVersion` and no step is probed; the refusal comes
+before any tunnel and doesn't say "connection" or "tunnel".
+
+### 50. A device on Wi-Fi isn't listed by usbmuxd, even with Wi-Fi sync on
+
+macOS 27, usbmuxd from MobileDevice.framework. Two devices on the same network that Xcode listed as
+"available (paired)" for running apps over Wi-Fi: a foldable iPhone on iOS 27.3 and an iPad on
+iPadOS 27.2.1. usbmuxd's `ListDevices` returned only the USB device, with no `Network` entry, so
+`devices` couldn't list them; our code drops nothing (`transport_of` maps `Network` to Wi-Fi and
+neither the daemon nor the viewer filters).
+
+- **Xcode doesn't find them through usbmuxd.** Both advertise `_remotepairing._tcp` (port 49152),
+  the remote pairing service CoreDevice pairs with on its own; `devicectl list devices` shows them
+  from that. That pairing is not a lockdown pair record and usbmuxd doesn't use it.
+- **The iPhone advertised `_apple-mobdev2._tcp`** (Wi-Fi sync on) as `<wifi mac>@<link-local
+  ip>-supportsRP-26`, the MAC matched the `WiFiMACAddress` in usbmuxd's pair record for it, and
+  lockdown on port 62078 over Wi-Fi accepted a `StartSession` with that record. usbmuxd still didn't
+  list it. Maybe macOS usbmuxd leaves devices advertising `supportsRP` to CoreDevice; not confirmed
+  (usbmuxd logs nothing about it).
+- **The iPad didn't advertise `_apple-mobdev2._tcp`** and reset a lockdown connection on 62078: Wi-Fi
+  sync is off on it.
+
+So Wi-Fi works only when usbmuxd lists the device. Without that, listing and opening a Wi-Fi device
+needs a path of our own: either find `_apple-mobdev2._tcp` devices by Bonjour and reach lockdown
+over TCP with usbmuxd's pair record (idevice's `TcpProvider`; needs Wi-Fi sync and an earlier USB
+pairing), or pair with `_remotepairing._tcp` ourselves (idevice `remote_pairing`:
+`RemotePairingClient`, `RpPairingFile`, `connect_tls_psk_tunnel_native`; a pairing of our own, which
+the device asks the user to allow). Neither is built.

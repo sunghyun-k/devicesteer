@@ -26,7 +26,9 @@ The app updates itself from GitHub Releases. To build from source instead, see b
 
 ## Requirements
 
-- An iPhone or iPad on iOS 17 or later. `devicesteer setup` makes a new one ready without Xcode:
+- An iPhone or iPad on iOS 17 or later; `devicesteer devices` marks an older one `unsupported`.
+  On Wi-Fi a device shows up only once usbmuxd lists it (paired over USB, with "Show this iPhone
+  when on Wi-Fi" on; see PITFALLS #50). `devicesteer setup` makes a new one ready without Xcode:
   it pairs ("Trust This Computer"), shows the Developer Mode switch, and mounts the Developer Disk
   Image (from Xcode's copy when there is one, else Apple's files downloaded from a pinned commit of
   [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) and checked by SHA-256).

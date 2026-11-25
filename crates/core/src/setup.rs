@@ -31,7 +31,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    devices::{Transport, mux_addr, mux_devices, transport_of},
+    devices::{Transport, mux_addr, mux_devices, transport_of, unsupported_in},
     step,
 };
 
@@ -41,7 +41,7 @@ use crate::{
 pub enum SetupStep {
     /// The device trusts this computer (a pair record both sides accept).
     Trust,
-    /// Developer Mode is on (iOS 16 and later).
+    /// Developer Mode is on.
     DeveloperMode,
     /// The personalized Developer Disk Image is mounted ("developer tools" in the viewer).
     DiskImage,
@@ -96,6 +96,10 @@ pub struct SetupStatus {
     pub transports: Vec<Transport>,
     /// All three steps are done: every other command works.
     pub ready: bool,
+    /// Why DeviceSteer can't work with this device at all (older than iOS 17). Then `ready` is
+    /// false, `step` is absent and every step is `blocked`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsupported: Option<String>,
     /// The first step that isn't done.
     pub step: Option<SetupStep>,
     pub steps: Vec<StepStatus>,
@@ -104,6 +108,14 @@ pub struct SetupStatus {
 }
 
 impl SetupStatus {
+    /// Errors with the reason when the device is too old for DeviceSteer.
+    fn ensure_supported(self) -> Result<Self> {
+        match &self.unsupported {
+            Some(r) => bail!("{r}"),
+            None => Ok(self),
+        }
+    }
+
     fn state(&self, step: SetupStep) -> StepState {
         self.steps.iter().find(|s| s.step == step).map_or(StepState::Blocked, |s| s.state)
     }
@@ -145,15 +157,19 @@ pub(crate) struct Probe {
     pub developer_mode: Option<bool>,
     /// `None` when it could not be read (not trusted, or Developer Mode off).
     pub disk_image: Option<bool>,
-    pub os_major: Option<u32>,
+    /// Set when the device's OS is too old for DeviceSteer; nothing else is read then.
+    pub unsupported: Option<String>,
     /// Every lockdown value, for the device list.
     pub values: plist::Dictionary,
 }
 
 impl Probe {
     /// The first step that isn't done.
+    /// `None` for an unsupported device too: no step would make it usable.
     pub fn step(&self) -> Option<SetupStep> {
-        if self.untrusted.is_some() {
+        if self.unsupported.is_some() {
+            None
+        } else if self.untrusted.is_some() {
             Some(SetupStep::Trust)
         } else if self.developer_mode == Some(false) {
             Some(SetupStep::DeveloperMode)
@@ -188,6 +204,7 @@ pub(crate) async fn probe(provider: &UsbmuxdProvider) -> Result<Probe> {
         Err(_) => {
             p.untrusted = Some("this computer has no pair record for the device".into());
             p.values = public_values(provider).await;
+            p.unsupported = unsupported_in(&p.values);
             return Ok(p);
         }
     };
@@ -198,6 +215,7 @@ pub(crate) async fn probe(provider: &UsbmuxdProvider) -> Result<Probe> {
             // The record is here but the device forgot it (Trust reset, "Don't Trust", erase).
             p.untrusted = Some(format!("the device no longer trusts this computer ({e:?})"));
             p.values = public_values(provider).await;
+            p.unsupported = unsupported_in(&p.values);
             return Ok(p);
         }
         Ok(Err(e)) => bail!("lockdown session failed (connection error: {e:?})"),
@@ -205,32 +223,31 @@ pub(crate) async fn probe(provider: &UsbmuxdProvider) -> Result<Probe> {
     }
     let all = step("lockdown read", lockdown.get_value(None, None)).await?;
     p.values = all.into_dictionary().unwrap_or_default();
-    p.os_major = p
-        .values
-        .get("ProductVersion")
-        .and_then(|v| v.as_string())
-        .and_then(|v| v.split('.').next()?.parse().ok());
-    // Before iOS 16 there is no Developer Mode: treat it as on.
-    p.developer_mode = Some(match p.os_major {
-        Some(v) if v < 16 => true,
-        _ => match lockdown.get_value(Some("DeveloperModeStatus"), Some("com.apple.security.mac.amfi")).await {
+    // A device older than iOS 17 has none of the services the steps lead to; checking them would
+    // only make it look ready (it has no Developer Mode before 16, and its own kind of disk image).
+    p.unsupported = unsupported_in(&p.values);
+    if p.unsupported.is_some() {
+        return Ok(p);
+    }
+    p.developer_mode = Some(
+        match lockdown.get_value(Some("DeveloperModeStatus"), Some("com.apple.security.mac.amfi")).await {
             Ok(v) => v.as_boolean().unwrap_or(false),
-            // Older releases leave the key out while the mode is off.
+            // Some releases leave the key out while the mode is off.
             Err(IdeviceError::UnexpectedResponse(_)) => false,
             Err(e) => bail!("Developer Mode read failed (connection error: {e:?})"),
         },
-    });
+    );
     // The image mounter refuses personalized images while Developer Mode is off, so there is
     // nothing to check before it.
     if p.developer_mode == Some(true) {
-        p.disk_image = Some(disk_image_mounted(provider, p.os_major).await?);
+        p.disk_image = Some(disk_image_mounted(provider).await?);
     }
     Ok(p)
 }
 
 /// What lockdown tells anyone without a session (model, OS version, class; no name), so an
 /// untrusted device can still be shown for what it is. Best effort.
-async fn public_values(provider: &UsbmuxdProvider) -> plist::Dictionary {
+pub(crate) async fn public_values(provider: &UsbmuxdProvider) -> plist::Dictionary {
     let read = async {
         let mut lockdown = LockdownClient::connect(provider).await.ok()?;
         lockdown.get_value(None, None).await.ok()?.into_dictionary()
@@ -238,19 +255,17 @@ async fn public_values(provider: &UsbmuxdProvider) -> plist::Dictionary {
     tokio::time::timeout(crate::STEP_TIMEOUT, read).await.ok().flatten().unwrap_or_default()
 }
 
-/// Where the developer disk image is mounted: `/System/Developer` from iOS 17, `/Developer` before.
-fn mount_path(os_major: Option<u32>) -> &'static str {
-    if os_major.is_some_and(|v| v < 17) { "/Developer" } else { "/System/Developer" }
-}
+/// Where the personalized developer disk image is mounted (iOS 17 and later, the only ones probed).
+const MOUNT_PATH: &str = "/System/Developer";
 
 /// Whether the developer disk image is mounted, from the mounter's list of mounted images.
 ///
 /// Not `LookupImage`: when Xcode 27 mounted the image (through cryptexd, from a MobileAsset) it
 /// answers with no signature although the image is mounted (PITFALLS #31).
-async fn disk_image_mounted(provider: &UsbmuxdProvider, os_major: Option<u32>) -> Result<bool> {
+async fn disk_image_mounted(provider: &UsbmuxdProvider) -> Result<bool> {
     let mut mounter = step("image mounter connection", ImageMounter::connect(provider)).await?;
     let list = step("mounted image list", mounter.copy_devices()).await?;
-    Ok(is_mounted(&list, mount_path(os_major)))
+    Ok(is_mounted(&list, MOUNT_PATH))
 }
 
 fn is_mounted(list: &[plist::Value], path: &str) -> bool {
@@ -301,7 +316,7 @@ fn describe(udid: &str, transports: Vec<Transport>, p: &Probe) -> SetupStatus {
                 Some("the Developer Disk Image is not mounted (a restart can unmount it)".into()),
             ),
         };
-        let state = if earlier_open {
+        let state = if earlier_open || p.unsupported.is_some() {
             StepState::Blocked
         } else if done {
             StepState::Done
@@ -314,6 +329,9 @@ fn describe(udid: &str, transports: Vec<Transport>, p: &Probe) -> SetupStatus {
     let step = p.step();
     let u = format!("--udid {udid}");
     let next = match step {
+        None if p.unsupported.is_some() => {
+            format!("{}. It can't be set up or used; tell the user", p.unsupported.as_deref().unwrap_or_default())
+        }
         None => "the device is ready".to_string(),
         Some(SetupStep::Trust) if !usb => {
             "connect the device with a USB cable: it can only be paired over USB. Then run `devicesteer setup trust`".into()
@@ -327,7 +345,15 @@ fn describe(udid: &str, transports: Vec<Transport>, p: &Probe) -> SetupStatus {
         ),
         Some(SetupStep::DiskImage) => format!("run `devicesteer setup disk-image {u}` (no action on the device is needed)"),
     };
-    SetupStatus { udid: udid.to_string(), transports, ready: step.is_none(), step, steps, next }
+    SetupStatus {
+        udid: udid.to_string(),
+        transports,
+        ready: step.is_none() && p.unsupported.is_none(),
+        unsupported: p.unsupported.clone(),
+        step,
+        steps,
+        next,
+    }
 }
 
 // ---------- doing the steps ----------
@@ -335,7 +361,7 @@ fn describe(udid: &str, transports: Vec<Transport>, p: &Probe) -> SetupStatus {
 /// Runs every step that isn't done, in order, waiting for the user up to `wait` at each step
 /// that needs them. Returns the state afterwards (which says what is left on a timeout).
 pub async fn run(udid: Option<&str>, wait: Duration, ddi: Option<&Path>, progress: ProgressFn) -> Result<SetupStatus> {
-    let mut s = status(udid).await?;
+    let mut s = status(udid).await?.ensure_supported()?;
     let udid = s.udid.clone();
     if s.state(SetupStep::Trust) == StepState::Needed {
         s = trust(Some(&udid), wait, progress.clone()).await?;
@@ -357,7 +383,11 @@ pub async fn run(udid: Option<&str>, wait: Duration, ddi: Option<&Path>, progres
 pub async fn trust(udid: Option<&str>, wait: Duration, progress: ProgressFn) -> Result<SetupStatus> {
     let (device, transports) = pick(udid).await?;
     let provider = device.to_provider(mux_addr(), "devicesteer");
-    if probe(&provider).await?.untrusted.is_none() {
+    let before = probe(&provider).await?;
+    if let Some(r) = before.unsupported {
+        bail!("{r}");
+    }
+    if before.untrusted.is_none() {
         return status(Some(&device.udid)).await;
     }
     if !transports.contains(&Transport::Usb) {
@@ -410,7 +440,7 @@ pub async fn trust(udid: Option<&str>, wait: Duration, progress: ProgressFn) -> 
 /// on (the device restarts in between).
 pub async fn developer_mode(udid: Option<&str>, wait: Option<Duration>, progress: ProgressFn) -> Result<SetupStatus> {
     let s = SetupStep::DeveloperMode;
-    let before = status(udid).await?;
+    let before = status(udid).await?.ensure_supported()?;
     match before.state(s) {
         StepState::Done => return Ok(before),
         StepState::Blocked => bail!("the device doesn't trust this computer yet: run `devicesteer setup trust` first"),
@@ -456,7 +486,7 @@ pub async fn developer_mode(udid: Option<&str>, wait: Option<Duration>, progress
 /// [`find_disk_image`]). `source` names a folder with `BuildManifest.plist` to use instead.
 pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: ProgressFn) -> Result<SetupStatus> {
     let s = SetupStep::DiskImage;
-    let before = status(udid).await?;
+    let before = status(udid).await?.ensure_supported()?;
     match before.state(s) {
         StepState::Done => return Ok(before),
         StepState::Blocked if before.step == Some(SetupStep::Trust) => {
@@ -476,10 +506,6 @@ pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: Pro
         .await?
         .as_unsigned_integer()
         .context("the device did not report its UniqueChipID")?;
-    let version = step("lockdown read", lockdown.get_value(Some("ProductVersion"), None)).await?;
-    if version.as_string().and_then(|v| v.split('.').next()?.parse::<u32>().ok()).is_some_and(|v| v < 17) {
-        bail!("DeviceSteer needs iOS 17 or later; this device runs {}", version.as_string().unwrap_or("?"));
-    }
 
     let mut mounter = step("image mounter connection", ImageMounter::connect(&provider)).await?;
     let ids = step("personalization identifiers", mounter.query_personalization_identifiers(None)).await?;
@@ -675,6 +701,26 @@ mod tests {
         let s = describe("U", vec![Transport::Wifi], &probe(false, Some(true), Some(true)));
         assert!(s.ready);
         assert!(s.steps.iter().all(|s| s.state == StepState::Done && s.detail.is_none()));
+    }
+
+    #[test]
+    fn unsupported_device_has_no_step_and_is_not_ready() {
+        let p = Probe {
+            unsupported: Some("DeviceSteer needs iOS 17 or later; this device runs iOS 15.8.8".into()),
+            developer_mode: None,
+            disk_image: None,
+            ..Default::default()
+        };
+        assert_eq!(p.step(), None);
+        let s = describe("U", vec![Transport::Usb], &p);
+        assert!(!s.ready);
+        assert_eq!(s.step, None);
+        assert!(s.steps.iter().all(|s| s.state == StepState::Blocked));
+        assert!(s.next.starts_with("DeviceSteer needs iOS 17"));
+        assert!(s.ensure_supported().is_err());
+        // Even untrusted: trusting it would not help.
+        let p = Probe { untrusted: Some("no pair record".into()), ..p };
+        assert_eq!(p.step(), None);
     }
 
     #[test]

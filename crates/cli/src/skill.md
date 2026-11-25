@@ -14,13 +14,20 @@ labels, and can take over or stop you at any time.
 ## Pick the device
 
 ```sh
-devicesteer devices                     # udid, name, model, OS, usb/wifi
+devicesteer devices                     # udid, name, model, OS, usb/wifi, setup, unsupported
 ```
 
 Pass `--udid <UDID>` with every command whenever more than one device is listed. If you don't know
 which device the user means, ask; don't pick one.
 
-A device listed with `setup` isn't ready yet; see the next section.
+A device listed with `setup` isn't ready yet; see the next section. A device listed with
+`unsupported` runs an OS older than iOS 17 and can't be used at all: no command or setup step works
+on it. Tell the user why (the field says) and don't try it.
+
+Only devices usbmuxd lists show up. A device on Wi-Fi is listed only once it was paired over USB
+and "Show this iPhone when on Wi-Fi" (Finder, or Apple Devices on Windows) is on, and sometimes not
+even then; when the user expects a Wi-Fi device that isn't listed, ask them to connect it with a
+cable.
 
 ## Set up a new device
 

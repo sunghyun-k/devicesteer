@@ -33,14 +33,14 @@ pub mod trace;
 mod typing;
 
 pub use control::{Controller, Sent};
-pub use devices::{DeviceInfo, Transport, list_devices};
+pub use devices::{DeviceInfo, MIN_OS_MAJOR, Transport, list_devices, unsupported_reason};
 pub use display::{Display, DisplayPoller, Rotation};
 pub use typing::{KeyboardLanguage, Pasted, TypeMethod, Typed};
 pub use input::{Button, Input, Motion, TAP_HOLD, TouchPhase};
 pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, StreamStatus, server_status};
 pub use record::{Frame, FrameStream, RecordSummary, Recorder};
 pub use resample::Resampler;
-pub use session::{Clipboard, ServiceInfo, Session, resolve_udid};
+pub use session::{Clipboard, ServiceInfo, Session, ensure_supported, resolve_udid};
 pub use setup::{SetupStatus, SetupStep};
 pub use settings::{DeviceSettings, Setting, TEXT_SIZES, Toggle};
 pub use video::ParameterSets;
