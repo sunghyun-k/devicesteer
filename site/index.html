@@ -65,7 +65,7 @@
       <a href="#agents">For agents</a>
       <a href="#requirements">Requirements</a>
     </nav>
-    <a class="btn small" href="https://github.com/sunghyun-k/devicesteer/releases">Download</a>
+    <a class="btn small" id="get-top" href="https://github.com/sunghyun-k/devicesteer/releases">Download</a>
   </div>
 </header>
 
@@ -79,10 +79,14 @@
       <p class="lede">DeviceSteer shows the live screen of a real iPhone or iPad and lets you use it with
         your mouse and keyboard. Your coding agent drives the same device through a CLI, in a session you
         can watch, take over, hand back or stop.</p>
+      <!-- The script at the end adapts this block to the visitor's system; without it, it stays
+           the macOS version. -->
+      <p class="get-note" id="get-note" hidden></p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/sunghyun-k/devicesteer/releases">Download for macOS</a>
-        <a class="btn" href="https://github.com/sunghyun-k/devicesteer">View on GitHub</a>
+        <a class="btn primary" id="get-primary" href="https://github.com/sunghyun-k/devicesteer/releases">Download for macOS</a>
+        <a class="btn" id="get-secondary" href="https://github.com/sunghyun-k/devicesteer">View on GitHub</a>
       </div>
+      <p class="get-alt" id="get-alt">On Windows? <a href="#windows">Get it for Windows</a>.</p>
       <p class="meta">Free and open source (MIT) · iOS / iPadOS 17 or later · USB or Wi-Fi · no Xcode</p>
     </div>
     <!-- Image slot: the viewer. -->
@@ -181,7 +185,7 @@
         <p>Download <code>DeviceSteer_&lt;version&gt;_universal.dmg</code> from
           <a href="https://github.com/sunghyun-k/devicesteer/releases">GitHub Releases</a>, open it and drag
           DeviceSteer to Applications. The app keeps itself up to date.</p>
-        <p class="note">Windows builds aren't published yet; on Windows, build from source (see the
+        <p class="note" id="windows">Windows builds aren't published yet; on Windows, build from source (see the
           <a href="https://github.com/sunghyun-k/devicesteer#readme">README</a>) and install Apple Devices or
           iTunes for USB.</p>
       </li>
@@ -289,5 +293,47 @@ devicesteer session finish</pre>
   </div>
 </footer>
 
+<script>
+// Points the download buttons at the visitor's system. Without this script the page shows the
+// macOS buttons, which is also what Macs get.
+(() => {
+  const RELEASES = 'https://github.com/sunghyun-k/devicesteer/releases';
+  // Set to the Windows installer's URL once a Windows build is published; the Windows buttons
+  // then download it instead of pointing at the build steps.
+  const WINDOWS_DOWNLOAD = null;
+  const WINDOWS_STEPS = '#windows';
+
+  const ua = navigator.userAgent;
+  const platform = navigator.userAgentData?.platform || navigator.platform || '';
+  // iPadOS reports itself as a Mac; touch tells them apart.
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Mac/.test(platform) && navigator.maxTouchPoints > 1);
+  const os = ios || /Android/.test(ua) ? 'phone' : /Win/.test(platform) || /Windows/.test(ua) ? 'windows' : 'mac';
+  if (os === 'mac') return;
+
+  const $ = (id) => document.getElementById(id);
+  const setLink = (el, text, href) => { el.textContent = text; el.href = href; };
+  const windowsText = WINDOWS_DOWNLOAD ? 'Download for Windows' : 'Get it for Windows';
+  const windowsHref = WINDOWS_DOWNLOAD || WINDOWS_STEPS;
+  const alt = $('get-alt');
+  const altLink = (lead, text, href) => {
+    alt.textContent = lead + ' ';
+    const a = document.createElement('a');
+    a.textContent = text; a.href = href;
+    alt.append(a, '.');
+  };
+
+  if (os === 'windows') {
+    setLink($('get-primary'), windowsText, windowsHref);
+    $('get-top').href = windowsHref;
+    altLink('On a Mac?', 'Download for macOS', RELEASES);
+  } else {
+    const note = $('get-note');
+    note.textContent = 'DeviceSteer is an app for a Mac or a Windows PC. It shows and controls the iPhone or iPad connected to that computer.';
+    note.hidden = false;
+    setLink($('get-secondary'), windowsText, windowsHref);
+    altLink('Or', 'view it on GitHub', 'https://github.com/sunghyun-k/devicesteer');
+  }
+})();
+</script>
 </body>
 </html>
