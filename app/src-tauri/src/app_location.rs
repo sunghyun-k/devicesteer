@@ -85,7 +85,7 @@ pub struct Mover {
 
 impl Mover {
     fn current() -> Self {
-        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+        let home = dirs::home_dir().unwrap_or_default();
         Self { applications: PathBuf::from("/Applications"), trash: home.join(".Trash") }
     }
 
@@ -197,6 +197,11 @@ pub fn app_location() -> Location {
 /// person's confirmation to put an app already there in the Trash.
 #[tauri::command]
 pub fn app_move_to_applications(app: tauri::AppHandle, replace: bool) -> Result<(), MoveError> {
+    // The installer puts the app where it stays on Windows, and `app_location` never asks for a
+    // move there; the rest (ditto, the Trash, `open`) is macOS only.
+    if !cfg!(target_os = "macos") {
+        return Err(MoveError::Failed { message: "moving the app is only needed on macOS".into() });
+    }
     let bundle = running_bundle().ok_or(MoveError::Failed { message: "this copy of DeviceSteer isn't an app bundle".into() })?;
     if temporary(&bundle).is_none() {
         return Err(MoveError::Failed { message: "DeviceSteer is already installed".into() });

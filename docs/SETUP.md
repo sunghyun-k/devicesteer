@@ -77,3 +77,6 @@ has one build identity per board, so a device newer than its Xcode needs a newer
 Pairing saves the record through Apple's usbmuxd (installed with Apple Devices or iTunes), which
 keeps its own store. There is no Xcode copy on Windows, so the disk image comes from `--ddi` or
 the download.
+
+If `devices` lists nothing while the device is plugged in, unplug it and plug it back in: Apple
+Devices' usbmuxd can miss a device that was connected before its service started (PITFALLS #53).

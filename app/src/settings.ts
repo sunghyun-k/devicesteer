@@ -8,7 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { $, el, pref, conflict, conflictText, CLI_NEEDED, isMac, type AppLocation, type Item, type Status } from "./agent-common";
+import { $, el, pref, conflict, conflictText, CLI_NEEDED, isMac, isWindows, type AppLocation, type Item, type Status } from "./agent-common";
 
 // Dev only: `settings.html?mock` runs the window against the fake backend (see src/mock.ts).
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("mock")) (await import("./mock")).installMock("settings");
@@ -134,7 +134,13 @@ function render(): void {
   $<HTMLButtonElement>("#agent-move").hidden = !appLocation?.reason;
   let pathNote: HTMLElement | undefined;
   if (s.cli.state === "installed" && s.on_path === false) {
-    pathNote = el("div", "note warn", "~/.local/bin isn’t on your shell’s PATH. Add it to your shell profile, e.g. export PATH=\"$HOME/.local/bin:$PATH\" in ~/.zshrc, then open a new terminal.");
+    pathNote = el(
+      "div",
+      "note warn",
+      isWindows()
+        ? "%USERPROFILE%\\.local\\bin isn’t on your PATH. Add it to your user Path (Edit environment variables for your account), then open a new terminal."
+        : "~/.local/bin isn’t on your shell’s PATH. Add it to your shell profile, e.g. export PATH=\"$HOME/.local/bin:$PATH\" in ~/.zshrc, then open a new terminal.",
+    );
   } else if (s.cli.state === "missing" && !s.unavailable) {
     // A warning once a skill is installed without it: that skill can't do anything.
     const skills = s.agents.some((a) => a.state === "installed");

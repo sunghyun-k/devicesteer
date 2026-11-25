@@ -15,5 +15,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"
 tracing.workspace = true
 base64 = "0.22"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Console", "Win32_System_Threading"] }
+
 [dev-dependencies]
 plist = "1.8"

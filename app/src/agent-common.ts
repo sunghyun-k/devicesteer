@@ -64,3 +64,4 @@ export function conflictText(i: Item): string {
 
 /** macOS in the app: the window has an overlay title bar there (main.ts, settings.ts). */
 export const isMac = () => /Mac/.test(navigator.platform) && "__TAURI_INTERNALS__" in window;
+export const isWindows = () => /Win/.test(navigator.platform);

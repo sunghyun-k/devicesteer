@@ -40,7 +40,7 @@ pub use input::{Button, Input, Motion, TAP_HOLD, TouchPhase};
 pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, StreamStatus, server_status};
 pub use record::{Frame, FrameStream, RecordSummary, Recorder};
 pub use resample::Resampler;
-pub use session::{Clipboard, ServiceInfo, Session, ensure_supported, resolve_udid};
+pub use session::{Clipboard, ServiceInfo, Session, ensure_supported, missing_device_hint, resolve_udid};
 pub use setup::{SetupStatus, SetupStep};
 pub use settings::{DeviceSettings, Setting, TEXT_SIZES, Toggle};
 pub use video::ParameterSets;

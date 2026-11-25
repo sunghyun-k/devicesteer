@@ -17,14 +17,15 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screen streams (displayservice) | #1, #2, #7, #11, #13, #27, #28 |
 | Connection and tunnel | #3, #4, #16 |
 | Screenshots | #5 |
-| Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39 |
+| Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39, #58 |
 | Display info | #9, #27 |
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23, #26, #27, #29, #33, #34 |
+| Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
+| Windows host | #51, #52, #53, #54, #57 |
 
 ## Entries
 
@@ -984,3 +985,85 @@ over TCP with usbmuxd's pair record (idevice's `TcpProvider`; needs Wi-Fi sync a
 pairing), or pair with `_remotepairing._tcp` ourselves (idevice `remote_pairing`:
 `RemotePairingClient`, `RpPairingFile`, `connect_tls_psk_tunnel_native`; a pairing of our own, which
 the device asks the user to allow). Neither is built.
+
+### 51. Windows: the main thread's 1 MiB stack overflows on every device command
+
+Windows PC, debug build of the CLI. Every device command ended with exit code 0xC00000FD (stack
+overflow) before printing anything.
+The futures for the tunnel and its services (idevice's RSD and RemoteXPC state machines and the
+userspace TCP stack) are large, larger still unoptimized, and `block_on` polls the outermost one
+on the calling thread. That fits in the 8 MiB main thread of macOS and Linux; Windows gives the
+main thread 1 MiB (the linker's default), and tokio's worker threads get 2 MiB everywhere.
+
+Linking with `/STACK:8388608` fixed it, but only for the binaries that pass the flag and only on
+the main thread. The CLI now runs every command on a thread it starts with 8 MiB, and gives the
+runtime's workers the same (`STACK_SIZE` in `crates/cli/src/main.rs`); the daemon runs on that
+thread too. The viewer only talks to the daemon, whose client futures are small.
+
+### 52. Windows: a child inherits every inheritable handle, so the daemon held the CLI's stdout
+
+Windows PC. `devicesteer session status | Out-String` (or any reader of the CLI's output through a
+pipe: `| jq`, an agent's shell tool) printed nothing and waited until the daemon the command had
+started exited, ten idle minutes later. Run in a console it returned at once.
+
+`CreateProcess` with handle inheritance on passes the child every inheritable handle of the
+parent, not only the three it names as the child's stdin, stdout and stderr, and a process's own
+standard handles are inheritable. The daemon got `null` and a log file as its standard handles,
+but also a copy of the pipe the CLI's stdout wrote to; the reader saw no end of file while the
+daemon lived. (On Unix, Rust opens everything close-on-exec, so only the named handles pass.)
+
+`spawn_daemon` clears the inherit flag on the CLI's own standard handles before starting the
+daemon (`keep_std_handles_from_children` in `crates/daemon/src/client.rs`). Rust's own spawns
+don't rely on the flag: they duplicate the handles they pass.
+
+### 53. Windows: Apple Devices' usbmuxd can miss a device connected before it started
+
+Windows PC with the Store app "Apple Devices" (its usbmuxd is `AppleMobileDeviceProcess`), seen by
+the owner. An iPad that was already plugged in when the service started was not in usbmuxd's list,
+so `devices` was empty and commands said no device was connected, while Windows itself showed the
+device. Unplugging it and plugging it back in made usbmuxd list it.
+
+The errors for a missing device and an empty `devices` list on Windows say to replug it
+(`missing_device_hint` in `crates/core/src/session.rs`). Not yet known: whether restarting the
+Apple Mobile Device Service alone also recovers it.
+
+### 54. Windows: the check after mounting the disk image stalled
+
+Windows PC, iPad on iPadOS 27.2.1 over USB, `setup disk-image --no-daemon`. The image was
+downloaded, signed and mounted in 17 s (the mounter answered the mount), then the command failed
+with `mounted image list timed out after 12s (connection stalled)`; `setup status` right after said
+the image was mounted. That check opens its own `mobile_image_mounter` connection and asks for
+`CopyDevices` while the mount's mounter and lockdown connections were still open.
+
+`setup::disk_image` now drops both before the check, and retries a failed check once after a
+second, saying the mount itself succeeded if it fails again. Not confirmed on the device yet: the
+image stays mounted until the device restarts, so the failing run couldn't be repeated.
+
+### 57. WebView2 gave every decoded frame a 1280x720 visible rect: the viewer showed a corner
+
+Windows PC, viewer in WebView2 (Chromium 158), iPad on iPadOS 27.2.1 held in landscape, USB. The
+screen looked zoomed in. `viewer.log` had `frame.coded` 2736x2064 but `frame.visible` 0,0,1280x720
+and `frame.display` 1280x720: the decoder (configured with codec and description only) gave the
+frames a visible rect of what looks like a default size, not the stream's, and `drawImage` draws
+only the visible rect. The viewer, scaling that to the screen (#26), stretched the picture's
+top-left 1280x720 over the whole canvas. WebKit (#26) reports the whole coded picture instead.
+
+The decoder is now configured with `codedWidth` and `codedHeight` from the daemon's `config`, and a
+frame whose visible rect is smaller than the screen it holds is redrawn from a `VideoFrame` cut to
+the screen (`drawFrame` in `app/src/main.ts`). `viewer.log` still shows the decoder's own rect.
+
+### 58. An iPad's touchscreen is turned from its panel: every drag's axis was swapped
+
+iPad Pro 13-inch (M4), iPadOS 27.2.1, USB, held in landscape, from the viewer on Windows (the
+mapping is the same code on macOS). Horizontal drags scrolled vertically and vertical ones
+horizontally. `getdisplayinfo` gave the primary display `bounds` 2752x2064 (landscape),
+`currentOrientation` `rot0` and `nativeOrientation` `rot270`; the video picture is landscape too.
+Only `currentOrientation` was used to place touches, so they went to the panel unturned, while the
+touch reports follow `nativeOrientation`: on this iPad they are portrait. This is old #23: the
+Swift implementation turned every touch by `nativeOrientation` (`rot270`: `(u, v)` lands on
+`(1 - v, u)`, checked on an iPad by tapping an icon), and the rewrite had dropped it.
+
+`Display::report_point` now turns a point by `currentOrientation` onto the panel and then by
+`nativeOrientation` (`touch_rotation`) onto the touchscreen. Phones and both panels of a foldable
+say `rot0` there (#48), so nothing changes for them. The owner then dragged in the viewer with the
+iPad held in landscape and turned to portrait: both went the right way.

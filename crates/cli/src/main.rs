@@ -392,12 +392,33 @@ enum MediaAction {
     },
 }
 
+/// The stack for the thread that runs commands, and for the runtime's workers.
+///
+/// The async state machines for the tunnel and its services are large, much larger in debug
+/// builds, and `block_on` polls them on the calling thread. That fits in the 8 MiB main thread of
+/// macOS and Linux but overflows Windows' 1 MiB one (0xC00000FD on every device command). A
+/// thread of our own gets the same room everywhere, without a linker flag that only covers the
+/// main thread and only for builds that pass it.
+const STACK_SIZE: usize = 8 * 1024 * 1024;
+
 fn main() {
     let cli = Cli::parse();
     if let Command::Skill = cli.command {
         print!("{}", skill_guide());
         return;
     }
+    let commands = std::thread::Builder::new()
+        .name("devicesteer".into())
+        .stack_size(STACK_SIZE)
+        .spawn(move || run_command(cli))
+        .expect("a thread for the command");
+    if commands.join().is_err() {
+        // The panic message is already on stderr.
+        std::process::exit(101);
+    }
+}
+
+fn run_command(cli: Cli) {
     // The daemon runs on a runtime of its own (see `devicesteer_daemon::run_blocking`).
     if let Command::Daemon { target, action: None } = &cli.command {
         tracing_subscriber::fmt()
@@ -417,7 +438,11 @@ fn main() {
         }
         return;
     }
-    let rt = tokio::runtime::Runtime::new().expect("a tokio runtime");
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(STACK_SIZE)
+        .build()
+        .expect("a tokio runtime");
     match rt.block_on(run(cli.command)) {
         Ok(value) => println!("{}", serde_json::to_string_pretty(&value).unwrap()),
         Err(e) => {
@@ -449,7 +474,15 @@ async fn run(command: Command) -> Result<serde_json::Value> {
             }
             v
         }
-        Command::Devices => json!({ "devices": list_devices().await? }),
+        Command::Devices => {
+            let devices = list_devices().await?;
+            let hint = devicesteer_core::missing_device_hint();
+            if devices.is_empty() && !hint.is_empty() {
+                json!({ "devices": devices, "hint": format!("usbmuxd lists no device{hint}") })
+            } else {
+                json!({ "devices": devices })
+            }
+        }
         Command::Setup { target, action, wait, ddi } => {
             use devicesteer_core::setup;
             let udid = target.udid.as_deref();
