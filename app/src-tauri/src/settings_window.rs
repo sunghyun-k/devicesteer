@@ -26,9 +26,11 @@ pub fn open(app: &AppHandle, tab: Option<&str>) -> tauri::Result<()> {
         Some(t) => format!("settings.html?tab={t}"),
         None => "settings.html".into(),
     };
+    // In the viewer's language (`view_menu::Labels`); the page sets the pane's name as the title
+    // once it loads, as Mac settings windows do.
+    let title = app.state::<crate::view_menu::State>().labels.lock().unwrap().settings_window.clone();
     let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App(page.into()))
-        // The page sets the pane's name as the title once it loads, as Mac settings windows do.
-        .title("Settings")
+        .title(title)
         .inner_size(560.0, 600.0)
         .resizable(false)
         .maximizable(false)
@@ -42,9 +44,11 @@ pub fn open(app: &AppHandle, tab: Option<&str>) -> tauri::Result<()> {
 }
 
 /// Opens Settings at `tab` (`agents` or `updates`): the main window's page calls it after the
-/// first-launch sheet, and on platforms without an app menu.
+/// first-launch sheet, and on platforms without an app menu. `async` with nothing to await: a
+/// synchronous command runs on the main thread, and a window built there stays blank on Windows
+/// (PITFALLS #64).
 #[tauri::command]
-pub fn open_settings(app: AppHandle, tab: Option<String>) -> Result<(), String> {
+pub async fn open_settings(app: AppHandle, tab: Option<String>) -> Result<(), String> {
     open(&app, tab.as_deref()).map_err(|e| format!("could not open the Settings window: {e}"))
 }
 

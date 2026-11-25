@@ -11,31 +11,46 @@
          (settings_window.rs). The panes are settings.ts. -->
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <symbol id="i-terminal" viewBox="0 0 20 20"><rect x="2.75" y="4" width="14.5" height="12" rx="2.5" /><path d="m6.25 8.25 2 1.75-2 1.75M10.25 12h3.5" /></symbol>
+      <symbol id="i-gear" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.25" /><circle cx="10" cy="10" r="5" /><path d="M10 2.75V5M10 15v2.25M2.75 10H5M15 10h2.25M4.87 4.87l1.6 1.6M13.53 13.53l1.6 1.6M4.87 15.13l1.6-1.6M13.53 6.47l1.6-1.6" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m6.5 8.25 3.5 3.5 3.5-3.5" /></symbol>
       <symbol id="i-download" viewBox="0 0 20 20"><path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 15.75h12" /></symbol>
     </svg>
 
     <div id="prefs">
       <!-- A toolbar of panes under the title, like a Mac settings window. -->
       <header class="prefs-head" data-tauri-drag-region>
-        <div class="prefs-tabs" role="tablist" aria-label="Settings" data-tauri-drag-region>
-          <button id="tab-agents" role="tab" type="button" aria-selected="true" aria-controls="pane-agents"><svg class="icon"><use href="#i-terminal" /></svg><span>Agents</span></button>
-          <button id="tab-updates" role="tab" type="button" aria-selected="false" aria-controls="pane-updates"><svg class="icon"><use href="#i-download" /></svg><span>Updates</span></button>
+        <div class="prefs-tabs" role="tablist" aria-label="Settings" data-i18n-aria-label="prefs.title" data-tauri-drag-region>
+          <button id="tab-general" role="tab" type="button" aria-selected="false" aria-controls="pane-general"><svg class="icon"><use href="#i-gear" /></svg><span data-i18n="prefs.general">General</span></button>
+          <button id="tab-agents" role="tab" type="button" aria-selected="true" aria-controls="pane-agents"><svg class="icon"><use href="#i-terminal" /></svg><span data-i18n="prefs.agents">Agents</span></button>
+          <button id="tab-updates" role="tab" type="button" aria-selected="false" aria-controls="pane-updates"><svg class="icon"><use href="#i-download" /></svg><span data-i18n="prefs.updates">Updates</span></button>
         </div>
       </header>
 
+      <!-- The viewer's language: the system's by default (settings.ts, i18n.ts). -->
+      <div id="pane-general" class="pane" role="tabpanel" aria-labelledby="tab-general" hidden>
+        <section class="group">
+          <h4 data-i18n="prefs.languageSection">Language</h4>
+          <div class="row">
+            <label for="language" data-i18n="prefs.language">App language</label>
+            <span class="select"><select id="language"></select><svg class="icon"><use href="#i-chevron" /></svg></span>
+          </div>
+        </section>
+        <p class="prefs-lead" data-i18n="prefs.languageNote">Messages that come from the device or the command-line tool stay in English.</p>
+      </div>
+
       <!-- What agents get: the command and the skill links (settings.ts, agent_setup.rs). -->
       <div id="pane-agents" class="pane" role="tabpanel" aria-labelledby="tab-agents">
-        <p class="prefs-lead">Coding agents on this Mac operate your devices through DeviceSteer’s command-line tool and skill. Both are links into this app, so they update with it.</p>
+        <p class="prefs-lead" data-i18n="prefs.agentsLead">Coding agents on this Mac operate your devices through DeviceSteer’s command-line tool and skill. Both are links into this app, so they update with it.</p>
         <div id="agent-unavailable" class="pane-note" hidden>
           <p id="agent-unavailable-text"></p>
-          <button id="agent-move" class="btn small" type="button" hidden>Move to Applications…</button>
+          <button id="agent-move" class="btn small" type="button" hidden data-i18n="prefs.moveToApplications">Move to Applications…</button>
         </div>
         <section class="group agents">
-          <h4>Command-Line Tool</h4>
+          <h4 data-i18n="prefs.commandLineTool">Command-Line Tool</h4>
           <div id="agent-cli"></div>
         </section>
         <section class="group agents">
-          <h4>Agent Skills</h4>
+          <h4 data-i18n="prefs.agentSkills">Agent Skills</h4>
           <div id="agent-skills"></div>
         </section>
         <p id="agent-status" role="status"></p>
@@ -43,13 +58,13 @@
 
       <div id="pane-updates" class="pane" role="tabpanel" aria-labelledby="tab-updates" hidden>
         <section class="group info">
-          <h4>Updates</h4>
-          <div class="row"><span>Version</span><output id="app-version"></output></div>
-          <div class="row"><span id="update-text">Updates come from GitHub Releases.</span><button id="update-check" class="btn small" type="button">Check Now</button></div>
+          <h4 data-i18n="prefs.updates">Updates</h4>
+          <div class="row"><span data-i18n="prefs.version">Version</span><output id="app-version"></output></div>
+          <div class="row"><span id="update-text">Updates come from GitHub Releases.</span><button id="update-check" class="btn small" type="button" data-i18n="prefs.checkNow">Check Now</button></div>
         </section>
         <div id="update-found" class="pane-note" hidden>
           <p id="update-found-text"></p>
-          <button id="update-install" class="btn small" type="button">Install and Restart</button>
+          <button id="update-install" class="btn small" type="button" data-i18n="prefs.installRestart">Install and Restart</button>
         </div>
       </div>
     </div>

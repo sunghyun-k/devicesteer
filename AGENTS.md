@@ -19,6 +19,21 @@ Guide for anyone changing the code of this repository: coding agents and human c
   output, error messages, Markdown and commit messages.
 - Keep a non-English string literal only when the code compares it against what the device shows or
   types, with a short English comment saying why.
+- **The exception: the viewer's locale catalogs** (`app/src/locales/*.json`), its translations into
+  Korean, Japanese, Simplified and Traditional Chinese, Spanish, French, German, Brazilian
+  Portuguese and Italian. `en.json` is the source; `app/src/locales/TRANSLATING.md` has the format
+  and the terms.
+- **Every string the viewer shows a person goes through `t()`** (`app/src/i18n.ts`; `data-i18n*`
+  attributes in the HTML), with its key added to every catalog in the same PR, translated, not
+  copied in English. `npm test` (in `app/`) checks that every catalog has every key with the same
+  placeholders. Labels that name something on the device (Settings › Privacy & Security ›
+  Developer Mode, Trust) use Apple's wording in that language. Not translated: what agents read
+  (CLI output, JSON, `skill.md`, the daemon's errors) and core or daemon messages the viewer shows
+  as they are; for a message the Tauri shell writes for the person, return a `code` the page maps
+  to a catalog key (`errorText` in `i18n.ts`).
+- **The homepage stays English** (`site/`). It names the viewer's languages, so adding or dropping
+  a catalog updates `site/index.html` and `site/llms.txt` in the same PR ("Keep the homepage in
+  step" below).
 
 ## What this is
 
@@ -67,7 +82,8 @@ skills/devicesteer/  SKILL.md: a bootstrap that tells agents to run `devicesteer
                     into the app, which links agents' skill folders to it
 app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC decoding);
                     src/agents.ts: the main window's launch sheets and update banner;
-                    src/settings.ts: the Settings window (settings.html: agent setup, updates)
+                    src/settings.ts: the Settings window (settings.html: language, agent setup,
+                    updates); src/i18n.ts and src/locales/: localization (see "Language")
 app/src-tauri/      Tauri shell (workspace member), a daemon client. agent_setup.rs installs the
                     CLI and skill links; tauri.bundle.conf.json adds the CLI and the skill to
                     bundles. A new command also goes in build.rs's COMMANDS and the
@@ -124,7 +140,8 @@ run `devicesteer daemon stop` (the next command starts the new build) and reopen
 viewer. `tauri dev` restarts the viewer itself when the daemon crate changes.
 
 There is no test suite against devices; a clean `cargo build` and `cargo clippy --workspace` is the
-minimum for every change. Pure logic (parsing, geometry) should get unit tests.
+minimum for every change, plus `npm run build` and `npm test` in `app/` for a change to the
+viewer. Pure logic (parsing, geometry) should get unit tests.
 
 ## Conventions
 
@@ -139,9 +156,9 @@ minimum for every change. Pure logic (parsing, geometry) should get unit tests.
 - **Keep private data out of the repository:** no real names, device names, SSIDs, UDIDs, message
   contents or third-party app specifics in code, docs, examples or commit messages.
 - **Keep the homepage in step.** A change that alters what users or agents see or do (commands,
-  setup steps, supported devices or OS versions, the pairing flow, viewer features) updates
-  `site/index.html` and `site/llms.txt` in the same PR, alongside README, `docs/SETUP.md` and
-  `crates/cli/src/skill.md`.
+  setup steps, supported devices or OS versions, the pairing flow, viewer features or languages)
+  updates `site/index.html` and `site/llms.txt` in the same PR, alongside README, `docs/SETUP.md`
+  and `crates/cli/src/skill.md`.
 - **Site images come from the viewer's mock mode (`?mock`, fake devices) or are drawn**, never
   captured from a real device. Keep them small (WebP or AVIF; PNG only where needed, such as
   `site/og.png` and icons). `.gitignore` ignores `*.png` everywhere else; keep its exceptions for

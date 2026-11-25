@@ -1,6 +1,8 @@
 // What the main window's launch sheets (agents.ts) and the Settings window's Agents pane
 // (settings.ts) share: the shapes agent_setup.rs and app_location.rs return, and small helpers.
 
+import { hasKey, num, t } from "./i18n";
+
 export type LinkState =
   | { state: "installed" }
   | { state: "missing" }
@@ -10,7 +12,9 @@ export type LinkState =
 export type Item = { id: string; name: string; path: string; detected: boolean } & LinkState;
 
 export interface Status {
+  /** Why setup can't run from this copy, in English; `unavailable_code` names it when known. */
   unavailable: string | null;
+  unavailable_code: string | null;
   cli: Item;
   on_path: boolean | null;
   agents: Item[];
@@ -51,14 +55,43 @@ export const pref = {
   },
 };
 
-export const CLI_NEEDED = "Agents need the command-line tool to operate devices. Without it, the skills won’t work.";
+/** What `agent_setup_change` reports when it replaced something (agent_setup.rs `Note`). */
+export interface Note {
+  code: string;
+  path: string;
+  message: string;
+}
+
+export const noteText = (n: Note): string => {
+  const key = `agents.note.${n.code}`;
+  return hasKey(key) ? t(key, { path: n.path }) : n.message;
+};
+
+export function unavailableText(s: Status): string {
+  const key = `agents.unavailable.${s.unavailable_code}`;
+  return s.unavailable_code && hasKey(key) ? t(key) : (s.unavailable ?? "");
+}
+
+/** An item's name: the shell names the command and the shared skills folder in English. */
+export function itemName(i: Item): string {
+  if (i.id === "cli") return t("agents.cliName");
+  if (i.id === "agents") return t("agents.sharedName");
+  return i.name;
+}
+
+/** The update's download, with how far it got when the size is known. */
+export function downloadingText(version: string, fraction?: number): string {
+  return fraction === undefined
+    ? t("update.downloading", { version })
+    : t("update.downloadingPercent", { version, percent: num(Math.floor(fraction * 100) / 100, { style: "percent" }) });
+}
 
 export const conflict = (i: Item) => i.state === "other_link" || i.state === "not_a_link";
 
 /** What is at the item's path when it isn't ours, in words. */
 export function conflictText(i: Item): string {
-  if (i.state === "other_link") return `A link to ${i.points_to || "somewhere else"} is already there.`;
-  if (i.state === "not_a_link") return `A ${i.is_dir ? "folder" : "file"} is already there. Replacing it moves it aside.`;
+  if (i.state === "other_link") return i.points_to ? t("agents.conflictLink", { target: i.points_to }) : t("agents.conflictLinkElsewhere");
+  if (i.state === "not_a_link") return t(i.is_dir ? "agents.conflictFolder" : "agents.conflictFile");
   return "";
 }
 
