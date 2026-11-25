@@ -21,7 +21,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use devicesteer_core::{
     Button, Clipboard, Controller, TypeMethod, DeviceSettings, Display, DisplayPoller, Frame, FrameStream, MediaMode, Motion, RecordSummary,
-    Recorder, Resampler, Session, Setting, TAP_HOLD, Toggle, TouchPhase,
+    Recorder, Resampler, Session, Setting, TAP_HOLD, Toggle, TouchPhase, Transport,
     ax::{BuildOptions, Screen},
     keyboard,
 };
@@ -75,6 +75,10 @@ const MAX_LABEL: usize = 60;
 const KEYS_TIMEOUT: Duration = Duration::from_secs(2);
 /// The same with only modifiers down: those don't repeat, and a person may hold one a while.
 const MODIFIERS_TIMEOUT: Duration = Duration::from_secs(30);
+/// How often a Wi-Fi tunnel checks whether the device is on USB too, to move to it.
+const USB_CHECK: Duration = Duration::from_secs(5);
+/// While video is wanted and the tunnel couldn't be reopened, how long until it is tried again.
+const REOPEN_EVERY: Duration = Duration::from_secs(5);
 /// Commands that put input on the device.
 const INPUT_COMMANDS: &[&str] = &["tap", "swipe", "button", "launch", "touch", "settings_set", "key", "type", "paste", "clipboard_set", "keyboard", "keyboard_connect", "keyboard_disconnect"];
 /// How long a reading of the VoiceOver switch is trusted before an input reads it again.
@@ -116,6 +120,11 @@ struct Device {
     controller: Option<Controller>,
     /// Polls the controller's display while it is open.
     display_watch: Option<TaskGuard>,
+    /// Set by the display poll when the controller's tunnel closed (PITFALLS #66); housekeeping
+    /// then drops it. One per controller, so a late poll can't drop the next one.
+    tunnel_lost: Arc<AtomicBool>,
+    /// Video is wanted but the tunnel couldn't be reopened: when to try again.
+    reopen_at: Option<Instant>,
     /// The frame stream of the current media session, by that session's id.
     frames: Option<(String, FrameStream, tokio::task::JoinHandle<()>)>,
     recording: Option<Recording>,
@@ -208,6 +217,27 @@ struct Request {
 fn is_connection_error(e: &anyhow::Error) -> bool {
     let t = format!("{e:#}");
     t.contains("connection") || t.contains("tunnel")
+}
+
+/// Errors that say the tunnel itself closed (its userspace TCP stack stopped, PITFALLS #66):
+/// nothing goes through it any more, so even a background poll drops it. Narrower than
+/// [`is_connection_error`], which also covers a stall that a busy device recovers from.
+fn is_closed_tunnel(e: &anyhow::Error) -> bool {
+    let t = format!("{e:#}");
+    t.contains("adapter closed") || t.contains("tunnel closed")
+}
+
+/// Commands run again, once, on a new tunnel when the cached one failed (PITFALLS #66): reads, and
+/// changes that come out the same when made twice. Not gestures, keys or typing: part of one may
+/// have reached the device before the failure, and doing it again would do that part twice.
+fn retried_on_new_tunnel(cmd: &str, args: &Value) -> bool {
+    match cmd {
+        "ui" | "settings" | "settings_set" | "display" | "status" | "clipboard_get" | "clipboard_set" | "keyboard_status"
+        | "keyboard_connect" | "keyboard_disconnect" => true,
+        // Bringing an app to the front twice is harmless; relaunching it twice is not.
+        "launch" => !args.get("relaunch").and_then(Value::as_bool).unwrap_or(false),
+        _ => false,
+    }
 }
 
 fn point(v: &Value) -> Result<(f64, f64)> {
@@ -322,7 +352,10 @@ impl Daemon {
             let session = Session::open(Some(&self.udid)).await?;
             let mode = if self.want_video(dev) { MediaMode::Video } else { MediaMode::InputOnly };
             let poller = DisplayPoller::new(session.adapter().clone(), session.rsd().clone());
-            dev.display_watch = Some(TaskGuard(tokio::task::spawn_local(self.clone().watch_display(poller))));
+            dev.tunnel_lost = Arc::new(AtomicBool::new(false));
+            let lost = dev.tunnel_lost.clone();
+            dev.display_watch = Some(TaskGuard(tokio::task::spawn_local(self.clone().watch_display(poller, lost))));
+            dev.reopen_at = None;
             dev.controller = Some(Controller::new(session, mode));
         }
         Ok(dev.controller.as_mut().expect("opened above"))
@@ -334,12 +367,21 @@ impl Daemon {
     /// reports are in the panel's orientation and the device doesn't announce a turn (PITFALLS
     /// #27), so the display is asked for again and again, on a connection of its own and without
     /// the device lock: a live touch or a reading isn't held up by it.
-    async fn watch_display(self: Arc<Self>, mut poller: DisplayPoller) {
+    ///
+    /// It is also the first to see the tunnel close (Wi-Fi gone, the cable pulled): it says so in
+    /// `lost` and stops, and housekeeping drops the tunnel, so the next command doesn't fail on it
+    /// first. It can't drop the tunnel itself: dropping it aborts this task.
+    async fn watch_display(self: Arc<Self>, mut poller: DisplayPoller, lost: Arc<AtomicBool>) {
         loop {
             let fast = Instant::now() < *self.fast_poll_until.lock().unwrap();
             tokio::time::sleep(if fast { DISPLAY_POLL_AFTER_INPUT } else { DISPLAY_POLL }).await;
             match poller.ask().await {
                 Ok(d) => self.display_seen(d).await,
+                Err(e) if is_closed_tunnel(&e) => {
+                    tracing::warn!("display poll: the tunnel closed: {e:#}");
+                    lost.store(true, Ordering::Relaxed);
+                    return;
+                }
                 Err(e) => tracing::debug!("display poll: {e:#}"),
             }
         }
@@ -410,9 +452,13 @@ impl Daemon {
         true
     }
 
-    /// Drops the cached session after a connection error.
+    /// Drops the cached session after a connection error. The next command, or the video when it
+    /// is wanted, opens a new one (over USB when the device is on USB: `Session::open`).
     async fn forget(&self, dev: &mut Device, why: &anyhow::Error) {
         tracing::warn!("dropping the device session: {why:#}");
+        // The finger went with the HID connection; its next `move` must say so.
+        dev.touch = None;
+        self.control.lock().unwrap().human_touching = false;
         dev.frames = None;
         dev.display_watch = None;
         if let Some(mut c) = dev.controller.take() {
@@ -811,34 +857,47 @@ impl Daemon {
             self.wait_for_human_touch().await;
         }
         let began = Instant::now();
-        let looked_up = async {
-            let mut dev = self.device.lock().await;
-            let note = self.check_agent(req)?;
-            let found = async {
-                let c = self.controller(&mut dev).await?;
-                let display = match a.get("display").and_then(Value::as_str) {
-                    Some(id) => Some(id.to_owned()),
-                    // Kept up to date by the display poll, a foldable's panel switch included.
-                    None => c.display().await?.capture_id().map(str::to_owned),
-                };
-                anyhow::Ok((c.session.adapter().clone(), c.session.rsd().clone(), c.session.transport, display))
-            }
-            .await;
-            if let Err(e) = &found
-                && is_connection_error(e)
-            {
-                self.forget(&mut dev, e).await;
-            }
-            found.map(|f| (f, note))
-        };
-        let ((mut adapter, mut rsd, transport, display), note) = looked_up.await?;
-        let png = match devicesteer_core::screenshot::capture(&mut adapter, &mut rsd, display.as_deref()).await {
-            Ok(png) => png,
-            Err(e) => {
-                if is_connection_error(&e) {
-                    self.forget(&mut *self.device.lock().await, &e).await;
+        // Twice at most: a cached tunnel that turns out closed is dropped and the capture runs on
+        // a new one (PITFALLS #66). A capture changes nothing on the device.
+        let mut tries = 0;
+        let (png, transport, note) = loop {
+            tries += 1;
+            let looked_up = async {
+                let mut dev = self.device.lock().await;
+                let note = self.check_agent(req)?;
+                let cached = dev.controller.is_some();
+                let found = async {
+                    let c = self.controller(&mut dev).await?;
+                    let display = match a.get("display").and_then(Value::as_str) {
+                        Some(id) => Some(id.to_owned()),
+                        // Kept up to date by the display poll, a foldable's panel switch included.
+                        None => c.display().await?.capture_id().map(str::to_owned),
+                    };
+                    anyhow::Ok((c.session.adapter().clone(), c.session.rsd().clone(), c.session.transport, display))
                 }
-                return Err(e);
+                .await;
+                anyhow::Ok((found, cached, note))
+            };
+            let (found, cached, note) = looked_up.await?;
+            let captured = match found {
+                Ok((mut adapter, mut rsd, transport, display)) => {
+                    devicesteer_core::screenshot::capture(&mut adapter, &mut rsd, display.as_deref()).await.map(|png| (png, transport))
+                }
+                Err(e) => Err(e),
+            };
+            match captured {
+                Ok((png, transport)) => break (png, transport, note),
+                Err(e) if is_connection_error(&e) => {
+                    let mut dev = self.device.lock().await;
+                    if dev.controller.is_some() {
+                        self.forget(&mut dev, &e).await;
+                    }
+                    if !cached || tries > 1 {
+                        return Err(e);
+                    }
+                    tracing::info!("capturing again on a new tunnel");
+                }
+                Err(e) => return Err(e),
             }
         };
         let captured_ms = began.elapsed().as_millis() as u64;
@@ -870,7 +929,23 @@ impl Daemon {
         // After the lock: the human may have touched or taken over while this waited for it.
         let note = self.check_agent(req)?;
         self.check_human(req)?;
+        // A cached tunnel can have closed since the last command (PITFALLS #66): drop it and, when
+        // the command is safe to repeat, run it once more on a new one. A tunnel just opened for
+        // this command gets no second try: opening another would fail the same way.
+        let cached = dev.controller.is_some();
         let mut r = self.device_op_locked(&mut dev, req).await;
+        if let Err(e) = &r
+            && cached
+            && is_connection_error(e)
+        {
+            self.forget(&mut dev, e).await;
+            if retried_on_new_tunnel(&req.cmd, &req.args) {
+                tracing::info!("running `{}` again on a new tunnel", req.cmd);
+                r = self.device_op_locked(&mut dev, req).await;
+            } else {
+                r = r.context("the tunnel to the device failed and is reopened with the next command; look at the screen, then retry if it didn't happen");
+            }
+        }
         if let (Ok(v), Some(note)) = (&mut r, note)
             && v.is_object()
         {
@@ -884,9 +959,8 @@ impl Daemon {
         }
         if let Err(e) = &r
             && is_connection_error(e)
+            && dev.controller.is_some()
         {
-            dev.touch = None;
-            self.control.lock().unwrap().human_touching = false;
             self.forget(&mut dev, e).await;
         }
         r
@@ -1308,13 +1382,38 @@ impl Daemon {
             }
             let Ok(mut dev) = self.device.try_lock() else { continue };
             let want = self.want_video(&dev);
+            if dev.controller.is_some() && dev.tunnel_lost.load(Ordering::Relaxed) {
+                self.forget(&mut dev, &anyhow!("the display poll found the tunnel closed")).await;
+                if want {
+                    self.reopen_video(&mut dev).await;
+                }
+            }
+            if n.is_multiple_of(USB_CHECK.as_millis() as u64 / 250) {
+                self.move_to_usb(&mut dev).await;
+            }
+            let want = self.want_video(&dev);
+            if want && dev.controller.is_none() && dev.reopen_at.is_some_and(|at| Instant::now() >= at) {
+                self.reopen_video(&mut dev).await;
+            }
             let idle_ms = dev.controller.as_ref().and_then(|c| c.media()).and_then(|m| m.idle_ms());
             if want && idle_ms.is_some_and(|ms| ms > VIDEO_STALE_MS) {
                 tracing::warn!("video went quiet for {idle_ms:?} ms; restarting it");
-                if let Some(c) = dev.controller.as_mut() {
-                    let _ = c.restart_media().await;
+                let restarted = match dev.controller.as_mut() {
+                    Some(c) => c.restart_media().await.map(drop),
+                    None => Ok(()),
+                };
+                let synced = match restarted {
+                    Ok(()) => self.sync_video(&mut dev).await,
+                    Err(e) => Err(e),
+                };
+                // A closed tunnel restarts nothing: drop it and stream from a new one.
+                if let Err(e) = synced {
+                    tracing::warn!("restarting the video failed: {e:#}");
+                    if is_connection_error(&e) && dev.controller.is_some() {
+                        self.forget(&mut dev, &e).await;
+                        self.reopen_video(&mut dev).await;
+                    }
                 }
-                let _ = self.sync_video(&mut dev).await;
             }
             let input_idle = dev.last_input.is_none_or(|t| t.elapsed() > MEDIA_IDLE);
             if !want
@@ -1328,6 +1427,41 @@ impl Daemon {
                 let _ = shutdown.send(()).await;
                 return;
             }
+        }
+    }
+
+    /// Opens a new tunnel for the video that is wanted, after the old one was dropped. When that
+    /// fails too (the device is away), it is tried again every [`REOPEN_EVERY`] while wanted.
+    async fn reopen_video(self: &Arc<Self>, dev: &mut Device) {
+        match self.sync_video(dev).await {
+            Ok(()) => {
+                tracing::info!("video goes on over a new tunnel");
+                dev.reopen_at = None;
+            }
+            Err(e) => {
+                tracing::warn!("could not reopen the video: {e:#}");
+                if dev.controller.is_some() && is_connection_error(&e) {
+                    self.forget(dev, &e).await;
+                }
+                dev.reopen_at = Some(Instant::now() + REOPEN_EVERY);
+            }
+        }
+    }
+
+    /// Moves a Wi-Fi tunnel to USB once the device is on USB too: USB is faster and needs no
+    /// heartbeat, and a Wi-Fi tunnel that closes later would be what the next command meets
+    /// (PITFALLS #66). Not while a finger or keys are down or a recording runs: the move cuts them.
+    async fn move_to_usb(self: &Arc<Self>, dev: &mut Device) {
+        let Some(c) = dev.controller.as_ref() else { return };
+        if c.session.transport != Transport::Wifi || dev.touch.is_some() || dev.keys.is_some() || dev.recording.is_some() {
+            return;
+        }
+        if !devicesteer_core::on_usb(&self.udid).await {
+            return;
+        }
+        self.forget(dev, &anyhow!("the device is on USB now; moving the tunnel off Wi-Fi")).await;
+        if self.want_video(dev) {
+            self.reopen_video(dev).await;
         }
     }
 
@@ -1597,4 +1731,45 @@ async fn run(udid: &str) -> Result<()> {
     daemon.close().await;
     listener.remove();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What the viewer showed after Wi-Fi dropped, and the forms the other calls take.
+    const SEEN: &str = r#"com.apple.coredevice.configuration connection failed (connection error: Socket(Custom { kind: NetworkUnreachable, error: "adapter closed" }))"#;
+
+    #[test]
+    fn a_closed_adapter_is_a_connection_error_and_a_closed_tunnel() {
+        let e = anyhow!(SEEN);
+        assert!(is_connection_error(&e) && is_closed_tunnel(&e));
+        let e = anyhow!("{}", r#"display info connection failed (connection error: Socket(Custom { kind: BrokenPipe, error: "adapter closed" }))"#);
+        assert!(is_closed_tunnel(&e));
+        let e = anyhow!("UDP bind on the tunnel failed (tunnel closed)").context("starting the media session");
+        assert!(is_closed_tunnel(&e));
+        // Context added on the way up keeps it recognisable.
+        let e = anyhow!(SEEN).context("reading appearance");
+        assert!(is_closed_tunnel(&e));
+    }
+
+    #[test]
+    fn a_stall_is_a_connection_error_but_not_a_closed_tunnel() {
+        let e = anyhow!("display info connection timed out after 10s (connection stalled)");
+        assert!(is_connection_error(&e));
+        assert!(!is_closed_tunnel(&e));
+        assert!(!is_connection_error(&anyhow!("the device did not answer appearance (3 tries); run the command again")));
+    }
+
+    #[test]
+    fn reads_and_repeatable_changes_run_again_on_a_new_tunnel() {
+        let none = json!({});
+        for cmd in ["settings", "settings_set", "ui", "display", "status", "clipboard_get", "keyboard_status", "launch"] {
+            assert!(retried_on_new_tunnel(cmd, &none), "{cmd}");
+        }
+        assert!(!retried_on_new_tunnel("launch", &json!({ "relaunch": true })));
+        for cmd in ["tap", "swipe", "button", "touch", "key", "type", "paste", "keyboard", "record_start", "record_stop"] {
+            assert!(!retried_on_new_tunnel(cmd, &none), "{cmd}");
+        }
+    }
 }
