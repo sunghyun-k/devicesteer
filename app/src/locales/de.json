@@ -98,6 +98,7 @@
   "keyboard.forwardKey": "⌘K",
   "keyboard.forwardKey@windows": "Strg+K",
   "keyboard.forwardHelp": "Verbindet eine Hardwaretastatur mit dem Gerät; Tasten gehen an das Gerät, solange der Zeiger über dem Bildschirm ist. Die Eingabequelle des Geräts bestimmt, was getippt wird (Control-Space wechselt sie)",
+  "keyboard.forwardHelp@windows": "Verbindet eine Hardwaretastatur mit dem Gerät; Tasten gehen an das Gerät, solange der Zeiger über dem Bildschirm ist. Strg dient als Befehlstaste (Strg+C kopiert, Strg+V fügt ein) und die Windows-Taste als Control-Taste. Die Eingabequelle des Geräts bestimmt, was getippt wird (Strg+Leertaste wechselt sie)",
   "keyboard.software": "Bildschirmtastatur ein/aus",
   "keyboard.softwareKey": "⌥⌘K",
   "keyboard.softwareKey@windows": "Strg+Alt+K",

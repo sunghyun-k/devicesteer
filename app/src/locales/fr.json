@@ -98,6 +98,7 @@
   "keyboard.forwardKey": "⌘K",
   "keyboard.forwardKey@windows": "Ctrl+K",
   "keyboard.forwardHelp": "Connecte un clavier physique à l’appareil ; les touches lui sont envoyées tant que le pointeur est sur l’écran. La source de saisie de l’appareil détermine ce qui est saisi (Control-Space la change)",
+  "keyboard.forwardHelp@windows": "Connecte un clavier physique à l’appareil ; les touches lui sont envoyées tant que le pointeur est sur l’écran. Ctrl sert de touche Commande (Ctrl+C copie, Ctrl+V colle) et la touche Windows de touche Contrôle. La source de saisie de l’appareil détermine ce qui est saisi (Ctrl+Espace la change)",
   "keyboard.software": "Afficher/masquer le clavier logiciel",
   "keyboard.softwareKey": "⌥⌘K",
   "keyboard.softwareKey@windows": "Ctrl+Alt+K",

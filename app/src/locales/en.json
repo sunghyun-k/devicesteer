@@ -98,6 +98,7 @@
   "keyboard.forwardKey": "⌘K",
   "keyboard.forwardKey@windows": "Ctrl+K",
   "keyboard.forwardHelp": "Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. The device’s input source decides what they type (Control-Space switches it)",
+  "keyboard.forwardHelp@windows": "Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. Ctrl works as Command (Ctrl+C copies, Ctrl+V pastes) and the Windows key as Control. The device’s input source decides what they type (Ctrl+Space switches it)",
   "keyboard.software": "Toggle Software Keyboard",
   "keyboard.softwareKey": "⌥⌘K",
   "keyboard.softwareKey@windows": "Ctrl+Alt+K",

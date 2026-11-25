@@ -98,6 +98,7 @@
   "keyboard.forwardKey": "⌘K",
   "keyboard.forwardKey@windows": "Ctrl+K",
   "keyboard.forwardHelp": "Conecta um teclado físico ao dispositivo, e as teclas vão para ele enquanto o ponteiro estiver sobre a tela. A fonte de entrada do dispositivo decide o que é digitado (Control-Space a alterna)",
+  "keyboard.forwardHelp@windows": "Conecta um teclado físico ao dispositivo, e as teclas vão para ele enquanto o ponteiro estiver sobre a tela. Ctrl funciona como a tecla Command (Ctrl+C copia, Ctrl+V cola) e a tecla Windows como Control. A fonte de entrada do dispositivo decide o que é digitado (Ctrl+Espaço a alterna)",
   "keyboard.software": "Mostrar/Ocultar Teclado na Tela",
   "keyboard.softwareKey": "⌥⌘K",
   "keyboard.softwareKey@windows": "Ctrl+Alt+K",

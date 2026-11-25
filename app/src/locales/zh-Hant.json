@@ -98,6 +98,7 @@
   "keyboard.forwardKey": "⌘K",
   "keyboard.forwardKey@windows": "Ctrl+K",
   "keyboard.forwardHelp": "為裝置連接硬體鍵盤，指標位於螢幕上時按鍵會傳送到裝置。輸入的內容由裝置的輸入方式決定（按 Control-Space 切換）",
+  "keyboard.forwardHelp@windows": "為裝置連接硬體鍵盤，指標位於螢幕上時按鍵會傳送到裝置。Ctrl 作為 Command 鍵（Ctrl+C 拷貝，Ctrl+V 貼上），Windows 鍵作為 Control 鍵。輸入的內容由裝置的輸入方式決定（按 Ctrl+Space 切換）",
   "keyboard.software": "切換軟體鍵盤",
   "keyboard.softwareKey": "⌥⌘K",
   "keyboard.softwareKey@windows": "Ctrl+Alt+K",
