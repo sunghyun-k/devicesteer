@@ -174,6 +174,7 @@
   "settings.liquidGlass": "Liquid Glass",
   "settings.clearToTinted": "クリア〜色付き",
   "settings.clearToTintedValue": "クリア〜色付き: {value}",
+  "settings.defaultValue": "{value}（デフォルト）",
   "settings.textSize": "文字サイズ",
   "settings.textSizeXS": "極小",
   "settings.textSizeS": "小",
