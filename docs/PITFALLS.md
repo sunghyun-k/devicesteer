@@ -22,10 +22,10 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57 |
+| Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57, #64 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32, #55, #56, #59 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
-| Windows host | #51, #52, #53, #54, #57, #59 |
+| Windows host | #51, #52, #53, #54, #57, #59, #64 |
 
 ## Entries
 
@@ -1280,3 +1280,17 @@ iPad had gone to sleep before level 3 could be measured there, and the viewer's 
 was left alone). Files: iPhone 11.9 MB → 3.3 MB; iPad 5.8 MB → 4.5 MB with fdeflate, 2.5 MB at
 level 6 on a saved capture. What is left is the device's own capture and encoding (1.3–1.8 s), which no
 request option changes.
+
+### 64. A window made from a synchronous command stays blank on Windows
+
+On Windows the Settings window opened from the More menu (or Ctrl+,) showed an empty frame and
+never loaded its page. `open_settings` was a plain `fn` command that builds a `WebviewWindow`.
+Tauri runs synchronous commands on the main thread, and WebView2 creates its controller through
+that same thread's message loop, which the command is blocking: the window exists but its webview
+never finishes. Tauri's docs say to create windows from `async` commands, which run on the async
+runtime. macOS didn't show it: there the command (after the first-launch sheet) loaded the window,
+and ⌘, opens Settings from the app menu (`view_menu.rs`) without the command. The page dropped the
+command's error silently, so nothing said what failed.
+
+So every command that builds a window is `async` (`open_settings` in `settings_window.rs`), even
+with nothing to await. The page logs a failed `open_settings` instead of dropping it.

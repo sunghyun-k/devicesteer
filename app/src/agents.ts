@@ -16,7 +16,8 @@ let appVersion = "";
 
 /** Opens the Settings window at `tab` (settings_window.rs). */
 export function openSettings(tab?: "agents" | "updates"): void {
-  void invoke("open_settings", { tab: tab ?? null }).catch(() => {});
+  // Logged: a failure dropped silently left a blank window with no clue why (PITFALLS #64).
+  void invoke("open_settings", { tab: tab ?? null }).catch((e) => console.error("could not open the Settings window:", e));
 }
 
 // ---------- first launch ----------

@@ -44,9 +44,11 @@ pub fn open(app: &AppHandle, tab: Option<&str>) -> tauri::Result<()> {
 }
 
 /// Opens Settings at `tab` (`agents` or `updates`): the main window's page calls it after the
-/// first-launch sheet, and on platforms without an app menu.
+/// first-launch sheet, and on platforms without an app menu. `async` with nothing to await: a
+/// synchronous command runs on the main thread, and a window built there stays blank on Windows
+/// (PITFALLS #64).
 #[tauri::command]
-pub fn open_settings(app: AppHandle, tab: Option<String>) -> Result<(), String> {
+pub async fn open_settings(app: AppHandle, tab: Option<String>) -> Result<(), String> {
     open(&app, tab.as_deref()).map_err(|e| format!("could not open the Settings window: {e}"))
 }
 
