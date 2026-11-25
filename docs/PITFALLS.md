@@ -868,3 +868,41 @@ switches the Mac's input source (#45) isn't also sent as a Space.
 
 With the shortcut turned off in the Mac's settings, the Space reaches the page as usual and goes
 over as a normal key; no input source change follows, so nothing doubles.
+
+### 47. A foldable switches panels when folded or unfolded; nothing follows by itself
+
+Foldable iPhone (iOS 27.3, USB), folded and unfolded by hand while `examples/fold_probe.rs` (core)
+polled `getdisplayinfo` every 0.1 s and `devicesteer events --frames` watched the daemon's stream.
+
+- **`getdisplayinfo` lists both panels at all times**: the cover panel (`displayId` 1,
+  `primary: true`, 1398x2034 px, 466x678 points) and the inner panel (`displayId` 2,
+  `primary: false`, 2007x2853 px, 669x951 points), each with its own `uniqueId`. Folding or
+  unfolding flips `active` between them; size, ids and `primary` never change. The panel coming
+  into use reports `backlightState: activeOn` 0.2 to 0.7 s before `active` flips, and the one going
+  out of use goes `off` about 1 to 3 s after.
+- **The panel not in use keeps an orientation of its own**: once folded, the inner panel said
+  `rot90` while the cover was `rot0`, and still `rot90` right after unfolding. Only the active
+  panel's `currentOrientation` means anything.
+- **The inner panel's `frame` and `nativeSize` (1878x2670) are smaller than its `bounds`
+  (2007x2853)**; screenshots of it were 2007x2853, so `bounds` stays the size to use.
+- **A sized wireless display appears while a stream runs**: `wireless0` (`displayId` 4) gets
+  `bounds` 1408x2048 at scale 1, and the inner panel's video arrived scaled to 1408x2016 coded. It is
+  never `active`, so picking by `active` (#9) still finds the panel.
+- **Nothing is pushed.** Idle connections to `deviceinfo` and `displayservice` received nothing
+  through four folds and unfolds, so the daemon learns of a switch from its display poll (#27), up to
+  0.5 s late.
+- **A running stream stays on its `displayId`.** Folded, the daemon's inner-panel stream went on
+  at 60 frames per second for about 3 s (the inner panel's last pictures) and then sent about one
+  small frame per second: no new parameter sets, no keyframe, no error, so the viewer kept showing the
+  inner panel. The quiet-video restart never fired, since frames still came. Unfolded again,
+  the same stream picked up at 60 frames per second by itself.
+- **A screenshot without `displayUniqueID` captures the cover panel** even while unfolded (old
+  #51, #5): black.
+
+So on a panel change (`Display::same_panel`) the controller closes HID (its connection is bound to
+the old panel's touchscreen, `touchscreen(<uniqueId>)`) and restarts our media session on the new
+`displayId` (stopping only our streams, #1); the daemon attaches the frame stream to it, which sends
+a `config` with the new picture, and sends a `panel` event first, on which the viewer drops the old
+config and takes no touches until the new one. `screenshot` without `--display` captures the active
+panel. A recording keeps only frames of its first picture size (an MP4 track has one set of
+parameter sets) and reports the rest as `frames_of_another_picture`.

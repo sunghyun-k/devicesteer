@@ -308,32 +308,64 @@ impl Daemon {
 
     /// Takes a display reading: on a change, the controller places touches on the new screen, the
     /// cached `config` says how the video is turned, and subscribers get an `orientation` event.
-    async fn display_seen(&self, d: Display) {
-        if self.note_display(&d)
-            && let Some(c) = self.device.lock().await.controller.as_mut()
-        {
-            c.set_display(d);
+    /// On another panel (a foldable folded or unfolded, PITFALLS #47) the controller moves its
+    /// video and touches to it, and the frame stream follows.
+    async fn display_seen(self: &Arc<Self>, d: Display) {
+        if !self.note_display(&d) {
+            return;
+        }
+        let mut dev = self.device.lock().await;
+        let Some(c) = dev.controller.as_mut() else { return };
+        match c.set_display(d).await {
+            Ok(true) => self.follow_panel(&mut dev).await,
+            Ok(false) => {}
+            Err(e) => tracing::warn!("moving to the new panel: {e:#}"),
+        }
+    }
+
+    /// After the controller moved to another panel: its HID connection closed with any live touch,
+    /// and the frame stream goes on from the restarted media session (a new `config`).
+    async fn follow_panel(self: &Arc<Self>, dev: &mut Device) {
+        if dev.touch.is_some() && !dev.controller.as_ref().is_some_and(Controller::touching) {
+            dev.touch = None;
+            self.control.lock().unwrap().human_touching = false;
+            self.emit_control();
+        }
+        if let Err(e) = self.sync_video(dev).await {
+            tracing::warn!("video on the new panel: {e:#}");
         }
     }
 
     /// The part of [`Self::display_seen`] that needs no device lock. Returns whether it changed.
     fn note_display(&self, d: &Display) -> bool {
-        {
+        let panel = {
             let mut cur = self.display.lock().unwrap();
             if cur.as_ref() == Some(d) {
                 return false;
             }
+            let panel = cur.as_ref().is_some_and(|c| !c.same_panel(d));
             *cur = Some(d.clone());
+            panel
+        };
+        tracing::info!("display {}: {:?}, screen {:?}", d.unique_id, d.rotation, d.size());
+        let mut ev = orientation_json(d);
+        if panel {
+            // The cached config is the old panel's stream: its picture size and decoder setup. The
+            // stream restarted on the new panel sends its own; until then a viewer that joins
+            // waits for it rather than sizing the old picture to the new screen.
+            *self.config.lock().unwrap() = None;
+            ev["event"] = json!("panel");
+            ev["display_id"] = json!(d.display_id);
+            ev["unique_id"] = json!(d.unique_id);
+            self.emit(ev);
+            return true;
         }
-        tracing::info!("display: {:?}, screen {:?}", d.rotation, d.size());
-        let ev = orientation_json(d);
         if let Some(config) = self.config.lock().unwrap().as_mut()
             && let (Some(c), Some(o)) = (config.as_object_mut(), ev.as_object())
         {
             c.extend(o.clone());
             c.insert("event".into(), json!("config"));
         }
-        let mut ev = ev;
         ev["event"] = json!("orientation");
         self.emit(ev);
         true
@@ -981,10 +1013,14 @@ impl Daemon {
             }
             "display" => {
                 let c = self.controller(dev).await?;
+                let before = c.display().await?;
                 let d = c.refresh_display().await?;
                 let r = json!({ "display": d, "screen": d.size(), "orientation": d.orientation() });
                 // The controller has it already; this is called with the device lock held.
                 self.note_display(&d);
+                if !before.same_panel(&d) {
+                    self.follow_panel(dev).await;
+                }
                 Ok(r)
             }
             "record_start" => {

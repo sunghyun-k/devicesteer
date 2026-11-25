@@ -80,7 +80,8 @@ impl Controller {
         }
     }
 
-    /// The display in use, asked once and then reused (call [`Self::refresh_display`] after a turn).
+    /// The display in use, asked once and then reused (call [`Self::refresh_display`] or
+    /// [`Self::set_display`] after a turn or a panel change).
     pub async fn display(&mut self) -> Result<Display> {
         if let Some(d) = &self.display {
             return Ok(d.clone());
@@ -91,14 +92,29 @@ impl Controller {
     }
 
     pub async fn refresh_display(&mut self) -> Result<Display> {
-        self.display = None;
-        self.display().await
+        let d = self.session.display().await?;
+        self.set_display(d.clone()).await?;
+        Ok(d)
     }
 
     /// Takes a display read elsewhere (the daemon polls it to follow the interface orientation,
     /// PITFALLS #27), so the next gesture is placed on the screen as it is turned now.
-    pub fn set_display(&mut self, d: Display) {
+    ///
+    /// A foldable that was folded or unfolded has another panel in use (PITFALLS #47): the HID
+    /// connection is bound to the old panel's touchscreen and the video to its `displayId`, and
+    /// neither follows by itself. The HID connection is closed (the next input opens one on the new
+    /// panel) and a running media session is restarted on the new panel. Returns whether the
+    /// panel changed; the daemon then attaches its frame stream to the new session.
+    pub async fn set_display(&mut self, d: Display) -> Result<bool> {
+        let changed = self.display.as_ref().is_some_and(|cur| !cur.same_panel(&d));
         self.display = Some(d);
+        if changed {
+            self.drop_input().await;
+            if self.media.is_some() {
+                self.restart_media().await?;
+            }
+        }
+        Ok(changed)
     }
 
     /// Starts the media session if it isn't running or went quiet.

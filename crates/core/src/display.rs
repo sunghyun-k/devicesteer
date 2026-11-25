@@ -86,6 +86,12 @@ impl Display {
         }
     }
 
+    /// Whether `other` is the same panel: a foldable switches panels when it is folded or
+    /// unfolded (PITFALLS #47), and the video and the touchscreen are bound to one.
+    pub fn same_panel(&self, other: &Display) -> bool {
+        self.unique_id == other.unique_id && self.display_id == other.display_id
+    }
+
     /// Touch-report coordinates (0..=65535 across the panel) for a point on the screen as the user
     /// sees it. Out-of-range points are clamped: the device drops them silently (PITFALLS #6).
     pub fn report_point(&self, (x, y): (f64, f64)) -> (u16, u16) {
@@ -95,6 +101,10 @@ impl Display {
         (unit(u), unit(v))
     }
 }
+
+/// What stands in for the `uniqueId` a phone with one panel lacks (PITFALLS #9): its touchscreen
+/// is `CoreDevice touchscreen(nil)`.
+pub(crate) const NO_UNIQUE_ID: &str = "nil";
 
 /// The active display from a `getdisplayinfo` output.
 ///
@@ -145,7 +155,7 @@ fn parse(output: &plist::Value) -> Result<Display> {
         .ok_or_else(|| anyhow!("the active display has no pointScale"))?;
     let (w, h) = size(display).ok_or_else(|| anyhow!("the active display has no bounds"))?;
     Ok(Display {
-        unique_id: display.get("uniqueId").and_then(|v| v.as_string()).unwrap_or("nil").to_string(),
+        unique_id: display.get("uniqueId").and_then(|v| v.as_string()).unwrap_or(NO_UNIQUE_ID).to_string(),
         display_id: display.get("displayId").and_then(|v| v.as_signed_integer()),
         panel: (w / scale, h / scale),
         scale,
@@ -179,12 +189,17 @@ impl DisplayPoller {
     /// tried again on a new one. The final error doesn't say "connection" when the tunnel is fine,
     /// so the daemon keeps its session.
     pub async fn ask(&mut self) -> Result<Display> {
+        parse(&self.ask_raw().await?)
+    }
+
+    /// `getdisplayinfo`'s whole answer, every panel in it, for probes.
+    pub async fn ask_raw(&mut self) -> Result<plist::Value> {
         for _ in 0..ASK_TRIES {
             let mut link = match self.link.take() {
                 Some(l) => l,
                 None => step("display info connection", DeviceInfoLink::connect_rsd(&mut self.adapter, &mut self.rsd)).await?,
             };
-            match tokio::time::timeout(ASK_TIMEOUT, link.active_display()).await {
+            match tokio::time::timeout(ASK_TIMEOUT, link.invoke(FEATURE_DISPLAY_INFO, idevice::xpc::Dictionary::new(), None)).await {
                 Ok(Ok(d)) => {
                     self.link = Some(link);
                     return Ok(d);
@@ -194,16 +209,6 @@ impl DisplayPoller {
             }
         }
         bail!("the device did not say which display is in use ({ASK_TRIES} tries); retry")
-    }
-}
-
-impl DeviceInfoLink {
-    /// The display in use now.
-    pub(crate) async fn active_display(&mut self) -> Result<Display> {
-        let out = self
-            .invoke(FEATURE_DISPLAY_INFO, idevice::xpc::Dictionary::new(), None)
-            .await?;
-        parse(&out)
     }
 }
 
@@ -308,5 +313,57 @@ mod tests {
         assert_eq!(d.panel, (428.0, 926.0));
         assert_eq!(d.unique_id, "nil");
         assert_eq!(d.display_id, Some(1));
+    }
+
+    /// A foldable's answer (shape seen on iOS 27.3): two sized panels with `active`, and a sized
+    /// wireless display while a stream runs (it carries the scaled-down video, PITFALLS #47).
+    fn foldable(cover_active: bool) -> plist::Value {
+        let arr = |v: Vec<plist::Value>| plist::Value::Array(v);
+        let real = |f: f64| plist::Value::Real(f);
+        let panel = |id: &str, display_id: i64, active: bool, primary: bool, w: f64, h: f64, rot: &str| {
+            let mut d = plist::Dictionary::new();
+            d.insert("active".into(), plist::Value::Boolean(active));
+            d.insert("primary".into(), plist::Value::Boolean(primary));
+            d.insert("uniqueId".into(), plist::Value::String(id.into()));
+            d.insert("displayId".into(), plist::Value::Integer(display_id.into()));
+            d.insert("pointScale".into(), real(3.0));
+            d.insert("currentOrientation".into(), plist::Value::String(rot.into()));
+            d.insert("bounds".into(), arr(vec![arr(vec![real(0.0), real(0.0)]), arr(vec![real(w), real(h)])]));
+            plist::Value::Dictionary(d)
+        };
+        let mut wireless = plist::Dictionary::new();
+        wireless.insert("active".into(), plist::Value::Boolean(false));
+        wireless.insert("displayId".into(), plist::Value::Integer(4.into()));
+        wireless.insert("pointScale".into(), real(1.0));
+        wireless.insert("currentOrientation".into(), plist::Value::String("rot0".into()));
+        wireless.insert("bounds".into(), arr(vec![arr(vec![real(0.0), real(0.0)]), arr(vec![real(1408.0), real(2048.0)])]));
+        let mut out = plist::Dictionary::new();
+        out.insert(
+            "displays".into(),
+            arr(vec![
+                panel("cover", 1, cover_active, true, 1398.0, 2034.0, "rot0"),
+                // The panel not in use keeps reporting a stale orientation.
+                panel("inner", 2, !cover_active, false, 2007.0, 2853.0, "rot90"),
+                plist::Value::Dictionary(wireless),
+            ]),
+        );
+        plist::Value::Dictionary(out)
+    }
+
+    #[test]
+    fn folding_moves_the_active_display_to_the_other_panel() {
+        let open = parse(&foldable(false)).unwrap();
+        let folded = parse(&foldable(true)).unwrap();
+        assert_eq!((open.unique_id.as_str(), open.display_id, open.panel), ("inner", Some(2), (669.0, 951.0)));
+        assert_eq!((folded.unique_id.as_str(), folded.display_id, folded.panel), ("cover", Some(1), (466.0, 678.0)));
+        assert!(!open.same_panel(&folded));
+    }
+
+    #[test]
+    fn a_turn_is_the_same_panel() {
+        let upright = display(Rotation::R0);
+        let turned = display(Rotation::R90);
+        assert_ne!(upright, turned);
+        assert!(upright.same_panel(&turned));
     }
 }

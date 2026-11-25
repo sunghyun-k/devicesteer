@@ -142,6 +142,29 @@ pub struct RecordSummary {
     pub lost_packets: u64,
     /// How players turn the picture: the screen's rotation when the recording started.
     pub rotation: Rotation,
+    /// Frames left out because the stream changed to another picture (a foldable switched
+    /// panels, PITFALLS #47): an MP4 track has one set of parameter sets, so the recording ends
+    /// where the panel changed.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub frames_of_another_picture: u64,
+}
+
+/// Whether a frame's picture can go on in the track begun with `first`. Only the size counts: a
+/// restart of the same panel's stream (PITFALLS #23, #28) goes on in the same track.
+fn same_picture(first: Option<&ParameterSets>, now: Option<&ParameterSets>) -> bool {
+    let size = |p: Option<&ParameterSets>| p.map(|p| (p.width, p.height));
+    same_size(size(first), size(now))
+}
+
+fn same_size(first: Option<(u32, u32)>, now: Option<(u32, u32)>) -> bool {
+    match (first, now) {
+        (Some(a), Some(b)) => a == b,
+        _ => true,
+    }
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// Writes frames to an MP4 as they come.
@@ -155,6 +178,7 @@ pub struct Recorder {
     lost_at_start: Option<u64>,
     lost: u64,
     turn: Rotation,
+    other_picture: u64,
 }
 
 impl Recorder {
@@ -170,6 +194,7 @@ impl Recorder {
             lost_at_start: None,
             lost: 0,
             turn: Rotation::R0,
+            other_picture: 0,
         })
     }
 
@@ -190,6 +215,10 @@ impl Recorder {
             }
             self.params = f.params.clone();
             self.lost_at_start = Some(f.lost);
+        }
+        if !same_picture(self.params.as_deref(), f.params.as_deref()) {
+            self.other_picture += 1;
+            return Ok(());
         }
         if let Some(prev) = self.last_ts {
             writer.set_last_duration(ticks_between(prev, f.rtp_ts));
@@ -236,6 +265,7 @@ impl Recorder {
             codec: params.codec(),
             lost_packets: self.lost,
             rotation: self.turn,
+            frames_of_another_picture: self.other_picture,
         })
     }
 }
@@ -245,5 +275,19 @@ impl Drop for Recorder {
         if let Some(w) = self.writer.take() {
             w.discard();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_track_goes_on_only_with_its_picture_size() {
+        // A restart of the same panel's stream: the same size goes on in the track.
+        assert!(same_size(Some((1408, 2016)), Some((1408, 2016))));
+        // A foldable switched panels: the cover's stream has another size (PITFALLS #47).
+        assert!(!same_size(Some((1408, 2016)), Some((1296, 1888))));
+        assert!(same_size(Some((1408, 2016)), None));
     }
 }

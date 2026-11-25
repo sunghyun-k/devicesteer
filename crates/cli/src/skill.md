@@ -149,6 +149,9 @@ never turn points yourself.
   rotates in front); the home screen of most iPhones stays portrait. **After a turn, read the
   screen again**: refs and points from before it point at the wrong places. The daemon notices a
   turn within about half a second.
+- A foldable iPhone uses its inner panel when unfolded and its cover panel when folded, each with
+  its own size. Folding or unfolding is like a turn: the daemon follows within about half a second,
+  and **you read the screen again** before the next input.
 - `devicesteer display` shows the current `rotation` and `orientation` without reading the screen.
 
 ## Input

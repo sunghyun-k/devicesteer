@@ -550,6 +550,17 @@ function onOrientation(o: Orientation): void {
   window.setTimeout(report, 300);
 }
 
+/** A foldable was folded or unfolded and another panel is in use (PITFALLS #47). The picture and
+ * every point shown belong to the old panel: the screen keeps the last picture but takes no
+ * touches until the daemon's stream on the new panel sends its `config` (a new size, decoder
+ * and screen), which `configure` sets up as on any stream start. */
+function onPanel(): void {
+  config = undefined;
+  hideCursor();
+  for (const d of fingers.values()) d.remove();
+  fingers.clear();
+}
+
 async function configure(cfg: Config): Promise<void> {
   const gen = ++configGen;
   config = cfg;
@@ -1067,6 +1078,9 @@ function onMessage(buf: Uint8Array): void {
         break;
       case "orientation":
         onOrientation(ev as Orientation);
+        break;
+      case "panel":
+        onPanel();
         break;
       case "recording":
         onRecording(ev as RecordingEvent);

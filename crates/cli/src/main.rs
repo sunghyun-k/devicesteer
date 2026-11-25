@@ -69,7 +69,8 @@ enum Command {
         /// Where to write the PNG.
         #[arg(short, long, default_value = "screenshot.png")]
         output: PathBuf,
-        /// Panel to capture (a display `uniqueId`); defaults to the device's primary panel.
+        /// Panel to capture (a display `uniqueId`); defaults to the panel in use (a foldable's inner
+        /// or cover panel, whichever is active).
         #[arg(long)]
         display: Option<String>,
     },

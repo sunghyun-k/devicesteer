@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::{
     devices::{Transport, mux_addr, mux_devices, transport_of},
-    display::{Display, DisplayPoller},
+    display::{Display, DisplayPoller, NO_UNIQUE_ID},
     step,
 };
 
@@ -210,9 +210,15 @@ impl Session {
 
     /// Captures the active display as PNG.
     ///
-    /// `display` is a panel's `uniqueId` (foldables have two panels; without it the device
-    /// captures its first panel, which is black while unfolded).
+    /// `display` is a panel's `uniqueId`. Without one, the panel in use now is captured: a
+    /// foldable has two panels, and the device on its own captures its first (the cover panel),
+    /// which is black while unfolded (PITFALLS #5, #47). A phone with one panel has no id to pass.
     pub async fn screenshot(&mut self, display: Option<&str>) -> Result<Vec<u8>> {
+        let active = match display {
+            Some(_) => None,
+            None => Some(self.display().await?.unique_id).filter(|id| id != NO_UNIQUE_ID),
+        };
+        let display = display.or(active.as_deref());
         let mut client: ScreenCaptureServiceClient<_> = self.connect().await?;
         step("screenshot", client.take_screenshot(display, ImageFormat::Png)).await
     }
