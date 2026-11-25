@@ -145,9 +145,9 @@ jobs:
           echo "artifact=windows-installer" >> "$GITHUB_OUTPUT"
           echo "setup=$setup" >> "$GITHUB_OUTPUT"
 
-      # Installs silently (as scripts/install.ps1 does), reinstalls over it while a daemon runs from
+      # Installs silently (as scripts/install.ps1 does), reinstalls over it while the CLI runs from
       # a hard link (as Settings › Agents makes one), and uninstalls: the installer hooks must stop
-      # that daemon, or the reinstall can't overwrite devicesteer.exe.
+      # that process, or the reinstall can't overwrite devicesteer.exe.
       - name: Install, reinstall and uninstall
         shell: pwsh
         env:
@@ -171,20 +171,29 @@ jobs:
           New-Item -ItemType Directory -Force $bin | Out-Null
           $link = Join-Path $bin 'devicesteer.exe'
           New-Item -ItemType HardLink -Path $link -Target (Join-Path $dir 'devicesteer.exe') | Out-Null
-          # A daemon for a device that isn't there listens and idles (it exits after 10 minutes).
-          $daemon = Start-Process -FilePath $link -ArgumentList 'daemon', '--udid', '00000000-0000000000000000' -PassThru -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'daemon.log')
+          # A daemon needs a device (or usbmuxd); `setup wifi` doesn't: it advertises this computer
+          # and waits for a device to pair, which makes it a running CLI process like a daemon.
+          $log = Join-Path $env:RUNNER_TEMP 'cli.log'
+          $daemon = Start-Process -FilePath $link -ArgumentList 'setup', 'wifi', '--wait', '600' -PassThru -RedirectStandardError $log
           Start-Sleep -Seconds 5
-          if ($daemon.HasExited) {
-            Get-Content (Join-Path $env:RUNNER_TEMP 'daemon.log')
-            Write-Host '::warning::the test daemon exited by itself; the reinstall runs without one'
-          }
+          if ($daemon.HasExited) { Get-Content $log; throw 'the test CLI process exited by itself' }
           Install
-          if (-not $daemon.HasExited) { throw 'the reinstall left the daemon running' }
+          if (-not $daemon.HasExited) { throw 'the reinstall left the CLI process running' }
           & (Join-Path $dir 'devicesteer.exe') --version
+          # The installer overwrites files in place, so the hard link is still the installed CLI
+          # (docs/SETUP.md relies on this for updates).
+          $names = fsutil hardlink list (Join-Path $dir 'devicesteer.exe')
+          $names
+          if (-not ($names | Where-Object { $_ -like '*\.local\bin\devicesteer.exe' })) { throw 'the reinstall replaced the CLI file, cutting the hard link' }
+
+          $daemon = Start-Process -FilePath $link -ArgumentList 'setup', 'wifi', '--wait', '600' -PassThru -RedirectStandardError $log
+          Start-Sleep -Seconds 5
+          if ($daemon.HasExited) { Get-Content $log; throw 'the test CLI process exited by itself' }
 
           # `_?=` runs the uninstaller in place, so this waits for it (it can't delete itself then).
           $p = Start-Process -FilePath (Join-Path $dir 'uninstall.exe') -ArgumentList '/S', "_?=$dir" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "the uninstaller exited with $($p.ExitCode)" }
+          if (-not $daemon.HasExited) { throw 'the uninstall left the CLI process running' }
           foreach ($f in 'devicesteer-app.exe', 'devicesteer.exe', 'skills\devicesteer\SKILL.md') {
             if (Test-Path (Join-Path $dir $f)) { throw "the uninstall left $f" }
           }
