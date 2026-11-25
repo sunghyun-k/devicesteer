@@ -1150,6 +1150,7 @@ dependencies = [
  "plist",
  "serde",
  "serde_json",
+ "tauri-winres",
  "tokio",
  "tracing-subscriber",
 ]
