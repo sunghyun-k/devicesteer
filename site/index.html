@@ -7,12 +7,13 @@
 <meta name="description" content="See and control a real iPhone or iPad from macOS or Windows, without Xcode. A live viewer for you, a JSON CLI and an agent skill for Claude Code, Codex and other coding agents, in sessions you can watch, take over or stop.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111214" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0b0e14" media="(prefers-color-scheme: dark)">
 <link rel="canonical" href="https://devicesteer.sunghyunkim.com/">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/images/favicon.png" type="image/png" sizes="64x64">
 <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
 <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="preload" href="/fonts/InstrumentSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DeviceSteer">
@@ -46,108 +47,267 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<!-- Image slots: the pictures on this page are <picture class="slot"> with a light and a dark
+     file. To swap one, replace the files in /images (or change the paths) and set the <img>'s
+     width and height to the new image's pixel size; the frame keeps that aspect ratio. The hero
+     is a video instead: see MEDIA_BASE in hero.js. -->
 
-<header class="nav">
-  <div class="wrap nav-inner">
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap top-inner">
     <a class="brand" href="/" aria-label="DeviceSteer home">
-      <img src="/icon.svg" alt="" width="28" height="28">
+      <img src="/icon.svg" alt="" width="24" height="24">
       <span>DeviceSteer</span>
     </a>
-    <nav aria-label="Sections">
+    <nav class="top-links" aria-label="Sections">
+      <a href="#trust">Safety</a>
       <a href="#start">Get started</a>
       <a href="#agents">For agents</a>
-      <a href="#safety">Safety</a>
-      <a class="gh" href="https://github.com/sunghyun-k/devicesteer">GitHub</a>
+      <a href="#requirements">Requirements</a>
     </nav>
+    <a class="btn small" id="get-top" href="https://github.com/sunghyun-k/devicesteer/releases">Download</a>
   </div>
 </header>
 
-<main>
+<main id="main">
 
-<section class="hero">
-  <div class="wrap">
-    <p class="eyebrow">iPhone &amp; iPad · macOS &amp; Windows · no Xcode</p>
-    <h1>Your iPhone, on your computer.<br><span class="soft">For you, and for your agent.</span></h1>
-    <p class="lede">DeviceSteer shows the live screen of a real iPhone or iPad and lets you control it with your
-      mouse and keyboard. Your coding agent drives the same device through a CLI, in a session you can
-      watch, take over, hand back or stop.</p>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/sunghyun-k/devicesteer/releases">Download for macOS</a>
-      <a class="btn" href="https://github.com/sunghyun-k/devicesteer">View on GitHub</a>
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap hero-top">
+    <div class="hero-lead">
+      <h1 id="hero-title">Your iPhone,<br> on your computer.</h1>
+      <p class="sub-title">For you, and for your agent.</p>
     </div>
-    <p class="fine">Free and open source (MIT). iOS / iPadOS 17 or later, over USB or Wi-Fi.</p>
+    <div class="hero-act">
+      <p class="lede">DeviceSteer shows the live screen of a real iPhone or iPad and lets you use it with
+        your mouse and keyboard. Your coding agent drives the same device through a CLI, in a session you
+        can watch, take over, hand back or stop.</p>
+      <!-- The script at the end adapts this block to the visitor's system; without it, it stays
+           the macOS version. -->
+      <p class="get-note" id="get-note" hidden></p>
+      <div class="cta">
+        <a class="btn primary" id="get-primary" href="https://github.com/sunghyun-k/devicesteer/releases">Download for macOS</a>
+        <a class="btn" id="get-secondary" href="https://github.com/sunghyun-k/devicesteer">View on GitHub</a>
+      </div>
+      <p class="get-alt" id="get-alt">On Windows? <a href="#windows">Get it for Windows</a>.</p>
+      <p class="meta">Free and open source (MIT) · iOS / iPadOS 27 or later · USB or Wi-Fi · no Xcode</p>
+    </div>
   </div>
-  <div class="wrap shot-wrap">
-    <picture>
-      <source srcset="/images/viewer-dark.webp" media="(prefers-color-scheme: dark)">
-      <img class="shot" src="/images/viewer-light.webp" width="2200" height="1760"
-        alt="The DeviceSteer viewer: a device list, the live iPhone screen with an agent's touch labelled 'Open Wi-Fi settings', a bar reading 'Agent is in control' with Stop and Take over, and device settings on the right">
-    </picture>
+  <div class="wrap hero-view">
+    <!-- The viewer, drawn as the app looks (app/src/style.css on main), playing a recording of an
+         agent session on a real device. The media lives at MEDIA_BASE in hero.js (the poster's
+         src here too); hero.js plays it and moves the overlay. Without it the poster shows with
+         the first label. -->
+    <figure class="hv" id="hero-viewer" role="img"
+      aria-label="The DeviceSteer viewer playing a recording: an agent opens Settings, switches the iPhone to Dark mode and goes back to the Home Screen, each touch labelled, while a bar under the screen reads 'Agent is in control' with Stop and Take over">
+      <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-sidebar" viewBox="0 0 20 20"><rect x="2.75" y="4" width="14.5" height="12" rx="2.5" /><path d="M7.75 4v12M4.9 7h1M4.9 9.25h1" /></symbol>
+      <symbol id="i-inspector" viewBox="0 0 20 20"><rect x="2.75" y="4" width="14.5" height="12" rx="2.5" /><path d="M12.25 4v12M14.1 7h1M14.1 9.25h1" /></symbol>
+      <symbol id="i-search" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.25" /><path d="m13 13 3.5 3.5" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 10a6 6 0 1 1-1.9-4.4M16.25 3.75v3.5h-3.5" /></symbol>
+      <symbol id="i-zoom-in" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5" /><path d="m13.2 13.2 3.3 3.3M9 6.6v4.8M6.6 9h4.8" /></symbol>
+      <symbol id="i-zoom-out" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5" /><path d="m13.2 13.2 3.3 3.3M6.6 9h4.8" /></symbol>
+      <symbol id="i-zoom-actual" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5" /><path d="m13.2 13.2 3.3 3.3M8.1 7.4 9.3 6.6v4.8" /></symbol>
+      <symbol id="i-fit" viewBox="0 0 20 20"><path d="M3.5 7.5v-4h4M16.5 7.5v-4h-4M3.5 12.5v4h4M16.5 12.5v4h-4" /><rect x="7.25" y="6.5" width="5.5" height="7" rx="1.2" /></symbol>
+      <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.75" cy="10" r=".9" fill="currentColor" /><circle cx="10" cy="10" r=".9" fill="currentColor" /><circle cx="15.25" cy="10" r=".9" fill="currentColor" /></symbol>
+      <symbol id="i-sliders" viewBox="0 0 20 20"><path d="M3 6h8.5M15 6h2M3 14h2M8.5 14H17" /><circle cx="13.25" cy="6" r="1.75" /><circle cx="6.75" cy="14" r="1.75" /></symbol>
+      <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" /><path d="M10 9v4.5M10 6.4v.1" /></symbol>
+      <symbol id="i-home" viewBox="0 0 20 20"><g fill="currentColor" stroke="none"><circle cx="5.5" cy="5.5" r="1.45" /><circle cx="10" cy="5.5" r="1.45" /><circle cx="14.5" cy="5.5" r="1.45" /><circle cx="5.5" cy="10" r="1.45" /><circle cx="10" cy="10" r="1.45" /><circle cx="14.5" cy="10" r="1.45" /><circle cx="5.5" cy="14.5" r="1.45" /><circle cx="10" cy="14.5" r="1.45" /><circle cx="14.5" cy="14.5" r="1.45" /></g></symbol>
+      <symbol id="i-camera" viewBox="0 0 20 20"><path d="M2.75 8.25a2 2 0 0 1 2-2h1.9l1.2-1.75h4.3l1.2 1.75h1.9a2 2 0 0 1 2 2v6.25a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" /><circle cx="10" cy="11.1" r="2.85" /></symbol>
+      <symbol id="i-record" viewBox="0 0 20 20"><circle cx="10" cy="10" r="5.5" fill="currentColor" stroke="none" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m6.5 8.25 3.5 3.5 3.5-3.5" /></symbol>
+      <symbol id="i-power" viewBox="0 0 20 20"><path d="M10 3v6.5M6.2 5.6a6 6 0 1 0 7.6 0" /></symbol>
+      <symbol id="i-vol-down" viewBox="0 0 20 20"><path d="M3 8v4h3l4 3.5v-11L6 8Z" /><path d="M13 10h4.5" /></symbol>
+      <symbol id="i-vol-up" viewBox="0 0 20 20"><path d="M3 8v4h3l4 3.5v-11L6 8Z" /><path d="M13 10h4.5M15.25 7.75v4.5" /></symbol>
+      <symbol id="i-keyboard" viewBox="0 0 20 20"><rect x="2.25" y="5" width="15.5" height="10" rx="2" /><path d="M5.2 8h.1M8.07 8h.1M10.93 8h.1M13.8 8h.1M5.2 10h.1M8.07 10h.1M10.93 10h.1M13.8 10h.1M6.5 12.4h7" /></symbol>
+      <symbol id="i-phone" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="16" rx="2.2" /><path d="M8.8 4.4h2.4" /></symbol>
+      <symbol id="i-tablet" viewBox="0 0 20 20"><rect x="3" y="2.5" width="14" height="15" rx="2" /></symbol>
+      <symbol id="i-wifi" viewBox="0 0 20 20"><path d="M2.75 8.1a10.5 10.5 0 0 1 14.5 0M5.35 10.9a6.75 6.75 0 0 1 9.3 0M7.95 13.7a3 3 0 0 1 4.1 0" /><circle cx="10" cy="16" r=".9" fill="currentColor" stroke="none" /></symbol>
+      </svg>
+      <div class="va" aria-hidden="true">
+        <aside class="va-side">
+          <div class="va-head"><span class="va-lights"><i></i><i></i><i></i></span><span class="va-ib"><svg class="va-i"><use href="#i-sidebar"/></svg></span></div>
+          <div class="va-side-title"><span>Devices</span><span class="va-ib small"><svg class="va-i"><use href="#i-refresh"/></svg></span></div>
+          <div class="va-search"><svg class="va-i"><use href="#i-search"/></svg><span>Search</span></div>
+          <div class="va-list">
+            <p class="va-group">Available</p>
+            <p class="va-dev sel"><svg class="va-glyph"><use href="#i-phone"/></svg><span class="va-name">Test iPhone</span><span class="va-status">iPhone Duo · Wi-Fi</span><i class="va-busy"></i></p>
+            <p class="va-dev"><svg class="va-glyph"><use href="#i-tablet"/></svg><span class="va-name">Test iPad</span><span class="va-status">iPad Pro 11-inch (4th generation) · Wi-Fi</span></p>
+            <p class="va-dev"><svg class="va-glyph"><use href="#i-phone"/></svg><span class="va-name">QA iPhone</span><span class="va-status">iPhone 16 Pro Max · USB</span></p>
+            <p class="va-group">Unavailable</p>
+            <p class="va-dev off"><svg class="va-glyph"><use href="#i-phone"/></svg><span class="va-name">iPhone 14 Pro</span><span class="va-status">Unavailable</span></p>
+            <p class="va-dev off"><svg class="va-glyph"><use href="#i-phone"/></svg><span class="va-name">Drawer iPhone</span><span class="va-status">Needs iOS 27 or later</span></p>
+          </div>
+          <div class="va-side-foot"><span class="va-ghost"><svg class="va-i"><use href="#i-wifi"/></svg>Pair over Wi-Fi…</span></div>
+        </aside>
+        <div class="va-center">
+          <div class="va-center-head">
+            <span class="va-lights"><i></i><i></i><i></i></span><span class="va-ib va-narrow-pin"><svg class="va-i"><use href="#i-sidebar"/></svg></span>
+            <svg class="va-head-glyph"><use href="#i-phone"/></svg>
+            <span class="va-title"><b>Test iPhone</b><span>iPhone Duo · iOS 27.3</span></span>
+            <span class="va-tools"><span class="va-zoom"><span class="va-ib"><svg class="va-i"><use href="#i-zoom-out"/></svg></span><span class="va-ib on"><svg class="va-i"><use href="#i-fit"/></svg></span><span class="va-ib"><svg class="va-i"><use href="#i-zoom-actual"/></svg></span><span class="va-ib"><svg class="va-i"><use href="#i-zoom-in"/></svg></span></span><span class="va-ib"><svg class="va-i"><use href="#i-keyboard"/></svg></span><span class="va-ib"><svg class="va-i"><use href="#i-more"/></svg></span></span>
+          </div>
+          <div class="hv-stage">
+            <div class="hv-dev">
+              <div class="vglow"></div>
+              <div class="hv-screen">
+                <img class="hv-poster" src="https://wieplxckcz6lqlk4.public.blob.vercel-storage.com/media/hero-poster.webp" width="720" height="1048" alt="">
+              </div>
+              <div class="hv-overlay">
+                <span class="vcursor"><span class="press"></span><svg class="arrow" viewBox="0 0 20 27" width="20" height="27"><path d="M1.5 1.5 V20.6 L6.1 16.3 L9.3 23.9 L12.6 22.5 L9.4 15.1 H15.6 Z"/></svg><span class="vlabel">Open the Settings app</span></span>
+                <span class="vlabel bottom" hidden></span>
+              </div>
+            </div>
+          </div>
+          <div class="va-bottom">
+            <div class="vsession">
+              <span class="vdot"></span>
+              <span class="vstate">Agent is in control</span>
+              <span class="vgoal">Turn on dark mode</span>
+              <b class="vghost">Stop</b><b class="vbtn">Take over</b>
+            </div>
+            <div class="va-bar">
+              <span class="va-tool"><svg class="va-i"><use href="#i-home"/></svg><span>Home</span></span>
+              <span class="va-tool"><svg class="va-i"><use href="#i-power"/></svg><span>Lock</span></span>
+              <span class="va-tool"><svg class="va-i"><use href="#i-vol-down"/></svg><span>Volume −</span></span>
+              <span class="va-tool"><svg class="va-i"><use href="#i-vol-up"/></svg><span>Volume +</span></span>
+              <i class="va-sep"></i>
+              <span class="va-tool"><svg class="va-i"><use href="#i-camera"/></svg><span>Screenshot</span></span>
+              <span class="va-tool rec"><svg class="va-i"><use href="#i-record"/></svg><span>Record</span></span>
+            </div>
+          </div>
+        </div>
+        <aside class="va-insp">
+          <div class="va-insp-head"><span class="va-tab on"><svg class="va-i"><use href="#i-sliders"/></svg></span><span class="va-tab"><svg class="va-i"><use href="#i-info"/></svg></span><span class="va-ib va-pin"><svg class="va-i"><use href="#i-inspector"/></svg></span></div>
+          <div class="va-pane">
+            <div class="va-grp"><h4>Display</h4>
+              <p class="va-row"><span>Appearance</span><span class="va-select"><span class="va-appearance">Light</span><svg class="va-i"><use href="#i-chevron"/></svg></span></p>
+              <p class="va-row"><span>Liquid Glass</span><span class="va-slider" style="--p: 0.5; --default: 0.5"><i></i></span></p>
+              <p class="va-row"><span>Text Size</span><span class="va-slider ticks" style="--p: calc(3 / 11); --default: calc(3 / 11)"><i></i></span></p>
+            </div>
+            <div class="va-grp"><h4>Accessibility</h4>
+              <p class="va-row"><span>Reduce Motion</span><i class="va-switch"></i></p>
+              <p class="va-row"><span>Increase Contrast</span><i class="va-switch"></i></p>
+              <p class="va-row"><span>Button Shapes</span><i class="va-switch"></i></p>
+              <p class="va-row"><span>Reduce Transparency</span><i class="va-switch"></i></p>
+              <p class="va-row"><span>VoiceOver</span><i class="va-switch"></i></p>
+            </div>
+            <div class="va-grp"><h4>Location</h4>
+              <p class="va-row"><span>Simulated Location</span><span class="va-select"><span>None</span><svg class="va-i"><use href="#i-chevron"/></svg></span></p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </figure>
   </div>
 </section>
 
-<section class="features" aria-labelledby="features-title">
+<section class="sec" aria-labelledby="what-title">
   <div class="wrap">
-    <h2 id="features-title" class="sr">What it does</h2>
-    <div class="grid">
+    <header class="sec-head">
+      <h2 id="what-title">One device, two ways to drive it</h2>
+    </header>
+    <div class="two-col">
       <article>
-        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 5h3"/></svg></div>
-        <h3>Live screen, real control</h3>
-        <p>Watch the device in a window and use it with your mouse and keyboard: tap, swipe, type, Home,
-          Lock and volume buttons, screenshots and screen recordings.</p>
+        <h3>For you: the viewer</h3>
+        <ul>
+          <li>The device's live screen in a window, used with your mouse and keyboard: tap, swipe and type.</li>
+          <li>Home, Lock and volume buttons, screenshots and screen recordings.</li>
+          <li>Device settings at hand: appearance, text size, accessibility switches and a simulated location.</li>
+        </ul>
       </article>
       <article>
-        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
-        <h3>A CLI and a skill for agents</h3>
-        <p><code>devicesteer</code> reads the screen's accessibility tree, taps, swipes, types and launches
-          apps, all as JSON. The bundled skill teaches Claude Code, Codex, Cursor, Copilot CLI and others
-          how to use it.</p>
-      </article>
-      <article>
-        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3 2"/></svg></div>
-        <h3>Sessions you can watch</h3>
-        <p>An agent works in a named session. The viewer glows while it drives, and you can
-          <strong>Take over</strong>, <strong>Hand back</strong> or <strong>Stop</strong> at any moment.</p>
-      </article>
-      <article>
-        <div class="ico agent" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="4.5"/><rect x="12.5" y="14" width="9" height="5" rx="2.5"/></svg></div>
-        <h3>Touches with labels</h3>
-        <p>Every tap and swipe an agent makes shows on the screen with a few words saying what it is for,
-          so you can follow along.</p>
-      </article>
-      <article>
-        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0"/><path d="M5.5 12.5a9.5 9.5 0 0 1 13 0"/><path d="M8.7 16a5 5 0 0 1 6.6 0"/><circle cx="12" cy="19.2" r="1"/></svg></div>
-        <h3>USB or Wi-Fi</h3>
-        <p>Plug in a cable, or on iOS 27 pair over Wi-Fi once and leave the cable in the drawer.</p>
-      </article>
-      <article>
-        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.4-3.2 8.3-7.5 9.5-4.3-1.2-7.5-5.1-7.5-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg></div>
-        <h3>No Xcode needed</h3>
-        <p>DeviceSteer sets a new device up itself: Trust, Developer Mode and the developer disk image.
-          Works on macOS and Windows.</p>
+        <h3>For your agent: the CLI and skill</h3>
+        <ul>
+          <li><code>devicesteer</code> reads the screen's accessibility tree, taps, swipes, types and launches
+            apps. Every command prints JSON; errors say what to do next.</li>
+          <li>A bundled skill teaches Claude Code, Codex, Cursor, GitHub Copilot CLI and others how to use it.</li>
+        </ul>
       </article>
     </div>
   </div>
 </section>
 
-<section id="start" class="block" aria-labelledby="start-title">
+<section id="trust" class="sec" aria-labelledby="trust-title">
   <div class="wrap">
-    <h2 id="start-title">Get started</h2>
-    <ol class="steps">
-      <li>
+    <header class="sec-head">
+      <h2 id="trust-title">Built for personal devices</h2>
+      <p>The phone on your desk has your messages, accounts and money on it. DeviceSteer and its agent
+        guide are written with that in mind.</p>
+    </header>
+
+    <div class="trust-grid">
+      <!-- A still from a real device (from MEDIA_BASE in hero.js, as its src says) in the
+           viewer's session strip as the app shows a hand-off (app/src/main.ts panelFor,
+           delegated_to_user): the agent asks to delete an app, so it hands the device over with
+           its reason; amber strip, Done, and the glow stopped. The app shows no cursor for it, and
+           the goal is left out so the reason fits. -->
+      <div class="stage" aria-hidden="true">
+        <div class="vdev">
+          <div class="vglow human"></div>
+          <img class="vscreen" data-media="trust-remove-app.webp" src="https://wieplxckcz6lqlk4.public.blob.vercel-storage.com/media/trust-remove-app.webp" width="600" height="873" loading="lazy" alt="">
+        </div>
+        <div class="vsession human">
+          <span class="vdot"></span>
+          <span class="vstate">Waiting for you: Deleting an app is your call</span>
+          <b class="vghost">Stop</b><b class="vbtn">Done</b>
+        </div>
+      </div>
+
+      <ul class="points">
+        <li>
+          <h3>The viewer shows who drives</h3>
+          <p>It glows while an agent drives, and each tap and swipe appears on the screen with its label.</p>
+        </li>
+        <li>
+          <h3>You're always in charge</h3>
+          <p>Take over or stop an agent at any time from the viewer. Its input is refused until you hand back,
+            and it's told to stop and wait for you.</p>
+        </li>
+        <li>
+          <h3>No approvals on your behalf</h3>
+          <p>The agent never approves permission, consent, sign-in or payment prompts and never enters a
+            passcode. It hands the device to you with a reason, and continues after you press <em>Done</em>.</p>
+        </li>
+        <li>
+          <h3>One driver at a time</h3>
+          <p>While an agent drives, your touches on the viewer are held back so you don't collide; one session
+            per device keeps other agents off it too.</p>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="start" class="sec" aria-labelledby="start-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <h2 id="start-title">Get started</h2>
+    </header>
+
+    <ol class="rail">
+      <li id="install">
         <h3>Install the app</h3>
         <p>Download <code>DeviceSteer_&lt;version&gt;_universal.dmg</code> from
           <a href="https://github.com/sunghyun-k/devicesteer/releases">GitHub Releases</a>, open it and drag
           DeviceSteer to Applications. The app keeps itself up to date.</p>
-        <p class="note">Windows builds aren't published yet; on Windows, build from source (see the
-          <a href="https://github.com/sunghyun-k/devicesteer#readme">README</a>) and install Apple Devices or
-          iTunes for USB.</p>
+        <div id="windows">
+          <p><strong>On Windows</strong> (10 and 11, x64): for USB, install Apple Devices from the Microsoft Store
+            (or iTunes), open it once and accept its license. Then install DeviceSteer from PowerShell, for your
+            account only and without administrator rights:</p>
+          <pre class="code" aria-label="PowerShell install command">irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</pre>
+          <p class="note">Or run <code>DeviceSteer_&lt;version&gt;_x64-setup.exe</code> from
+            <a href="https://github.com/sunghyun-k/devicesteer/releases">GitHub Releases</a>. It isn't code-signed
+            yet: SmartScreen may stop a downloaded installer (<em>More info</em>, then <em>Run anyway</em>), and
+            Smart App Control on Windows 11 blocks it while it is on. See the
+            <a href="https://github.com/sunghyun-k/devicesteer#windows-10-and-11-x64">README</a>.</p>
+        </div>
       </li>
-      <li>
+      <li id="device">
         <h3>Set up your device</h3>
-        <p>Connect an iPhone or iPad with iOS / iPadOS 17 or later and select it in the app. A device that
+        <p>Connect an iPhone or iPad with iOS / iPadOS 27 or later and select it in the app. A device that
           isn't ready shows three steps, in order:</p>
-        <ul class="checks">
+        <ul class="sub">
           <li><strong>Trust this computer.</strong> Unlock the device, tap <em>Trust</em> and enter its passcode (over USB).</li>
           <li><strong>Developer Mode.</strong> Open Settings › Privacy &amp; Security › Developer Mode, turn it on and
             tap <em>Restart</em>. After the restart, unlock it, tap <em>Turn On</em> and enter the passcode.</li>
@@ -156,26 +316,29 @@
         </ul>
         <p class="note">From the terminal: <code>devicesteer setup --udid &lt;UDID&gt;</code>.</p>
       </li>
-      <li class="split">
-        <div>
-          <h3>Or pair over Wi-Fi, no cable <span class="tag">iOS 27+</span></h3>
-          <p>With the device on the same network, click <em>Pair over Wi-Fi…</em> in the app (or run
-            <code>devicesteer setup wifi</code>), then on the device:</p>
-          <ol class="sub">
-            <li>Settings › Privacy &amp; Security › Developer Mode. Under <em>Other Devices</em>, tap
-              <em>Pair with "DeviceSteer"</em>, then <em>Pair</em>.</li>
-            <li>Enter <strong>the device's own passcode</strong>.</li>
-            <li>Type the <strong>6-digit code shown on your computer</strong>.</li>
-          </ol>
-          <p>From then on the device shows up whenever it's awake on the same network.</p>
+      <li id="wifi">
+        <h3>Or pair over Wi-Fi, without a cable</h3>
+        <div class="split">
+          <div>
+            <p>With the device on the same network, click <em>Pair over Wi-Fi…</em> in the app (or run
+              <code>devicesteer setup wifi</code>), then on the device:</p>
+            <ul class="sub">
+              <li>Settings › Privacy &amp; Security › Developer Mode. Under <em>Other Devices</em>, tap
+                <em>Pair with "DeviceSteer"</em>, then <em>Pair</em>.</li>
+              <li>Enter <strong>the device's own passcode</strong>.</li>
+              <li>Type the <strong>6-digit code shown on your computer</strong>.</li>
+            </ul>
+            <p>From then on the device shows up whenever it's awake on the same network.</p>
+          </div>
+          <!-- Image slot: the pairing card. -->
+          <picture class="slot">
+            <source srcset="/images/pair-dark.webp" media="(prefers-color-scheme: dark)">
+            <img src="/images/pair-light.webp" width="892" height="1031" loading="lazy"
+              alt="The 'Pair a device over Wi-Fi' card: three steps and a large 6-digit pairing code to type on the device">
+          </picture>
         </div>
-        <picture>
-          <source srcset="/images/pair-dark.webp" media="(prefers-color-scheme: dark)">
-          <img class="shot small" src="/images/pair-light.webp" width="892" height="1031" loading="lazy"
-            alt="The 'Pair a device over Wi-Fi' card: three steps and a large 6-digit pairing code to type on the device">
-        </picture>
       </li>
-      <li>
+      <li id="connect">
         <h3>Connect your agents</h3>
         <p>On first launch the app offers to set up the <code>devicesteer</code> command
           (<code>~/.local/bin/devicesteer</code>) and the DeviceSteer skill for the coding agents it finds:
@@ -183,26 +346,22 @@
           Both are links into the app, so they update with it. Change this any time in
           <em>Settings › Agents</em> (⌘,).</p>
         <p class="note">If it says <code>~/.local/bin</code> isn't on your PATH, add
-          <code>export PATH="$HOME/.local/bin:$PATH"</code> to your shell profile. Agents can read the full guide
-          with <code>devicesteer skill</code>.</p>
+          <code>export PATH="$HOME/.local/bin:$PATH"</code> to your shell profile.</p>
       </li>
     </ol>
   </div>
 </section>
 
-<section id="agents" class="block alt" aria-labelledby="agents-title">
-  <div class="wrap two">
-    <div>
+<section id="agents" class="sec" aria-labelledby="agents-title">
+  <div class="wrap agents-grid">
+    <header class="sec-head">
       <h2 id="agents-title">For agents</h2>
-      <p>Ask your agent to do something on the phone. It starts a session named after the goal, reads the
-        screen, acts with labelled touches and finishes when done. Every command prints JSON; errors say what
-        to do next.</p>
-      <p>When a step needs a person (a passcode, a sign-in, a payment, a permission prompt), the agent hands the
-        device to you with a reason, and continues after you press <em>Done</em>.</p>
+      <p>Ask it to do something on the phone. It starts a session named after the goal, reads the screen,
+        acts with labelled touches and finishes when done.</p>
       <p class="note">Agents: run <code>devicesteer skill</code> for the guide that matches the installed
         version, or read <a href="/llms.txt">llms.txt</a>.</p>
-    </div>
-    <pre class="code" aria-label="Example agent session"><code><span class="c"># one goal, one session</span>
+    </header>
+    <pre class="code" aria-label="Example agent session"><span class="c"># one goal, one session</span>
 devicesteer session start "turn on dark mode"
 export DEVICESTEER_SESSION=s4f9a21
 
@@ -214,45 +373,21 @@ devicesteer tap @e12 --label "open Display settings"
 devicesteer session handoff --reason "enter the passcode"
 devicesteer session resume
 
-devicesteer session finish</code></pre>
+devicesteer session finish</pre>
   </div>
 </section>
 
-<section id="safety" class="block" aria-labelledby="safety-title">
+<section id="requirements" class="sec" aria-labelledby="req-title">
   <div class="wrap">
-    <h2 id="safety-title">Built for personal devices</h2>
-    <p class="lede small">The phone on your desk has your messages, accounts and money on it. DeviceSteer and its
-      agent guide are written with that in mind.</p>
-    <div class="grid three">
-      <article>
-        <h3>You're always in charge</h3>
-        <p>Take over or stop an agent at any time from the viewer. Its input is refused until you hand back,
-          and it's told to stop and wait for you.</p>
-      </article>
-      <article>
-        <h3>No approvals on your behalf</h3>
-        <p>The agent never approves permission, consent, sign-in or payment prompts and never enters a
-          passcode. It hands the device to you instead.</p>
-      </article>
-      <article>
-        <h3>One driver at a time</h3>
-        <p>While an agent drives, your touches on the viewer are held back so you don't collide; one session
-          per device keeps other agents off it too.</p>
-      </article>
-    </div>
-  </div>
-</section>
-
-<section class="block alt" aria-labelledby="req-title">
-  <div class="wrap">
-    <h2 id="req-title">Requirements</h2>
-    <ul class="reqs">
-      <li><strong>Device:</strong> iPhone or iPad on iOS / iPadOS 17 or later. Wi-Fi pairing without a cable needs iOS 27 or later.</li>
-      <li><strong>macOS:</strong> nothing extra.</li>
-      <li><strong>Windows:</strong> Apple Devices or iTunes for USB; a device paired over Wi-Fi needs neither.</li>
-      <li><strong>Languages:</strong> the app is in English, Korean, Japanese, Simplified and Traditional Chinese, Spanish, French, German, Brazilian Portuguese and Italian. It follows your system's language; Settings › General picks another. The CLI, which agents read, stays in English.</li>
-      <li><strong>No Xcode:</strong> the developer disk image comes from Xcode's copy when there is one, or is downloaded and checked on your computer. Apple signs it for your device.</li>
-    </ul>
+    <header class="sec-head">
+      <h2 id="req-title">Requirements</h2>
+    </header>
+    <dl class="reqs">
+      <div><dt>Device</dt><dd>iPhone or iPad on iOS / iPadOS 27 or later, over USB or Wi-Fi.</dd></div>
+      <div><dt>Computer</dt><dd>macOS needs nothing extra. Windows needs Apple Devices or iTunes for USB; a device paired over Wi-Fi needs neither.</dd></div>
+      <div><dt>No Xcode</dt><dd>The developer disk image comes from Xcode's copy when there is one, or is downloaded and checked on your computer. Apple signs it for your device.</dd></div>
+      <div><dt>Languages</dt><dd>The app is in English, Korean, Japanese, Simplified and Traditional Chinese, Spanish, French, German, Brazilian Portuguese and Italian. It follows your system's language; Settings › General picks another. The CLI, which agents read, stays in English.</dd></div>
+    </dl>
   </div>
 </section>
 
@@ -260,18 +395,60 @@ devicesteer session finish</code></pre>
 
 <footer class="foot">
   <div class="wrap foot-inner">
-    <div class="brand small">
-      <img src="/icon.svg" alt="" width="20" height="20">
-      <span>DeviceSteer</span>
-    </div>
+    <p class="foot-brand"><img src="/icon.svg" alt="" width="20" height="20"><strong>DeviceSteer</strong>
+      <span>Free and open source, MIT. By <a href="https://sunghyunkim.com">Sunghyun Kim</a>.</span></p>
     <nav aria-label="Footer">
       <a href="https://github.com/sunghyun-k/devicesteer">GitHub</a>
-      <a href="https://github.com/sunghyun-k/devicesteer/blob/main/LICENSE">MIT License</a>
+      <a href="https://github.com/sunghyun-k/devicesteer/releases">Releases</a>
+      <a href="https://github.com/sunghyun-k/devicesteer/blob/main/crates/cli/src/skill.md">Agent guide</a>
       <a href="/llms.txt">llms.txt</a>
+      <a href="https://github.com/sunghyun-k/devicesteer/blob/main/LICENSE">License</a>
     </nav>
-    <p>by <a href="https://sunghyunkim.com">Sunghyun Kim</a></p>
   </div>
 </footer>
 
+<script src="/hero.js" defer></script>
+<script>
+// Points the download buttons at the visitor's system. Without this script the page shows the
+// macOS buttons, which is also what Macs get.
+(() => {
+  const RELEASES = 'https://github.com/sunghyun-k/devicesteer/releases';
+  // Set to the Windows installer's URL once a Windows build is published; the Windows buttons
+  // then download it instead of pointing at the build steps.
+  const WINDOWS_DOWNLOAD = null;
+  const WINDOWS_STEPS = '#windows';
+
+  const ua = navigator.userAgent;
+  const platform = navigator.userAgentData?.platform || navigator.platform || '';
+  // iPadOS reports itself as a Mac; touch tells them apart.
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Mac/.test(platform) && navigator.maxTouchPoints > 1);
+  const os = ios || /Android/.test(ua) ? 'phone' : /Win/.test(platform) || /Windows/.test(ua) ? 'windows' : 'mac';
+  if (os === 'mac') return;
+
+  const $ = (id) => document.getElementById(id);
+  const setLink = (el, text, href) => { el.textContent = text; el.href = href; };
+  const windowsText = WINDOWS_DOWNLOAD ? 'Download for Windows' : 'Get it for Windows';
+  const windowsHref = WINDOWS_DOWNLOAD || WINDOWS_STEPS;
+  const alt = $('get-alt');
+  const altLink = (lead, text, href) => {
+    alt.textContent = lead + ' ';
+    const a = document.createElement('a');
+    a.textContent = text; a.href = href;
+    alt.append(a, '.');
+  };
+
+  if (os === 'windows') {
+    setLink($('get-primary'), windowsText, windowsHref);
+    $('get-top').href = windowsHref;
+    altLink('On a Mac?', 'Download for macOS', RELEASES);
+  } else {
+    const note = $('get-note');
+    note.textContent = 'DeviceSteer is an app for a Mac or a Windows PC. It shows and controls the iPhone or iPad connected to that computer.';
+    note.hidden = false;
+    setLink($('get-secondary'), windowsText, windowsHref);
+    altLink('Or', 'view it on GitHub', 'https://github.com/sunghyun-k/devicesteer');
+  }
+})();
+</script>
 </body>
 </html>

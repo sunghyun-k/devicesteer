@@ -96,7 +96,8 @@ scripts/            build-cli.sh (the CLI for the bundle), release.sh (release M
 app/src-tauri/windows/  installer-hooks.nsh: additions to Tauri's NSIS installer
 site/               The product homepage, devicesteer.sunghyunkim.com: static HTML/CSS with no build
                     step, served by Vercel from this folder (production branch main); llms.txt
-                    summarises the product for agents; images/ holds its pictures
+                    summarises the product for agents; images/ holds its pictures; fonts/ holds
+                    Instrument Sans and IBM Plex Mono (OFL)
 THIRD_PARTY_NOTICES.md  Code adapted from other projects, with their licenses
 docs/PITFALLS.md    Numbered observations, cited from code as PITFALLS #N
 docs/SETUP.md       Device setup without Xcode: steps, detection, where the disk image comes from
@@ -164,10 +165,13 @@ viewer. Pure logic (parsing, geometry) should get unit tests.
   setup steps, supported devices or OS versions, the pairing flow, viewer features or languages)
   updates `site/index.html` and `site/llms.txt` in the same PR, alongside README, `docs/SETUP.md`
   and `crates/cli/src/skill.md`.
-- **Site images come from the viewer's mock mode (`?mock`, fake devices) or are drawn**, never
-  captured from a real device. Keep them small (WebP or AVIF; PNG only where needed, such as
-  `site/og.png` and icons). `.gitignore` ignores `*.png` everywhere else; keep its exceptions for
-  `site/` that narrow. Large media such as video goes to external storage, not the repository.
+- **Site images come from the viewer's mock mode (`?mock`, fake devices) or are drawn.** A capture
+  from a real device is used only when the owner approved it and it was checked for private data
+  (names, notifications, messages, accounts, codes); it lives in external storage, never in the
+  repository, and the page loads it from `MEDIA_BASE` in `site/hero.js`. Keep images small (WebP or
+  AVIF; PNG only where needed, such as `site/og.png` and icons). `.gitignore` ignores `*.png`
+  everywhere else; keep its exceptions for `site/` that narrow. Large media such as video goes to
+  external storage too; `site/tools/hero-cut.py` makes the hero clip from a take.
 
 ## Verifying on a real device: rules you must follow
 
