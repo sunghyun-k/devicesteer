@@ -10,7 +10,8 @@
 // URL options: `devices=normal|empty|error|slow`, `open=1` (show the first device's screen at
 // once, as DEVICESTEER_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
 // (no floating panel, for screenshots), `rotation=rot270` (start turned), `theme=light|dark`,
-// `session=agent|delegated_to_user|user` (a session already runs when the device is attached),
+// `session=agent|delegated_to_user|user` (a session already runs when the device is attached;
+// with `agent`, a press on the screen is blocked and `mock.takeTouches()` shows nothing was sent),
 // `lights=0` (no stand-in for the macOS traffic lights), `setup=ok|deny|fail|hold|timeout` (how
 // the setup steps end: done, the user taps Don't Trust, an error, nobody ever acts on the device,
 // or the wait runs out; pair `timeout` with `setupwait=15` to shorten it), `select=<udid suffix>`
@@ -76,6 +77,8 @@ const state = {
   /** The viewer asked for it `while_connected`: it goes when the viewer detaches or the agent gets the device. */
   keyboardHeld: false,
   keyLog: [] as [string, boolean][],
+  /** Touch steps the viewer sent, and whether the mock daemon took each. */
+  touchLog: [] as { phase: string; refused: boolean }[],
   /** The device clipboard, and the Mac's as the shell would see it. */
   deviceClipboard: "mock text on the device",
   macClipboard: "mock text on the Mac",
@@ -647,6 +650,10 @@ async function send(cmd: string, a: Record<string, unknown>): Promise<unknown> {
     }
     case "touch": {
       const t = a as { phase: string; point: Point };
+      // As the daemon's check_human: no new press while the agent holds the device.
+      const refused = t.phase === "down" && state.session?.owner === "agent";
+      state.touchLog.push({ phase: t.phase, refused });
+      if (refused) throw `session ${state.session!.id} '${state.session!.name}' has the device: an agent is in control. Press Take over in the viewer to use it`;
       input("human", "touch", [t.point], { phase: t.phase });
       return {};
     }
@@ -703,6 +710,12 @@ const mock = {
   /** Key steps (`[code, down]`) the viewer sent; reading empties them. */
   takeKeys() {
     return state.keyLog.splice(0);
+  },
+  /** Touch steps the viewer sent (`refused`: the mock daemon turned it down, as the real one
+   * does while the agent holds the device); reading empties them. With `session=agent`, a press
+   * on the screen should send none: the viewer keeps it and shows why. */
+  takeTouches() {
+    return state.touchLog.splice(0);
   },
   /** The device and Mac clipboards, to check the Keyboard menu's clipboard items. */
   clipboards() {

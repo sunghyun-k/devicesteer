@@ -420,6 +420,21 @@ impl ControlState {
         Ok(note)
     }
 
+    /// Checks a human's new touch (a press, tap or swipe) against the session state: refused
+    /// while the agent holds the device, so a client other than the viewer can't press under the
+    /// agent either. Only new touches: lifting a finger is always allowed, and a finger already
+    /// down is lifted when the agent gets the device.
+    pub fn check_human_touch(&mut self) -> Result<(), String> {
+        self.expire();
+        match &self.session {
+            Some(s) if s.owner == Owner::Agent => Err(format!(
+                "session {} '{}' has the device: an agent is in control. Press Take over in the viewer to use it",
+                s.id, s.name
+            )),
+            _ => Ok(()),
+        }
+    }
+
     /// Applies the human's action. Ok carries whose finger to lift, if anyone's.
     pub fn apply(&mut self, action: ControlAction) -> Result<Option<Source>, String> {
         self.expire();
@@ -582,6 +597,24 @@ mod tests {
         let id = started(&mut c);
         c.human_touching = true;
         assert!(c.check_agent(Some(&id), true).unwrap_err().contains("touching"));
+    }
+
+    #[test]
+    fn human_touches_wait_for_the_agent_to_let_go() {
+        let mut c = ControlState::default();
+        assert!(c.check_human_touch().is_ok());
+        let id = started(&mut c);
+        assert!(c.check_human_touch().unwrap_err().contains("Take over"));
+        c.apply(ControlAction::TakeOver).unwrap();
+        assert!(c.check_human_touch().is_ok());
+        c.apply(ControlAction::HandBack).unwrap();
+        assert!(c.check_human_touch().is_err());
+        c.handoff(&id, "log in").unwrap();
+        assert!(c.check_human_touch().is_ok());
+        c.resume(&id).unwrap();
+        assert!(c.check_human_touch().is_err());
+        c.finish(Some(&id), false).unwrap();
+        assert!(c.check_human_touch().is_ok());
     }
 
     #[test]
