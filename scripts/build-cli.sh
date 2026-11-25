@@ -29,6 +29,11 @@ target_dir=${CARGO_TARGET_DIR:-$root/target}
 if [ "$triple" = "universal-apple-darwin" ]; then
   build aarch64-apple-darwin
   build x86_64-apple-darwin
+  # Tauri compiles the app once per architecture for a universal build, and its build script
+  # requires `externalBin` for that architecture's triple too; the bundle uses the universal one.
+  for t in aarch64-apple-darwin x86_64-apple-darwin; do
+    cp "$target_dir/$t/$profile/devicesteer" "$out/devicesteer-$t"
+  done
   lipo -create -output "$out/devicesteer-$triple" \
     "$target_dir/aarch64-apple-darwin/$profile/devicesteer" \
     "$target_dir/x86_64-apple-darwin/$profile/devicesteer"
