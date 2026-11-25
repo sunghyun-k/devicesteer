@@ -63,6 +63,8 @@ const state = {
   /** The device clipboard, and the Mac's as the shell would see it. */
   deviceClipboard: "mock text on the device",
   macClipboard: "mock text on the Mac",
+  /** Whether the page asked the shell to keep the clipboards in step. */
+  clipboardSync: false,
   devices: params.get("devices") ?? "normal",
   attach: params.get("attach") ?? "ok",
   watch: params.get("watch") ?? "ok",
@@ -416,6 +418,9 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       await sleep(200);
       state.macClipboard = state.deviceClipboard;
       return { kind: "text", chars: state.deviceClipboard.length };
+    case "clipboard_sync":
+      state.clipboardSync = !!args.on;
+      return true;
     case "send":
       return send(String(args.cmd), (args.args ?? {}) as Record<string, unknown>);
   }
@@ -492,7 +497,7 @@ const mock = {
   },
   /** The device and Mac clipboards, to check the Keyboard menu's clipboard items. */
   clipboards() {
-    return { device: state.deviceClipboard, mac: state.macClipboard };
+    return { device: state.deviceClipboard, mac: state.macClipboard, syncing: state.clipboardSync };
   },
   /** `owner` null ends the session. */
   session(owner: Owner | null = "agent", name = "Check the Wi-Fi settings", reason: string | null = null) {

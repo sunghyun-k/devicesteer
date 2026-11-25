@@ -1217,7 +1217,8 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("#device-bar [data-
 // screen has focus) go to the device as HID key downs and ups, by DOM `code`: the physical key,
 // so the device's layout and input source decide what it types (PITFALLS #35). Never while a
 // field of the viewer has focus, and never the viewer's own shortcuts. Text composed with a Mac
-// input method (Hangul) goes over with "Send Clipboard to iPhone" and a paste on the device.
+// input method (Hangul) goes over with the shared clipboard (or "Send Clipboard") and a paste on
+// the device.
 //
 // Turning it on attaches a hardware keyboard too: without one, the keys go through the
 // keyboard surface, whose input source is stuck (PITFALLS #35), and Control-Space can't switch
@@ -1262,6 +1263,32 @@ function releaseKeys(): void {
 /** The human may send input: no agent session, or one that gave the device to the human. */
 const humanHasDevice = (): boolean => activeSession()?.owner !== "agent";
 
+// "Use Shared Clipboard": the Tauri shell keeps the Mac and device clipboards in step (see
+// app/src-tauri/src/shared_clip.rs) while it is on, the screen is live and no agent holds the
+// device; the page only tells it when that changes. The text and what was synced last stay in
+// the shell. On by default, like Device Hub's.
+const clipShared = $<HTMLButtonElement>("#kb-clip-shared");
+let sharedClipboard = prefs.get("shared-clipboard") !== "0";
+/** What the shell was last told: syncing or not (null: nothing yet). */
+let clipSyncing: boolean | null = null;
+
+function syncSharedClipboard(): void {
+  clipShared.setAttribute("aria-checked", String(sharedClipboard));
+  const want = sharedClipboard && !!attachedUdid && stage.dataset.state === "live" && humanHasDevice();
+  if (want === clipSyncing) return;
+  clipSyncing = want;
+  invoke("clipboard_sync", { on: want })
+    .then((supported) => {
+      if (supported !== false) return;
+      // No way to see password managers' private items on this platform (shared_clip.rs).
+      clipShared.disabled = true;
+      clipShared.title = "The shared clipboard works on macOS only for now";
+    })
+    .catch((e) => {
+      stats.lastError = String(e);
+    });
+}
+
 /** Forwarding is on and can work now: the screen is live and no agent holds the device. */
 const forwardingActive = (): boolean => forwarding && stage.dataset.state === "live" && humanHasDevice();
 
@@ -1291,6 +1318,7 @@ function showKeyboardState(): void {
  * attached when it isn't. Called whenever any of that changes; the daemon's `keyboard` event
  * brings the result back here. */
 function syncKeyboard(): void {
+  syncSharedClipboard();
   showKeyboardState();
   if (kbBusy || !attachedUdid) return;
   const want = forwardingActive();
@@ -1342,6 +1370,7 @@ function forgetKeyboard(): void {
   kbBusy = false;
   keysDown.clear();
   showKeyboardState();
+  syncSharedClipboard();
 }
 
 /** A field of the viewer has the keys. */
@@ -1486,6 +1515,11 @@ async function getClipboard(): Promise<void> {
   else showNote("The iPhone clipboard holds no text (an image or other content); only text is copied.", { error: true });
 }
 
+clipShared.addEventListener("click", () => {
+  sharedClipboard = !sharedClipboard;
+  prefs.set("shared-clipboard", sharedClipboard ? "1" : "0");
+  syncSharedClipboard();
+});
 clipSend.addEventListener("click", () => void sendClipboard());
 clipGet.addEventListener("click", () => void getClipboard());
 showKeyboardState();

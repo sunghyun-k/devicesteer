@@ -848,9 +848,9 @@ impl Daemon {
                 dev.last_input = Some(Instant::now());
                 Ok(self.warn_voiceover(dev, r?).await)
             }
-            // The clipboard on its own, with no paste: the viewer's "Send Clipboard to iPhone"
-            // and "Get Clipboard from iPhone", and `iphone-use clipboard`. The contents go only
-            // to the client that asked; nothing here logs them.
+            // The clipboard on its own, with no paste: the viewer's "Send Clipboard", "Get
+            // Clipboard" and shared clipboard, and `iphone-use clipboard`. The contents go only to
+            // the client that asked; nothing here logs them.
             "clipboard_set" => {
                 let text = a.get("text").and_then(|v| v.as_str()).context("clipboard_set needs text")?;
                 let c = self.controller(dev).await?;
@@ -866,11 +866,18 @@ impl Daemon {
                 Ok(r)
             }
             "clipboard_get" => {
+                let pending = dev.clipboard.is_some();
                 let c = self.controller(dev).await?;
-                Ok(match c.session.clipboard().await? {
+                let mut r = match c.session.clipboard().await? {
                     Clipboard::Text(t) => json!({ "kind": "text", "chars": t.chars().count(), "text": t }),
                     other => json!({ "kind": other.kind() }),
-                })
+                };
+                // The clipboard holds a paste's text, not the owner's: the viewer's shared
+                // clipboard leaves it alone.
+                if pending {
+                    r["paste_pending"] = json!(true);
+                }
+                Ok(r)
             }
             "keyboard_connect" | "keyboard_disconnect" | "keyboard_status" => {
                 if req.cmd != "keyboard_status" {

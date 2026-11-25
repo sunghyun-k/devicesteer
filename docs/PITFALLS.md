@@ -797,7 +797,7 @@ reading that no longer contains the value from before as an empty field (`typing
 ### 43. A paste from the edit menu doesn't ask
 
 Setting the clipboard through the pasteboard service (`clipboard_set`, the viewer's "Send
-Clipboard to iPhone") and then pasting with a long press and Paste in the edit menu inserted the
+Clipboard") and then pasting with a long press and Paste in the edit menu inserted the
 text in Notes with no allow-paste prompt (iOS 26, iPhone). The prompt of #40 comes with a
 programmatic paste such as cmd+v; the edit menu's Paste counts as the user's own. So the viewer
 sends the clipboard without pasting and leaves the paste to the person at the device.
@@ -805,3 +805,23 @@ sends the clipboard without pasting and leaves the paste to the person at the de
 Also seen: right after the service sets the clipboard, the keyboard's suggestion bar offers it as
 "1 item, paste from dtpasteboardd" (localized), naming the service as the source. The service has
 no way to empty the clipboard: putting back an empty one writes an empty text item.
+
+### 44. Polling the clipboard for the shared clipboard
+
+The viewer's "Use Shared Clipboard" polls both clipboards (`app/src-tauri/src/shared_clip.rs`).
+Observed on an iPhone (iOS 27, USB):
+
+- **Reading the device clipboard** through the pasteboard service takes about 35 ms (one service
+  connection per read). It shows nothing on the device: no "pasted from" banner, no prompt (those
+  come with an app reading the clipboard, not with the service). The daemon holds the device lock
+  for the read, so a tap or key sent meanwhile waits that long; at one read per 1.5 s that is
+  rare and short. Not yet measured over Wi-Fi.
+- **The Mac's `changeCount`** moved by 3 for one `clearContents` and `setString:forType:`. Record
+  the count after writing instead of predicting it, or the next look takes our own write for a
+  new copy and sends it back.
+- **Universal Clipboard** didn't get in the way of checking it: with syncing off, a Mac copy
+  didn't reach what the pasteboard service reads within 8 s. Quit Xcode's Device Hub before
+  checking the feature: its own shared clipboard syncs too.
+- Password managers mark copies with `org.nspasteboard.ConcealedType` (and
+  `org.nspasteboard.TransientType` for one-off items); those are never sent. A marked dummy stayed
+  on the Mac.

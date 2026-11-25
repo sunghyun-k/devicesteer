@@ -1,6 +1,8 @@
 //! Tauri shell for the viewer: lists devices, attaches to a device's daemon as the human client,
 //! and passes its events and video frames to the page.
 
+mod shared_clip;
+
 use std::sync::Arc;
 
 use iphone_use_core::DeviceInfo;
@@ -19,6 +21,9 @@ struct Viewer {
     forwarder: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The setup step running now (pairing waits minutes for a tap), so Cancel can end it.
     setup: Mutex<Option<tokio::task::AbortHandle>>,
+    /// The device `client` belongs to.
+    udid: Mutex<Option<String>>,
+    clip: Arc<shared_clip::SharedClipboard>,
 }
 
 /// Lists the devices usbmuxd sees. Errors come back to the page as strings.
@@ -102,6 +107,7 @@ async fn attach(
     });
     *viewer.forwarder.lock().await = Some(forwarder);
     *viewer.client.lock().await = Some(client.clone());
+    *viewer.udid.lock().await = Some(udid);
     client
         .request("subscribe", serde_json::json!({ "frames": frames }))
         .await
@@ -116,6 +122,8 @@ async fn watch(frames: bool, viewer: State<'_, Viewer>) -> Result<Value, String>
 }
 
 async fn detach_inner(viewer: &Viewer) {
+    viewer.clip.set(None).await;
+    viewer.udid.lock().await.take();
     if let Some(f) = viewer.forwarder.lock().await.take() {
         f.abort();
     }
@@ -146,7 +154,9 @@ async fn clipboard_to_device(viewer: State<'_, Viewer>) -> Result<Value, String>
             arboard::Error::ContentNotAvailable => "The Mac clipboard holds no text.".to_string(),
             e => format!("Couldn't read the Mac clipboard: {e}"),
         })?;
-    client.request("clipboard_set", serde_json::json!({ "text": text })).await.map_err(|e| format!("{e:#}"))
+    let r = client.request("clipboard_set", serde_json::json!({ "text": text })).await.map_err(|e| format!("{e:#}"))?;
+    viewer.clip.note_synced(&text).await;
+    Ok(r)
 }
 
 /// Puts the device clipboard's text on the Mac clipboard. Returns its kind and length only.
@@ -157,10 +167,27 @@ async fn clipboard_from_device(viewer: State<'_, Viewer>) -> Result<Value, Strin
     let Some(text) = r.as_object_mut().and_then(|o| o.remove("text")) else {
         return Ok(r);
     };
+    let text = text.as_str().unwrap_or_default();
     arboard::Clipboard::new()
-        .and_then(|mut c| c.set_text(text.as_str().unwrap_or_default()))
+        .and_then(|mut c| c.set_text(text))
         .map_err(|e| format!("Couldn't write the Mac clipboard: {e}"))?;
+    viewer.clip.note_synced(text).await;
     Ok(r)
+}
+
+/// Turns the shared clipboard (see `shared_clip`) on or off for the attached device. The page
+/// calls it whenever the menu item, the live screen or the agent session changes it, and only it
+/// knows all three. Returns whether this platform supports it.
+#[tauri::command]
+async fn clipboard_sync(on: bool, viewer: State<'_, Viewer>) -> Result<bool, String> {
+    let client = viewer.client.lock().await.clone();
+    let udid = viewer.udid.lock().await.clone();
+    let target = match (on && shared_clip::SUPPORTED, udid, client) {
+        (true, Some(u), Some(c)) => Some((u, c)),
+        _ => None,
+    };
+    viewer.clip.set(target).await;
+    Ok(shared_clip::SUPPORTED)
 }
 
 /// The page's decoder numbers, appended to `viewer.log` in the state directory, so a check of
@@ -233,7 +260,15 @@ fn reveal(path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(Viewer::default())
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, report, initial_udid, recording_path, save_screenshot, reveal])
+        // Coming back to the window is when someone wants to paste what they copied on the
+        // device: read it now rather than at the next poll.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(true) = event {
+                use tauri::Manager;
+                window.state::<Viewer>().clip.poke();
+            }
+        })
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal])
         .run(tauri::generate_context!())
         .expect("error while running the iphone-use app");
 }

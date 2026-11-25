@@ -50,6 +50,7 @@
       <symbol id="i-keyboard-down" viewBox="0 0 20 20"><rect x="2.25" y="3" width="15.5" height="9" rx="2" /><path d="M5.2 6h.1M8.07 6h.1M10.93 6h.1M13.8 6h.1M6.5 9.2h7M7.5 14.5 10 17l2.5-2.5" /></symbol>
       <symbol id="i-clip-send" viewBox="0 0 20 20"><path d="M7.5 3.75h-1.5a1.75 1.75 0 0 0-1.75 1.75v10.25a1.75 1.75 0 0 0 1.75 1.75h8a1.75 1.75 0 0 0 1.75-1.75V5.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /><rect x="7.5" y="2.5" width="5" height="2.5" rx="1" /><path d="M10 14.25V8.5M7.6 10.9 10 8.5l2.4 2.4" /></symbol>
       <symbol id="i-clip-get" viewBox="0 0 20 20"><path d="M7.5 3.75h-1.5a1.75 1.75 0 0 0-1.75 1.75v10.25a1.75 1.75 0 0 0 1.75 1.75h8a1.75 1.75 0 0 0 1.75-1.75V5.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /><rect x="7.5" y="2.5" width="5" height="2.5" rx="1" /><path d="M10 8.5v5.75M7.6 11.85 10 14.25l2.4-2.4" /></symbol>
+      <symbol id="i-clip-sync" viewBox="0 0 20 20"><path d="M7.5 3.75h-1.5a1.75 1.75 0 0 0-1.75 1.75v10.25a1.75 1.75 0 0 0 1.75 1.75h8a1.75 1.75 0 0 0 1.75-1.75V5.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /><rect x="7.5" y="2.5" width="5" height="2.5" rx="1" /><path d="M12.7 10.6a2.75 2.75 0 0 0-4.9-1.5M7.3 12.1a2.75 2.75 0 0 0 4.9 1.5M7.6 7.6v1.6h1.6M12.4 15.1v-1.6h-1.6" /></symbol>
       <symbol id="i-plug" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="12" rx="2.2" /><path d="M10 14v4M7.5 18h5" /></symbol>
     </svg>
 
@@ -124,8 +125,9 @@
                   <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. The device's input source decides what they type (Control-Space switches it)"><svg class="icon check"><use href="#i-check" /></svg><span>Type from Mac Keyboard</span><kbd>⌘K</kbd></button>
                   <button id="kb-software" role="menuitem" type="button" title="Show or hide the on-screen keyboard while a hardware keyboard is connected"><svg class="icon"><use href="#i-keyboard-down" /></svg><span>Toggle Software Keyboard</span><kbd>⌥⌘K</kbd></button>
                   <div class="menu-sep" role="separator"></div>
-                  <button id="kb-clip-send" role="menuitem" type="button" title="Put the Mac clipboard's text on the device clipboard, without pasting it: paste it on the device yourself"><svg class="icon"><use href="#i-clip-send" /></svg><span>Send Clipboard to iPhone</span><kbd>⇧⌘V</kbd></button>
-                  <button id="kb-clip-get" role="menuitem" type="button" title="Put the device clipboard's text on the Mac clipboard"><svg class="icon"><use href="#i-clip-get" /></svg><span>Get Clipboard from iPhone</span><kbd>⇧⌘C</kbd></button>
+                  <button id="kb-clip-shared" role="menuitemcheckbox" aria-checked="true" type="button" title="Keep the Mac and device clipboards in step while the screen is live, text only. Paused while the agent is in control; never sends what a password manager marks private"><svg class="icon"><use href="#i-clip-sync" /></svg><span>Use Shared Clipboard</span><svg class="icon check"><use href="#i-check" /></svg></button>
+                  <button id="kb-clip-get" role="menuitem" type="button" title="Put the device clipboard's text on the Mac clipboard"><svg class="icon"><use href="#i-clip-get" /></svg><span>Get Clipboard</span><kbd>⇧⌘C</kbd></button>
+                  <button id="kb-clip-send" role="menuitem" type="button" title="Put the Mac clipboard's text on the device clipboard, without pasting it: paste it on the device yourself"><svg class="icon"><use href="#i-clip-send" /></svg><span>Send Clipboard</span><kbd>⇧⌘V</kbd></button>
                 </div>
               </div>
             </div>

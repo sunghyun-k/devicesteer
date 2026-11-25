@@ -206,7 +206,8 @@ iphone-use clipboard get --out "$TMPDIR/clip.txt"     # only when the user asks;
   Use `paste` only for characters `type` refuses (emoji and other scripts).
 - **`clipboard`** reads or replaces the device clipboard without pasting, **only when the user
   asks**: it is theirs. `clipboard set "text"` (or `--file`) replaces it; `clipboard get --out
-  FILE` writes its text to FILE and prints only `kind` (text, image, empty, other) and `chars`.
+  FILE` writes its text to FILE and prints only `kind` (text, image, empty, other) and `chars`
+  (plus `paste_pending: true` while it holds a `paste`'s text awaiting `paste --restore`).
   Never print or quote what you read.
 - `keyboard connect` attaches a hardware keyboard (the on-screen keyboard hides; `key ctrl+space`
   switches its input source), `keyboard disconnect` removes it, `keyboard status` tells. `type`
