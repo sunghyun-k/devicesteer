@@ -165,7 +165,9 @@ jobs:
           }
           & (Join-Path $dir 'devicesteer.exe') --version
 
-          $bin = Join-Path $env:RUNNER_TEMP 'bin'
+          # Where Settings › Agents puts it; a hard link must be on the install's volume (the
+          # runner's temp folder is on another drive).
+          $bin = Join-Path $env:USERPROFILE '.local\bin'
           New-Item -ItemType Directory -Force $bin | Out-Null
           $link = Join-Path $bin 'devicesteer.exe'
           New-Item -ItemType HardLink -Path $link -Target (Join-Path $dir 'devicesteer.exe') | Out-Null
