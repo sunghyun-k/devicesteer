@@ -17,6 +17,7 @@ on:
       - "Cargo.lock"
       - "scripts/build-cli.sh"
       - "scripts/check-version.sh"
+      - "scripts/install.ps1"
       - ".github/workflows/build-windows.yml"
   push:
     branches: [main]
@@ -28,6 +29,7 @@ on:
       - "Cargo.lock"
       - "scripts/build-cli.sh"
       - "scripts/check-version.sh"
+      - "scripts/install.ps1"
       - ".github/workflows/build-windows.yml"
   workflow_dispatch:
   workflow_call:
@@ -142,6 +144,55 @@ jobs:
           echo "installer=$installer" >> "$GITHUB_OUTPUT"
           echo "artifact=windows-installer" >> "$GITHUB_OUTPUT"
           echo "setup=$setup" >> "$GITHUB_OUTPUT"
+
+      # Installs silently (as scripts/install.ps1 does), reinstalls over it while a daemon runs from
+      # a hard link (as Settings › Agents makes one), and uninstalls: the installer hooks must stop
+      # that daemon, or the reinstall can't overwrite devicesteer.exe.
+      - name: Install, reinstall and uninstall
+        shell: pwsh
+        env:
+          SETUP: ${{ steps.check.outputs.setup }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:LOCALAPPDATA 'DeviceSteer'
+          function Install {
+            $p = Start-Process -FilePath $env:SETUP -ArgumentList '/S' -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "the installer exited with $($p.ExitCode)" }
+          }
+          Install
+          foreach ($f in 'devicesteer-app.exe', 'devicesteer.exe', 'skills\devicesteer\SKILL.md', 'uninstall.exe') {
+            if (-not (Test-Path (Join-Path $dir $f))) { Get-ChildItem -Recurse $dir; throw "the install lacks $f" }
+          }
+          & (Join-Path $dir 'devicesteer.exe') --version
+
+          $bin = Join-Path $env:RUNNER_TEMP 'bin'
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          $link = Join-Path $bin 'devicesteer.exe'
+          New-Item -ItemType HardLink -Path $link -Target (Join-Path $dir 'devicesteer.exe') | Out-Null
+          # A daemon for a device that isn't there listens and idles (it exits after 10 minutes).
+          $daemon = Start-Process -FilePath $link -ArgumentList 'daemon', '--udid', '00000000-0000000000000000' -PassThru -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'daemon.log')
+          Start-Sleep -Seconds 5
+          if ($daemon.HasExited) {
+            Get-Content (Join-Path $env:RUNNER_TEMP 'daemon.log')
+            Write-Host '::warning::the test daemon exited by itself; the reinstall runs without one'
+          }
+          Install
+          if (-not $daemon.HasExited) { throw 'the reinstall left the daemon running' }
+          & (Join-Path $dir 'devicesteer.exe') --version
+
+          # `_?=` runs the uninstaller in place, so this waits for it (it can't delete itself then).
+          $p = Start-Process -FilePath (Join-Path $dir 'uninstall.exe') -ArgumentList '/S', "_?=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "the uninstaller exited with $($p.ExitCode)" }
+          foreach ($f in 'devicesteer-app.exe', 'devicesteer.exe', 'skills\devicesteer\SKILL.md') {
+            if (Test-Path (Join-Path $dir $f)) { throw "the uninstall left $f" }
+          }
+
+      - name: Check install.ps1 parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors; throw 'scripts/install.ps1 has syntax errors' }
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

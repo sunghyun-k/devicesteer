@@ -124,3 +124,63 @@ license: its usbmuxd starts only after that (PITFALLS #53). Then plug the device
 then nothing answers on `127.0.0.1:27015`: `devices` lists only the Wi-Fi-paired devices, with a
 `note` saying what to install, and other commands fail with the same advice. The viewer shows it as
 a card with a button to the Store page, and lists USB devices by itself once usbmuxd answers.
+
+### Installing
+
+The recommended way is the PowerShell installer:
+
+```powershell
+irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex
+# a given version:
+& ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -Version 1.0.0
+```
+
+`install.ps1` (`scripts/install.ps1`, attached to every release) finds the release through GitHub's
+API, downloads the installer with `curl.exe`, checks its SHA-256 against the release's
+`SHA256SUMS` and runs it silently (`/S`). Files fetched that way carry no Mark of the Web, so
+SmartScreen doesn't stop the unsigned installer. The checksum catches a broken download; it can't
+catch a compromised release, since both files come from the same place.
+
+The installer itself, `DeviceSteer_<version>_x64-setup.exe` on
+[Releases](https://github.com/sunghyun-k/devicesteer/releases/latest), is an NSIS installer for x64
+Windows 10 and 11. It installs for the current user, without administrator rights, into
+`%LOCALAPPDATA%\DeviceSteer`: the app (`devicesteer-app.exe`), the CLI (`devicesteer.exe`, which
+also runs the daemons) and the skill (`skills\devicesteer`). WebView2 comes with Windows; on the
+rare system without it, the installer downloads it.
+
+It isn't code-signed yet. SmartScreen shows "Windows protected your PC" for an unsigned installer
+a browser downloaded: **More info**, then **Run anyway**. Expect it again for each new version, since an
+unsigned file's reputation starts over with every build. Smart App Control (Windows 11; on for some
+new installations) blocks unsigned apps and offers no per-app exception, so DeviceSteer can't be
+installed while it is on. Updates the in-app updater downloads carry no Mark of the Web, so
+SmartScreen shouldn't ask for them; Smart App Control still checks them.
+
+The installer and the uninstaller stop running `devicesteer.exe` processes first (the daemons
+outlive the app, and Windows can't replace or delete a running exe; `app/src-tauri/windows/installer-hooks.nsh`).
+The next command starts its daemon again.
+
+### Uninstalling
+
+Settings › Agents on Windows makes these, outside the app's folder:
+
+| Path | What it is |
+|---|---|
+| `%USERPROFILE%\.local\bin\devicesteer.exe` | The CLI: a hard link to the installed `devicesteer.exe` (a symlink needs Developer Mode) |
+| `%USERPROFILE%\.local\share\devicesteer\current` | A directory junction to the app's folder |
+| `%USERPROFILE%\.claude\skills\devicesteer`, `.agents\skills\devicesteer`, `.cursor\skills\devicesteer`, `.copilot\skills\devicesteer` | Directory junctions to `current\skills\devicesteer` |
+
+The uninstaller removes only the app's folder, shortcuts and registry entries, so **turn the items
+off in Settings › Agents before uninstalling**. Otherwise the junctions are left pointing at a
+missing folder (delete them; deleting a junction never deletes what it points to), and the CLI's
+hard link is left as a working copy of the CLI of the version it was set up with: delete
+`%USERPROFILE%\.local\bin\devicesteer.exe` too.
+
+Why the uninstaller doesn't remove them itself: Tauri's installer runs the same uninstaller, with
+nothing to tell the two apart, when a newer version is installed by hand and "Uninstall before
+installing" (its default) is chosen, and removing the links there would undo the agent setup on
+every manual upgrade. The in-app updater doesn't uninstall: it overwrites the files in place, which
+keeps the hard link pointing at the new CLI. After a manual upgrade with "Uninstall before
+installing", the junctions work again (same folder), but the hard link still holds the old CLI and
+Settings › Agents lists it as not DeviceSteer's: replace it there (the old one is moved aside to
+`devicesteer.exe.backup-<seconds>`, which can be deleted), or choose "Don't uninstall" when
+upgrading by hand.

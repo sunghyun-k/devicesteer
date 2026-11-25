@@ -12,6 +12,8 @@ connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
 
 ## Install
 
+### macOS
+
 1. Download `DeviceSteer_<version>_universal.dmg` from
    [Releases](https://github.com/sunghyun-k/devicesteer/releases/latest), open it and drag
    DeviceSteer to Applications.
@@ -21,6 +23,34 @@ connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
    into the app, so they update with it. Change this any time in Settings › Agents (⌘,).
 3. If the pane says `~/.local/bin` isn't on your PATH, add it to your shell profile:
    `export PATH="$HOME/.local/bin:$PATH"`.
+
+### Windows (10 and 11, x64)
+
+1. For USB, install **Apple Devices** from the Microsoft Store (or iTunes): it brings the usbmuxd
+   service DeviceSteer talks to. A device paired over Wi-Fi needs neither.
+2. Install DeviceSteer from PowerShell (recommended):
+
+   ```powershell
+   irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex
+   ```
+
+   It downloads the latest installer, checks it against the release's `SHA256SUMS` and installs it
+   for your account only (in `%LOCALAPPDATA%\DeviceSteer`), without administrator rights. Or
+   download `DeviceSteer_<version>_x64-setup.exe` from
+   [Releases](https://github.com/sunghyun-k/devicesteer/releases/latest) and run it.
+3. DeviceSteer isn't code-signed yet, so Windows may stop it:
+   - **SmartScreen** stops the installer when a browser downloaded it ("Windows protected your
+     PC"): click **More info**, then **Run anyway**. The PowerShell install doesn't hit this.
+   - **Smart App Control** (Windows 11) blocks unsigned apps outright, however they were
+     downloaded, and has no exception for a single app. While it is on, DeviceSteer can't be
+     installed; it is listed under Windows Security › App & browser control › Smart App Control
+     settings.
+4. Open DeviceSteer. It offers to set up agents as on macOS: `%USERPROFILE%\.local\bin\devicesteer.exe`
+   and the skill links. If `%USERPROFILE%\.local\bin` isn't on your PATH, add it to your user Path
+   (Edit environment variables for your account) and open a new terminal.
+
+Before uninstalling, turn the items off in Settings › Agents: the uninstaller removes the app's
+folder but not the links it made (see [docs/SETUP.md](docs/SETUP.md#uninstalling)).
 
 The app updates itself from GitHub Releases. To build from source instead, see below.
 

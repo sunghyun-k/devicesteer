@@ -3,7 +3,8 @@
 # --windows` starts it by itself. It builds the commit the draft points at, so the Windows build is
 # the same source as the macOS one.
 #
-# It only uploads DeviceSteer_<version>_x64-setup.exe. The updater signature and the
+# It uploads DeviceSteer_<version>_x64-setup.exe, scripts/install.ps1 (the PowerShell installer,
+# `irm .../releases/latest/download/install.ps1 | iex`) and SHA256SUMS for both. The updater signature and the
 # `windows-x86_64` entry in latest.json are made on the release Mac, which alone holds the updater
 # key (docs/RELEASING.md). It never publishes the release and refuses a release that isn't a draft.
 #
@@ -70,6 +71,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      # install.ps1 from the release's commit, attached so that
+      # releases/latest/download/install.ps1 always matches the latest release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.draft.outputs.commit }}
+          persist-credentials: false
+          sparse-checkout: scripts/install.ps1
+          sparse-checkout-cone-mode: false
+          path: src
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build.outputs.artifact }}
@@ -84,5 +94,7 @@ jobs:
           [ "$INSTALLER" = "DeviceSteer_${VERSION}_x64-setup.exe" ] || { echo "::error::unexpected installer name $INSTALLER"; exit 1; }
           # Checked again: someone may have published it while this ran.
           [ "$(gh release view "v$VERSION" --json isDraft -q .isDraft)" = true ] || { echo "::error::v$VERSION was published meanwhile; not uploading"; exit 1; }
-          sha256sum "installer/$INSTALLER"
-          gh release upload "v$VERSION" "installer/$INSTALLER" --clobber
+          cp src/scripts/install.ps1 installer/install.ps1
+          # install.ps1 checks the installer against this before running it.
+          (cd installer && sha256sum "$INSTALLER" install.ps1 > SHA256SUMS && cat SHA256SUMS)
+          gh release upload "v$VERSION" "installer/$INSTALLER" installer/install.ps1 installer/SHA256SUMS --clobber
