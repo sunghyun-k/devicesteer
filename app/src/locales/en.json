@@ -5,6 +5,7 @@
   "common.listSeparator": ", ",
   "common.notNow": "Not Now",
   "common.tryAgain": "Try Again",
+  "common.dismiss": "Dismiss",
 
   "menu.about": "About {app}",
   "menu.services": "Services",
@@ -50,7 +51,8 @@
   "list.emptyDetail": "Connect an iPhone or iPad with a cable, unlock it and trust this computer. Or pair one over Wi-Fi, without a cable.",
   "list.noMatches": "No matches",
   "list.noMatchesDetail": "Nothing matches “{query}”.",
-  "list.sessionRuns": "An agent session runs on this device",
+  "list.sessionWaiting": "Waiting for you",
+  "list.sessionGoal": "{state}: {goal}",
   "list.noUsbmuxd.title": "Install Apple Devices",
   "list.noUsbmuxd.detail": "To connect with a cable, Windows needs Apple Devices (or iTunes). Install it, open it once and accept its license, then plug the device in again.",
   "list.noUsbmuxd.store": "Open Microsoft Store",
@@ -122,12 +124,15 @@
 
   "note.showInFinder": "Show in Finder",
   "note.showInExplorer": "Show in File Explorer",
+  "notice.agentStarted": "Agent started on {device}:",
+  "notice.view": "View",
 
   "stage.viewScreen": "View Screen",
   "stage.starting": "Starting the screen…",
   "stage.disconnected": "Connect the cable again and unlock the device. If it is restarting, wait: it continues here once it is back.",
   "stage.connectFailed": "Couldn’t connect to {device}: {error}",
   "stage.startFailed": "Couldn’t start the screen: {error}",
+  "stage.daemonClosed": "The connection to the device closed again. Try again to reconnect.",
 
   "session.none": "No agent session",
   "session.region": "Agent session",
@@ -313,6 +318,9 @@
   "prefs.language": "App language",
   "prefs.languageSystem": "System default",
   "prefs.languageNote": "Some messages from the device connection and the command-line tool stay in English.",
+  "prefs.sessionsSection": "Agent Sessions",
+  "prefs.openOnSession": "Open the viewer when an agent starts a session",
+  "prefs.openOnSessionNote": "The viewer opens on that device, or comes forward if it is open, without taking the keyboard from the app you are typing in.",
   "prefs.agentsLead": "Coding agents on this Mac operate your devices through DeviceSteer’s command-line tool and skill. Both are links into this app, so they update with it.",
   "prefs.moveToApplications": "Move to Applications…",
   "prefs.commandLineTool": "Command-Line Tool",

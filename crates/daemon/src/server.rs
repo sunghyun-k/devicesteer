@@ -31,7 +31,7 @@ use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use crate::{
     control::{ControlAction, ControlState, Source},
-    transport,
+    transport, viewer,
     wire::{self, Message},
 };
 
@@ -176,7 +176,15 @@ pub struct Daemon {
     epoch: Instant,
     /// A live touch may be down: the touch tick has work.
     touch_live: AtomicBool,
+    /// The session (id and owner) the viewer was last told about (see `viewer`).
+    announced: StdMutex<Option<(String, Value)>>,
+    /// Session messages for the viewer, sent in order by one task.
+    to_viewer: mpsc::UnboundedSender<ViewerNote>,
 }
+
+/// One message for the viewer: the session (null: none), and for a start, where to say what
+/// became of the viewer.
+type ViewerNote = (Option<Value>, Option<oneshot::Sender<viewer::Outcome>>);
 
 #[derive(Deserialize, Clone)]
 struct Request {
@@ -239,6 +247,18 @@ impl Daemon {
     fn new(udid: String) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
         let (frames, _) = broadcast::channel(512);
+        let (to_viewer, mut notes) = mpsc::unbounded_channel::<ViewerNote>();
+        let for_viewer = udid.clone();
+        tokio::spawn(async move {
+            while let Some((session, started)) = notes.recv().await {
+                match (started, session) {
+                    (Some(reply), Some(s)) => {
+                        let _ = reply.send(viewer::session_started(&for_viewer, s).await);
+                    }
+                    (_, session) => viewer::tell(&for_viewer, session).await,
+                }
+            }
+        });
         Arc::new(Self {
             udid,
             device: Mutex::new(Device::default()),
@@ -255,6 +275,8 @@ impl Daemon {
             next_conn: AtomicU64::new(1),
             epoch: Instant::now(),
             touch_live: AtomicBool::new(false),
+            announced: StdMutex::new(None),
+            to_viewer,
         })
     }
 
@@ -271,7 +293,24 @@ impl Daemon {
 
     fn emit_control(&self) {
         let ev = self.control.lock().unwrap().event();
+        self.tell_viewer(&ev);
         self.emit(ev);
+    }
+
+    /// Tells the viewer when the session started, changed owner or ended (not on every command:
+    /// the event's idle times change all the time). Returns where the outcome of a start comes.
+    fn tell_viewer(&self, ev: &Value) -> Option<oneshot::Receiver<viewer::Outcome>> {
+        let session = ev.get("session").filter(|s| !s.is_null() && s["owner"] != "finished").cloned();
+        let now = session.as_ref().map(|s| (s["id"].as_str().unwrap_or_default().to_string(), s["owner"].clone()));
+        let mut announced = self.announced.lock().unwrap();
+        if *announced == now {
+            return None;
+        }
+        let started = now.as_ref().is_some_and(|(id, _)| announced.as_ref().is_none_or(|(was, _)| was != id));
+        *announced = now;
+        let (tx, rx) = oneshot::channel();
+        let _ = self.to_viewer.send((session, started.then_some(tx)));
+        started.then_some(rx)
     }
 
     fn want_video(&self, dev: &Device) -> bool {
@@ -1311,7 +1350,8 @@ impl Daemon {
                 other => Err(format!("unknown session action `{other}`: start, finish, handoff, resume or status")),
             }
         };
-        let r = r.map_err(|e| anyhow!(e))?;
+        let mut r = r.map_err(|e| anyhow!(e))?;
+        let mut opened = None;
         if action != "status" {
             if action == "handoff" {
                 // The human may want to touch right away; an agent's finger left down would fight them.
@@ -1319,7 +1359,9 @@ impl Daemon {
                 self.lift_touch(&mut dev, |t| t.source == Source::Agent, "the agent handed off").await;
                 self.release_keys(&mut dev, |k| k.source == Source::Agent, "the agent handed off").await;
             }
-            self.emit_control();
+            let ev = self.control.lock().unwrap().event();
+            opened = self.tell_viewer(&ev);
+            self.emit(ev);
         }
         if matches!(action, "start" | "resume") {
             // The agent has the device now: the human's keyboard would hide the on-screen keys
@@ -1330,6 +1372,15 @@ impl Daemon {
             // The human can't press while the agent holds the device (check_human), and a finger
             // they kept down would hold the agent off until it lifts.
             self.lift_touch(&mut dev, |t| t.source == Source::Human, "an agent session took the device").await;
+        }
+        // A new session: the viewer shows it, or is opened for it (`viewer`). Waits for the
+        // message to go out (a few ms) or `open` to return, not for the viewer to come up.
+        if let Some(rx) = opened
+            && let Ok(outcome) = rx.await
+            && let Some(o) = r.as_object_mut()
+            && let Some(extra) = outcome.to_json().as_object()
+        {
+            o.extend(extra.clone());
         }
         Ok(r)
     }
@@ -1528,6 +1579,10 @@ async fn run(udid: &str) -> Result<()> {
             _ = shutdown_rx.recv() => break,
             _ = &mut ctrl_c => break,
         }
+    }
+    // The viewer's sidebar would keep showing a session of a daemon that is gone.
+    if daemon.announced.lock().unwrap().take().is_some() {
+        viewer::tell(udid, None).await;
     }
     daemon.close().await;
     listener.remove();

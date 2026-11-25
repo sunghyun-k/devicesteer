@@ -244,8 +244,13 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .dev .status { min-width: 0; color: var(--fg-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
 .dev .status:empty { display: none; }
 .dev.unavailable .name, .dev.unavailable .glyph { color: var(--fg-3); }
-/* An agent session runs on the device: a blue dot at the row's end. */
+/* An agent session runs on the device: its state in the status, and a dot at the row's end in
+   the session strip's colours: blue while the agent works, amber while it waits for the person,
+   an amber ring while the person has the device. */
 .dev .busy { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.dev .busy.delegated_to_user { background: var(--warning); }
+.dev .busy.user { background: transparent; box-shadow: inset 0 0 0 1.5px var(--warning); }
+.dev.has-session .status { color: var(--fg-2); }
 .list-message { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 36px 16px; }
 .list-message .title { font-weight: 600; }
 .list-message .detail { color: var(--fg-3); font-size: 13px; overflow-wrap: anywhere; }
@@ -326,6 +331,10 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .banner.danger > .icon, .banner.error > .icon { color: var(--danger); }
 .banner strong { color: var(--fg); font-weight: 600; }
 .banner .btn.small { background: transparent; }
+/* Where an agent just started: a dot in the session strip's colour before the text. */
+#session-notice { --who: var(--accent); }
+#session-notice.human { --who: var(--warning); }
+#session-notice .notice-dot { flex: none; width: 8px; height: 8px; margin: 0 4px; border-radius: 50%; background: var(--who); }
 
 /* ---------- stage ---------- */
 

@@ -5,6 +5,7 @@
   "common.listSeparator": "、",
   "common.notNow": "現在不要",
   "common.tryAgain": "再試一次",
+  "common.dismiss": "關閉",
 
   "menu.about": "關於{app}",
   "menu.services": "服務",
@@ -50,7 +51,8 @@
   "list.emptyDetail": "使用連接線連接 iPhone 或 iPad，將其解鎖並信任這部電腦。或透過 Wi-Fi 配對，不需連接線。",
   "list.noMatches": "沒有符合的項目",
   "list.noMatchesDetail": "沒有符合「{query}」的項目。",
-  "list.sessionRuns": "此裝置上正在執行代理程式工作階段",
+  "list.sessionWaiting": "等待你操作",
+  "list.sessionGoal": "{state}：{goal}",
   "list.noUsbmuxd.title": "安裝 Apple 裝置",
   "list.noUsbmuxd.detail": "若要透過連接線連接，Windows 需要 Apple 裝置（或 iTunes）。請安裝並打開一次、接受其授權條款，然後重新連接裝置。",
   "list.noUsbmuxd.store": "打開 Microsoft Store",
@@ -122,12 +124,15 @@
 
   "note.showInFinder": "在 Finder 中顯示",
   "note.showInExplorer": "在檔案總管中顯示",
+  "notice.agentStarted": "代理已在「{device}」上開始：",
+  "notice.view": "檢視",
 
   "stage.viewScreen": "檢視螢幕",
   "stage.starting": "正在啟動螢幕⋯",
   "stage.disconnected": "請重新連接連接線並解鎖裝置。若裝置正在重新啟動，請稍候：恢復後會在此處繼續。",
   "stage.connectFailed": "無法連線到「{device}」：{error}",
   "stage.startFailed": "無法啟動螢幕：{error}",
+  "stage.daemonClosed": "與裝置的連線再次中斷。請再試一次以重新連線。",
 
   "session.none": "沒有代理程式工作階段",
   "session.region": "代理程式工作階段",
@@ -313,6 +318,9 @@
   "prefs.language": "App 語言",
   "prefs.languageSystem": "系統預設",
   "prefs.languageNote": "來自裝置連線和命令列工具的部分訊息仍會以英文顯示。",
+  "prefs.sessionsSection": "代理工作階段",
+  "prefs.openOnSession": "代理開始工作階段時打開檢視器",
+  "prefs.openOnSessionNote": "檢視器會開啟該裝置；若已開啟，則會移到最前面，且不會搶走你正在輸入的 App 的鍵盤焦點。",
   "prefs.agentsLead": "這部 Mac 上的程式設計代理程式會透過 DeviceSteer 的命令列工具和技能操作你的裝置。兩者都是指向此 App 的連結，因此會隨 App 一起更新。",
   "prefs.moveToApplications": "搬移到「應用程式」⋯",
   "prefs.commandLineTool": "命令列工具",

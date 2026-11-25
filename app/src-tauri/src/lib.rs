@@ -4,6 +4,7 @@
 mod agent_setup;
 mod app_location;
 mod input_source;
+mod session_watch;
 mod settings_window;
 mod shared_clip;
 mod view_menu;
@@ -28,6 +29,9 @@ struct Viewer {
     setup: Mutex<Option<tokio::task::AbortHandle>>,
     /// The device `client` belongs to.
     udid: Mutex<Option<String>>,
+    /// Held through an attach or detach: switching devices quickly sends them back to back, and
+    /// two attaches interleaved could leave the client of the device left behind in place.
+    switching: Mutex<()>,
     clip: Arc<shared_clip::SharedClipboard>,
 }
 
@@ -142,6 +146,7 @@ async fn attach(
     channel: Channel<InvokeResponseBody>,
     viewer: State<'_, Viewer>,
 ) -> Result<Value, String> {
+    let _switching = viewer.switching.lock().await;
     detach_inner(&viewer).await;
     let mut client = Client::connect(Some(&udid), Source::Human).await.map_err(|e| format!("{e:#}"))?;
     let mut events = client.take_events().ok_or("events already taken")?;
@@ -149,11 +154,17 @@ async fn attach(
     let forwarder = tokio::spawn(async move {
         while let Some(m) = events.recv().await {
             if channel.send(InvokeResponseBody::Raw(m.encode())).is_err() {
-                break;
+                return;
             }
         }
+        // The daemon went away (stopped, or it crashed): the page attaches again, which starts
+        // one, rather than showing a screen and a session that no longer update.
+        let closed = devicesteer_daemon::wire::Message::Json(serde_json::json!({ "event": "daemon_closed" }));
+        let _ = channel.send(InvokeResponseBody::Raw(closed.encode()));
     });
-    *viewer.forwarder.lock().await = Some(forwarder);
+    if let Some(old) = viewer.forwarder.lock().await.replace(forwarder) {
+        old.abort();
+    }
     *viewer.client.lock().await = Some(client.clone());
     *viewer.udid.lock().await = Some(udid);
     client
@@ -180,6 +191,7 @@ async fn detach_inner(viewer: &Viewer) {
 
 #[tauri::command]
 async fn detach(viewer: State<'_, Viewer>) -> Result<(), String> {
+    let _switching = viewer.switching.lock().await;
     detach_inner(&viewer).await;
     Ok(())
 }
@@ -280,11 +292,11 @@ fn report(stats: Value) {
     }
 }
 
-/// A device to open right away (`DEVICESTEER_VIEWER_UDID`), for launching the viewer on one device
-/// from a script.
+/// A device to open right away: the one a daemon launched the app for (`--udid`, its agent session
+/// started), or `DEVICESTEER_VIEWER_UDID`, for launching the viewer on one device from a script.
 #[tauri::command]
 fn initial_udid() -> Option<String> {
-    std::env::var("DEVICESTEER_VIEWER_UDID").ok().filter(|u| !u.is_empty())
+    session_watch::launch_udid().or_else(|| std::env::var("DEVICESTEER_VIEWER_UDID").ok().filter(|u| !u.is_empty()))
 }
 
 /// Where a recording started from the viewer goes: the user's videos folder (Movies on macOS),
@@ -346,7 +358,15 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Viewer::default())
+        .manage(session_watch::Sessions::default())
         .setup(|app| {
+            session_watch::record_app_path();
+            session_watch::start(app.handle().clone());
+            // Launched by a daemon for its session (with `open -g`, in the background): show the
+            // window without taking the keyboard.
+            if session_watch::launch_udid().is_some() {
+                session_watch::bring_forward(app.handle());
+            }
             input_source::watch(app.handle().clone());
             agent_setup::refresh_on_launch();
             view_menu::install(app.handle())?;
@@ -364,7 +384,7 @@ pub fn run() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![list_devices, open_apple_devices_store, setup_status, setup_run, setup_pair_wifi, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, view_menu::set_menu_labels, settings_window::open_settings, settings_window::show_move_sheet])
+        .invoke_handler(tauri::generate_handler![list_devices, open_apple_devices_store, setup_status, setup_run, setup_pair_wifi, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, view_menu::set_menu_labels, settings_window::open_settings, settings_window::show_move_sheet, session_watch::known_sessions, session_watch::probe_sessions, session_watch::open_on_session, session_watch::set_open_on_session])
         .run(tauri::generate_context!())
         .expect("error while running the DeviceSteer app");
 }

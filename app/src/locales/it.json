@@ -5,6 +5,7 @@
   "common.listSeparator": ", ",
   "common.notNow": "Non ora",
   "common.tryAgain": "Riprova",
+  "common.dismiss": "Chiudi",
 
   "menu.about": "Informazioni su {app}",
   "menu.services": "Servizi",
@@ -50,7 +51,8 @@
   "list.emptyDetail": "Collega un iPhone o iPad con un cavo, sbloccalo e autorizza questo computer. Oppure abbinane uno via Wi-Fi, senza cavo.",
   "list.noMatches": "Nessun risultato",
   "list.noMatchesDetail": "Nessuna corrispondenza per “{query}”.",
-  "list.sessionRuns": "Su questo dispositivo è in corso una sessione dell’agente",
+  "list.sessionWaiting": "In attesa di te",
+  "list.sessionGoal": "{state}: {goal}",
   "list.noUsbmuxd.title": "Installa Dispositivi Apple",
   "list.noUsbmuxd.detail": "Per collegare con un cavo, Windows ha bisogno di Dispositivi Apple (o di iTunes). Installalo, aprilo una volta e accetta la licenza, poi ricollega il dispositivo.",
   "list.noUsbmuxd.store": "Apri Microsoft Store",
@@ -122,12 +124,15 @@
 
   "note.showInFinder": "Mostra nel Finder",
   "note.showInExplorer": "Mostra in Esplora file",
+  "notice.agentStarted": "Un agente ha iniziato su {device}:",
+  "notice.view": "Mostra",
 
   "stage.viewScreen": "Visualizza schermo",
   "stage.starting": "Avvio dello schermo…",
   "stage.disconnected": "Ricollega il cavo e sblocca il dispositivo. Se si sta riavviando, attendi: riprenderà qui quando sarà di nuovo disponibile.",
   "stage.connectFailed": "Impossibile connettersi a {device}: {error}",
   "stage.startFailed": "Impossibile avviare lo schermo: {error}",
+  "stage.daemonClosed": "La connessione al dispositivo si è chiusa di nuovo. Riprova per riconnetterti.",
 
   "session.none": "Nessuna sessione dell’agente",
   "session.region": "Sessione dell’agente",
@@ -313,6 +318,9 @@
   "prefs.language": "Lingua dell’app",
   "prefs.languageSystem": "Predefinita di sistema",
   "prefs.languageNote": "Alcuni messaggi della connessione al dispositivo e dello strumento da riga di comando restano in inglese.",
+  "prefs.sessionsSection": "Sessioni degli agenti",
+  "prefs.openOnSession": "Apri il visore quando un agente avvia una sessione",
+  "prefs.openOnSessionNote": "Il visore si apre su quel dispositivo, o passa in primo piano se è già aperto, senza togliere la tastiera all’app in cui stai scrivendo.",
   "prefs.agentsLead": "Gli agenti di programmazione su questo Mac usano i tuoi dispositivi tramite lo strumento da riga di comando e la skill di DeviceSteer. Entrambi sono link a questa app, quindi si aggiornano con essa.",
   "prefs.moveToApplications": "Sposta in Applicazioni…",
   "prefs.commandLineTool": "Strumento da riga di comando",

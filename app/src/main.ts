@@ -219,6 +219,26 @@ let usbmuxdMissing = false;
  * turning on Developer Mode does): what to go back to when the same UDID comes back. The
  * selection stays, so it picks up again by itself. */
 let gone: { view: boolean } | undefined;
+/** The agent session of every device that has one, by UDID: the daemons tell the shell when one
+ * starts, changes owner or ends (session_watch.rs), and the attached device's control events keep
+ * its entry current. The sidebar marks them all. */
+const sessions = new Map<string, AgentSession>();
+/** Devices whose screen was showing when the person picked another: shown again when they come
+ * back. In memory only: after a restart, picking a device attaches without video as before, since
+ * the stream lights the device's screen-sharing indicator, which nobody asked for yet. */
+const viewed = new Set<string>();
+
+/** The session using `udid`, if one runs. */
+function sessionOf(udid: string | undefined): AgentSession | undefined {
+  if (!udid) return undefined;
+  if (udid === attachedUdid) return activeSession() ?? undefined;
+  return sessions.get(udid);
+}
+
+/** A session's state in a few words, for the sidebar and the notice. */
+function sessionShort(s: AgentSession): string {
+  return t(s.owner === "agent" ? "session.agentInControl" : s.owner === "user" ? "session.youInControl" : "list.sessionWaiting");
+}
 
 /** "iOS 26.1", "iPadOS 26.0", when the device said. */
 function osLabel(d: DeviceInfo): string | undefined {
@@ -251,7 +271,7 @@ function row(d: DeviceInfo, disconnected = false): HTMLLIElement {
   li.tabIndex = 0;
   // One line: the name, then its status in gray: the OS version and how it is connected, or why
   // it can't be used. Other states (setting a device up, say) belong in the status too.
-  const status = disconnected
+  const status = (li.dataset.status = disconnected
     ? t("device.disconnected")
     : d.unsupported
     ? t("device.needsIos27")
@@ -259,7 +279,7 @@ function row(d: DeviceInfo, disconnected = false): HTMLLIElement {
     ? t("device.unavailable")
     : d.setup
       ? t("device.setupStatus", { step: setupShort(d.setup) })
-      : [d.name ? modelName(d) : undefined, d.transports.includes("usb") ? "USB" : d.transports.length ? "Wi-Fi" : undefined].filter(Boolean).join(" · ");
+      : [d.name ? modelName(d) : undefined, d.transports.includes("usb") ? "USB" : d.transports.length ? "Wi-Fi" : undefined].filter(Boolean).join(" · "));
   const text = el("div", "text");
   text.append(el("span", "name", deviceName(d)), el("span", "status", status));
   li.append(icon(isTablet(d) ? "i-tablet" : "i-phone", "icon glyph"), text);
@@ -315,18 +335,29 @@ function renderList(): void {
   }
 }
 
+/** Marks the selected row, and every device an agent session runs on: its state replaces the
+ * row's gray status, and a dot at the row's end takes the session strip's colour (blue while the
+ * agent works, amber while it waits for the person or they have the device; hollow when they do).
+ * The goal is in the tooltip and the accessible name. */
 function markSelection(): void {
-  const busy = !!activeSession();
   for (const li of document.querySelectorAll<HTMLLIElement>(".dev")) {
     const on = li.dataset.udid === selected?.udid;
     li.setAttribute("aria-selected", String(on));
     li.querySelector(".busy")?.remove();
-    if (on && busy) {
-      // A blue dot at the row's end, like an unread mark.
-      const dot = el("span", "busy");
-      dot.title = t("list.sessionRuns");
-      li.append(dot);
+    const s = li.classList.contains("unavailable") ? undefined : sessionOf(li.dataset.udid);
+    const status = li.querySelector(".status");
+    if (status) status.textContent = s ? sessionShort(s) : (li.dataset.status ?? "");
+    li.classList.toggle("has-session", !!s);
+    if (!s) {
+      li.removeAttribute("aria-description");
+      continue;
     }
+    const text = t("list.sessionGoal", { state: sessionShort(s), goal: s.name });
+    const dot = el("span", `busy ${s.owner}`);
+    dot.title = text;
+    dot.setAttribute("aria-hidden", "true");
+    li.setAttribute("aria-description", text);
+    li.append(dot);
   }
 }
 
@@ -786,6 +817,11 @@ function onControl(c: ControlEvent): void {
   const was = activeSession()?.id ?? null;
   control = c;
   const s = activeSession();
+  if (attachedUdid) {
+    if (s) sessions.set(attachedUdid, s);
+    else sessions.delete(attachedUdid);
+    if (!s) hideSessionNotice(attachedUdid);
+  }
   // The cursor marks where this session's agent works; it goes with the session. Input sent
   // without a session keeps it until the device changes.
   if (was && s?.id !== was) hideCursor();
@@ -1165,6 +1201,9 @@ function onMessage(buf: Uint8Array): void {
         break;
       case "keyboard":
         onKeyboard(ev as KeyboardState);
+        break;
+      case "daemon_closed":
+        onDaemonClosed();
         break;
     }
   } else if (kind === 1) {
@@ -2742,6 +2781,95 @@ function pairReport(): unknown {
 
 $<HTMLButtonElement>("#pair-wifi").addEventListener("click", openPairing);
 
+// ---------- sessions on other devices ----------
+//
+// A session that starts shows its device's screen at once (`onAgentSession`): the device is
+// selected when nothing else is, or when the device on screen is only selected, not watched. A
+// device the person watches, works on (an agent session, a recording, a setup step, pairing) is
+// never taken away: a notice says where the agent started, with View.
+
+const sessionNotice = $<HTMLDivElement>("#session-notice");
+const sessionNoticeText = $<HTMLParagraphElement>("#session-notice-text");
+/** The device the notice is about. */
+let noticeFor: DeviceInfo | undefined;
+
+function showSessionNotice(d: DeviceInfo, s: AgentSession): void {
+  noticeFor = d;
+  sessionNotice.hidden = false;
+  sessionNotice.classList.toggle("human", s.owner !== "agent");
+  const head = document.createElement("strong");
+  head.textContent = t("notice.agentStarted", { device: deviceName(d) });
+  // The goal is the agent's own words, in whatever language it wrote them.
+  sessionNoticeText.replaceChildren(head, " ", s.name);
+  sessionNoticeText.title = `${head.textContent} ${s.name}`;
+}
+
+/** Hides the notice; with `udid`, only when it is about that device. */
+function hideSessionNotice(udid?: string): void {
+  if (udid && noticeFor?.udid !== udid) return;
+  noticeFor = undefined;
+  sessionNotice.hidden = true;
+}
+
+$<HTMLButtonElement>("#session-notice-view").addEventListener("click", () => {
+  const d = noticeFor;
+  hideSessionNotice();
+  if (d) void select(devices.find((x) => x.udid === d.udid) ?? d, { view: true });
+});
+$<HTMLButtonElement>("#session-notice-dismiss").addEventListener("click", () => hideSessionNotice());
+
+/** Whether the device on screen may give way to one where a session just started: the person
+ * isn't watching it or doing anything with it. */
+function mayLeaveSelected(): boolean {
+  if (!selected || gone) return true;
+  return !wantView && !activeSession() && !recording && !setupRun && !pairing && !press && !control.human_touching;
+}
+
+/** A daemon's message: a session started, changed owner or ended on `udid`. */
+function onAgentSession(p: { udid: string; session: AgentSession | null; started: boolean }): void {
+  // The attached device's control events say the same, and say it first.
+  if (p.udid !== attachedUdid) {
+    if (p.session) sessions.set(p.udid, p.session);
+    else sessions.delete(p.udid);
+  }
+  if (!p.session) hideSessionNotice(p.udid);
+  markSelection();
+  if (!p.started || !p.session) return;
+  const d = devices.find((x) => x.udid === p.udid) ?? { udid: p.udid, transports: [] };
+  // A device that isn't listed yet (Wi-Fi, before the next look): the list catches up.
+  if (!devices.some((x) => x.udid === p.udid)) void loadDevices();
+  if (selected?.udid === p.udid) {
+    if (attachedUdid === p.udid) void view();
+    else if (!gone) void select(d, { view: true });
+    return;
+  }
+  if (mayLeaveSelected()) void select(d, { view: true });
+  else showSessionNotice(d, p.session);
+}
+
+void listen<{ udid: string; session: AgentSession | null; started: boolean }>("agent-session", (e) => onAgentSession(e.payload));
+
+/** When the daemon connection last closed: one that closes again within this is left closed
+ * (a daemon that crashes as it starts), instead of starting it over and over. */
+let lastReattach = -Infinity;
+const REATTACH_AFTER_MS = 5000;
+
+/** The attached device's daemon went away (stopped to load a new build, or it crashed): attach
+ * again, which starts a new one, so the screen and the session panel keep updating. */
+function onDaemonClosed(): void {
+  if (!selected || !attachedUdid || gone) return;
+  const d = selected;
+  const show = wantView;
+  attachedUdid = undefined;
+  if (performance.now() - lastReattach < REATTACH_AFTER_MS) {
+    stageState("error", () => t("stage.daemonClosed"));
+    return;
+  }
+  lastReattach = performance.now();
+  selected = undefined;
+  void select(d, { view: show });
+}
+
 // ---------- attaching, viewing ----------
 //
 // Picking a device attaches to its daemon without video: the settings, the VoiceOver warning and
@@ -2800,6 +2928,9 @@ async function detach(): Promise<void> {
 }
 
 async function select(d: DeviceInfo, opts: { view?: boolean } = {}): Promise<void> {
+  hideSessionNotice(d.udid);
+  // Back to a device whose screen showed when the person left it, or one an agent works on.
+  opts = { view: opts.view ?? (viewed.has(d.udid) || !!sessionOf(d.udid)) };
   if (selected?.udid === d.udid && attachedUdid === d.udid) {
     if (opts.view) void view();
     return;
@@ -2834,7 +2965,10 @@ async function select(d: DeviceInfo, opts: { view?: boolean } = {}): Promise<voi
     return;
   }
   stageState(opts.view ? "connecting" : "intro");
-  if (opts.view) wantView = true;
+  if (opts.view) {
+    wantView = true;
+    viewed.add(d.udid);
+  }
   await attach(d);
 }
 
@@ -2846,8 +2980,9 @@ async function attach(d: DeviceInfo): Promise<void> {
     if (gen === viewerGen) onMessage(m instanceof ArrayBuffer ? new Uint8Array(m) : Uint8Array.from(m));
   };
   settingsMessage(() => t("common.connecting"));
+  const frames = wantView;
   try {
-    await invoke("attach", { udid: d.udid, frames: wantView, channel });
+    await invoke("attach", { udid: d.udid, frames, channel });
   } catch (e) {
     if (gen !== viewerGen) return;
     settingsMessage("");
@@ -2856,6 +2991,8 @@ async function attach(d: DeviceInfo): Promise<void> {
   }
   if (gen !== viewerGen) return;
   attachedUdid = d.udid;
+  // The screen was asked for while attaching (a session started, View Screen): ask now.
+  if (wantView && !frames) void view();
   // VoiceOver changes what taps do, so its warning shows whether or not the inspector is open.
   void readSettings();
   void invoke("send", { cmd: "keyboard_status", args: {} })
@@ -2870,6 +3007,7 @@ async function attach(d: DeviceInfo): Promise<void> {
 async function view(): Promise<void> {
   if (!selected || unusable(selected) || selected.setup || gone) return;
   wantView = true;
+  viewed.add(selected.udid);
   if (stage.dataset.state !== "live") stageState("connecting", () => t("stage.starting"));
   if (!attachedUdid) {
     // Still attaching (it asks for frames now), or it failed: try again.
@@ -2895,6 +3033,7 @@ async function view(): Promise<void> {
 async function stopView(): Promise<void> {
   if (!wantView) return;
   wantView = false;
+  if (selected) viewed.delete(selected.udid);
   resetScreen();
   stageState("intro");
   if (attachedUdid) await invoke("watch", { frames: false }).catch(() => {});
@@ -2975,6 +3114,8 @@ function report(): void {
       session_slot: sessionIdle.hidden ? "panel" : "idle",
       recording: recording ? { file: fileName(recording.path), label: recordLabel.textContent } : null,
       note: note.hidden ? null : noteText.textContent,
+      sessionNotice: sessionNotice.hidden ? null : sessionNoticeText.textContent,
+      sessions: Object.fromEntries([...sessions].map(([u, s]) => [u, s.owner])),
     },
   });
 }
@@ -3027,13 +3168,23 @@ updateMenu();
 void (async () => {
   // A device to open right away (`DEVICESTEER_VIEWER_UDID`): selected and shown.
   const udid = await invoke<string | null>("initial_udid");
+  for (const [u, s] of Object.entries(await invoke<Record<string, AgentSession>>("known_sessions").catch(() => ({})))) sessions.set(u, s);
   await loadDevices();
+  // Sessions that started before the viewer did: one question to each device's running daemon.
+  const asked = devices.filter((d) => !unusable(d) && !d.setup && !sessions.has(d.udid)).map((d) => d.udid);
+  if (asked.length) {
+    const found = await invoke<Record<string, AgentSession>>("probe_sessions", { udids: asked }).catch(() => ({}));
+    for (const [u, s] of Object.entries(found)) sessions.set(u, s);
+    renderList();
+  }
   if (udid) {
     void select(devices.find((d) => d.udid === udid) ?? { udid, transports: [] }, { view: true });
     return;
   }
   const last = prefs.get("device");
-  const pick = devices.find((d) => d.udid === last && !unusable(d)) ?? devices.find((d) => !unusable(d));
+  // A device an agent works on comes first: that is what the person opened the viewer to see.
+  const working = devices.find((d) => !unusable(d) && sessions.get(d.udid)?.owner === "agent");
+  const pick = working ?? devices.find((d) => d.udid === last && !unusable(d)) ?? devices.find((d) => !unusable(d));
   // Pair over Wi-Fi… pressed while the list loaded: the card stays.
   if (pairing) return;
   if (pick) void select(pick);
