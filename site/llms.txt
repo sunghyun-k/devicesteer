@@ -22,6 +22,7 @@ devicesteer session resume                        # after they are done; read th
 devicesteer session finish                        # at the end of your reply
 ```
 
+- `screenshot` saves an 8-bit PNG and takes about 2 seconds, over Wi-Fi too; `--raw` keeps the device's 16-bit PNG.
 - Read the screen before your first input. Give every tap, swipe and button a short `--label`; the viewer shows it next to the touch.
 - If input is refused because the user took over or stopped the session, stop and tell the user. Don't retry or work around it.
 - Never approve permission, consent, sign-in or payment prompts, and never enter a passcode: hand off to the user.

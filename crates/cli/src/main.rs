@@ -62,7 +62,7 @@ enum Command {
         #[command(flatten)]
         target: Target,
     },
-    /// Capture the screen as PNG.
+    /// Capture the screen as an 8-bit PNG.
     Screenshot {
         #[command(flatten)]
         target: Target,
@@ -73,6 +73,10 @@ enum Command {
         /// or cover panel, whichever is active).
         #[arg(long)]
         display: Option<String>,
+        /// Keep the PNG as the device sent it: 16 bits per channel on wide-colour screens, about
+        /// ten times larger.
+        #[arg(long)]
+        raw: bool,
     },
     /// Show the display in use: size in points, scale, rotation.
     Display {
@@ -523,20 +527,22 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                 "services": session.services(),
             })
         }
-        Command::Screenshot { target, output, display } => {
-            let mut session = Session::open(target.udid.as_deref()).await?;
-            let png = session.screenshot(display.as_deref()).await?;
-            std::fs::write(&output, &png)
-                .with_context(|| format!("could not write {}", output.display()))?;
-            let (width, height) = png_size(&png).unzip();
-            json!({
-                "udid": session.udid,
-                "transport": session.transport,
-                "path": output,
-                "bytes": png.len(),
-                "width": width,
-                "height": height,
-            })
+        Command::Screenshot { target, output, display, raw } if !target.no_daemon => {
+            // The daemon writes the file: the PNG doesn't cross the socket, and its tunnel is
+            // already open (a new one over Wi-Fi took 0.3 s, plus discovery; PITFALLS #63).
+            let path = std::path::absolute(&output)
+                .with_context(|| format!("could not resolve {}", output.display()))?;
+            let args = json!({ "path": path, "display": display, "raw": raw });
+            match target.client().await?.request("screenshot", args).await {
+                // A daemon started by an older version (the viewer's) doesn't take it yet.
+                Err(e) if format!("{e:#}").contains("unknown command `screenshot`") => {
+                    screenshot_direct(target.udid.as_deref(), &output, display.as_deref(), raw).await?
+                }
+                r => r?,
+            }
+        }
+        Command::Screenshot { target, output, display, raw } => {
+            screenshot_direct(target.udid.as_deref(), &output, display.as_deref(), raw).await?
         }
         Command::Display { target } => {
             let mut session = Session::open(target.udid.as_deref()).await?;
@@ -769,6 +775,19 @@ async fn run(command: Command) -> Result<serde_json::Value> {
     })
 }
 
+/// `screenshot` on a tunnel of its own, without the daemon.
+async fn screenshot_direct(udid: Option<&str>, output: &std::path::Path, display: Option<&str>, raw: bool) -> Result<serde_json::Value> {
+    let mut session = Session::open(udid).await?;
+    let shot = session.screenshot(display, raw).await?;
+    std::fs::write(output, &shot.png).with_context(|| format!("could not write {}", output.display()))?;
+    let mut r = serde_json::to_value(&shot)?;
+    r["udid"] = json!(session.udid);
+    r["transport"] = json!(session.transport);
+    r["path"] = json!(output);
+    r["bytes"] = json!(shot.png.len());
+    Ok(r)
+}
+
 /// The agent guide, with the version it belongs to.
 fn skill_guide() -> String {
     let v = env!("CARGO_PKG_VERSION");
@@ -844,11 +863,3 @@ fn plist_to_json(v: &plist::Value) -> serde_json::Value {
     }
 }
 
-/// Width and height from a PNG's IHDR chunk.
-fn png_size(png: &[u8]) -> Option<(u32, u32)> {
-    if png.len() < 24 || &png[..8] != b"\x89PNG\r\n\x1a\n" || &png[12..16] != b"IHDR" {
-        return None;
-    }
-    let be = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
-    Some((be(&png[16..20]), be(&png[20..24])))
-}

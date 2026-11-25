@@ -69,7 +69,8 @@ to the user, reading the screen, labels). `skills/devicesteer/SKILL.md` is a boo
 there.
 
 Output is JSON. Device commands go through a per-device daemon that the first command starts
-(`daemon status`, `daemon stop`). The viewer app (`app/`) shows the live screen; while an agent
+(`daemon status`, `daemon stop`). `screenshot` saves an 8-bit PNG; `--raw` keeps the device's
+16-bit one. The viewer app (`app/`) shows the live screen; while an agent
 session runs it glows around the screen and shows the session at the bottom, with Take over / Hand
 back (Done after a handoff) and Stop:
 
