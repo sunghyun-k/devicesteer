@@ -51,9 +51,14 @@ document.documentElement.lang = lang;
 /** The language the viewer shows now. */
 export const language = (): Language => lang;
 
+// Messages that name the computer ("this Mac") or its ⌘ shortcuts have a `<key>@windows` sibling
+// that `t()` takes in their place on Windows, so callers and `data-i18n` attributes don't choose.
+const WINDOWS = /Win/.test(navigator.platform);
+
 /** The message `key` in the current language, `{name}` placeholders filled from `vars`. */
 export function t(key: Key, vars?: Vars): string {
-  return format(CATALOGS[lang][key] ?? en[key], lang, vars);
+  const k = WINDOWS && hasKey(`${key}@windows`) ? (`${key}@windows` as Key) : key;
+  return format(CATALOGS[lang][k] ?? en[k], lang, vars);
 }
 
 /** A number written the current language's way. */

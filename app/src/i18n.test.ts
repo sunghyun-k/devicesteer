@@ -36,6 +36,12 @@ for (const lang of LANGUAGES.filter((l) => l !== "en")) {
   });
 }
 
+test("every Windows variant has the message it replaces", () => {
+  for (const key of Object.keys(en)) {
+    if (key.endsWith("@windows")) assert.ok(key.slice(0, -"@windows".length) in en, key);
+  }
+});
+
 test("plural messages in English have one and other", () => {
   for (const [key, m] of Object.entries(en)) {
     if (typeof m !== "string") assert.ok(m.one && m.other, key);
