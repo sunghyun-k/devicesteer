@@ -415,6 +415,7 @@ const scroller = $<HTMLDivElement>("#scroller");
 const deviceEl = $<HTMLDivElement>("#device");
 const canvas = $<HTMLCanvasElement>("#screen");
 const overlay = $<HTMLDivElement>("#overlay");
+const screenBox = $<HTMLDivElement>("#screen-box");
 const glow = $<HTMLDivElement>("#glow");
 const ctx = canvas.getContext("2d")!;
 const introArt = $<HTMLDivElement>("#intro-art");
@@ -751,6 +752,7 @@ function onControl(c: ControlEvent): void {
   glow.hidden = !s;
   markSelection();
   syncKeyboard();
+  syncTouchBlock();
   if (!s) return;
   if (s.id !== was && !wantView && attachedUdid) void view();
   const human = s.owner !== "agent";
@@ -1292,6 +1294,10 @@ canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || press) return;
   const at = toScreen(e);
   if (!at) return;
+  if (!humanHasDevice()) {
+    touchBlocked(e);
+    return;
+  }
   canvas.setPointerCapture(e.pointerId);
   press = { pointerId: e.pointerId, last: at.point, dead: false };
   queueStep({ phase: "down", point: at.point, t: e.timeStamp });
@@ -1327,6 +1333,56 @@ window.addEventListener("blur", () => endPress());
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) endPress();
 });
+
+// While the agent holds the device, the screen takes no touches: one under the agent's input
+// would turn its taps into something else, and the daemon refuses them anyway (check_human). A
+// press says why, next to the pointer, and points at Take over. A press already down when the
+// agent gets the device ends there; the daemon lifts that finger too.
+const blockedHint = document.createElement("div");
+blockedHint.className = "blocked-hint";
+blockedHint.setAttribute("role", "status");
+blockedHint.textContent = "The agent is in control. Take over to use the device.";
+blockedHint.hidden = true;
+overlay.append(blockedHint);
+let blockedHintTimer: number | undefined;
+/** For the report: presses the viewer kept from the device. */
+let touchesBlocked = 0;
+
+function syncTouchBlock(): void {
+  const blocked = !humanHasDevice();
+  screenBox.classList.toggle("agent-has-device", blocked);
+  if (!blocked) {
+    hideBlockedHint();
+    return;
+  }
+  endPress();
+}
+
+function hideBlockedHint(): void {
+  window.clearTimeout(blockedHintTimer);
+  blockedHint.hidden = true;
+  sessionPrimary.classList.remove("nudge");
+}
+
+function touchBlocked(e: PointerEvent): void {
+  touchesBlocked++;
+  const r = overlay.getBoundingClientRect();
+  const x = e.clientX - r.left;
+  const y = e.clientY - r.top;
+  blockedHint.hidden = false;
+  blockedHint.style.left = `${x}px`;
+  blockedHint.style.top = `${y}px`;
+  blockedHint.classList.toggle("left", !fitsRight(blockedHint, x, 14));
+  // Restart the fade and the nudge for every press, not only the first.
+  for (const el of [blockedHint, sessionPrimary]) {
+    el.classList.remove("nudge");
+    void el.offsetWidth;
+    el.classList.add("nudge");
+  }
+  window.clearTimeout(blockedHintTimer);
+  blockedHintTimer = window.setTimeout(hideBlockedHint, BLOCKED_HINT_MS);
+}
+const BLOCKED_HINT_MS = 2400;
 
 for (const b of document.querySelectorAll<HTMLButtonElement>("#device-bar [data-button]"))
   b.addEventListener("click", () => void send("button", { name: b.dataset.button }).catch(() => {}));
@@ -1626,7 +1682,6 @@ window.addEventListener("blur", releaseKeys);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) releaseKeys();
 });
-const screenBox = $<HTMLDivElement>("#screen-box");
 screenBox.addEventListener("pointerenter", () => (overScreen = true));
 screenBox.addEventListener("pointerleave", () => (overScreen = false));
 // Clicking the screen gives it the keys, so typing goes on after the pointer leaves it.
@@ -2843,6 +2898,7 @@ function report(): void {
       panel: sessionPanel.hidden
         ? null
         : { name: sessionName.textContent, state: sessionState.textContent, button: sessionPrimary.textContent },
+      touchBlock: { on: screenBox.classList.contains("agent-has-device"), hint: !blockedHint.hidden, blocked: touchesBlocked },
       glow: glow.hidden ? null : glow.classList.contains("human") ? "human" : "agent",
       labelsShown,
       showTouches,

@@ -508,6 +508,31 @@ impl Daemon {
         r.map_err(|e| anyhow!(e))
     }
 
+    /// Refuses a human's new touch while an agent's session holds the device. The viewer doesn't
+    /// send one then; this keeps any other human client from pressing under the agent too.
+    fn check_human(&self, req: &Request) -> Result<()> {
+        if req.source != Source::Human {
+            return Ok(());
+        }
+        let new_touch = match req.cmd.as_str() {
+            "tap" | "swipe" => true,
+            "touch" => req.args.get("phase").and_then(Value::as_str) == Some("down"),
+            _ => false,
+        };
+        if !new_touch {
+            return Ok(());
+        }
+        let mut control = self.control.lock().unwrap();
+        let had = control.session().is_some();
+        let r = control.check_human_touch();
+        let ended = had && control.session().is_none();
+        drop(control);
+        if ended {
+            self.emit_control();
+        }
+        r.map_err(|e| anyhow!(e))
+    }
+
     fn input_event(&self, source: Source, kind: &str, points: &[(f64, f64)], screen: (f64, f64), extra: Value) {
         let mut ev = json!({
             "event": "input",
@@ -744,6 +769,7 @@ impl Daemon {
         let mut dev = self.device.lock().await;
         // After the lock: the human may have touched or taken over while this waited for it.
         let note = self.check_agent(req)?;
+        self.check_human(req)?;
         let mut r = self.device_op_locked(&mut dev, req).await;
         if let (Ok(v), Some(note)) = (&mut r, note)
             && v.is_object()
@@ -1240,6 +1266,9 @@ impl Daemon {
             // so the viewer doesn't ask for it again.
             let mut dev = self.device.lock().await;
             self.drop_held_keyboard(&mut dev, |_, s| s == Source::Human, "an agent session took the device").await;
+            // The human can't press while the agent holds the device (check_human), and a finger
+            // they kept down would hold the agent off until it lifts.
+            self.lift_touch(&mut dev, |t| t.source == Source::Human, "an agent session took the device").await;
         }
         Ok(r)
     }

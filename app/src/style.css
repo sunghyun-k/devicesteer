@@ -463,6 +463,8 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
   touch-action: none; cursor: default;
 }
 #overlay { position: absolute; inset: 0; pointer-events: none; }
+/* The agent holds the device: the screen takes no touches (main.ts, syncTouchBlock). */
+#screen-box.agent-has-device #screen { cursor: not-allowed; }
 
 /* ---------- agent session: edge glow, labels, cursor ---------- */
 
@@ -522,6 +524,18 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 }
 .agent-cursor.pressing .press { opacity: 1; transform: scale(1); transition: none; }
 .agent-cursor.pressing .arrow { transform: scale(0.88); }
+/* Why a press on the screen did nothing while the agent holds the device. Like a label, but with
+   no dot, and it fades by itself (main.ts hides it after the animation's length). */
+.blocked-hint {
+  position: absolute; z-index: 3; transform: translate(14px, -50%); width: max-content; max-width: 260px;
+  padding: 6px 11px; border-radius: var(--r-md); font-size: var(--fs-sm); font-weight: 500;
+  line-height: 1.35; color: #f3f3f3; background: rgba(24, 24, 24, 0.92);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border: 0.5px solid rgba(255, 255, 255, 0.14); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.blocked-hint[hidden] { display: none; }
+.blocked-hint.left { transform: translate(calc(-100% - 14px), -50%); }
+.blocked-hint.nudge { animation: label-fade 2.4s ease-out forwards; }
 @keyframes label-fade { 0% { opacity: 0; } 8% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
 
 /* ---------- under the device: session slot and the device bar ---------- */
@@ -556,6 +570,15 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 #session-state { flex: none; max-width: 60%; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 #session-name { min-width: 0; font-size: 13px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; }
 #session-panel .btn.small { height: 28px; }
+/* A press on the screen while the agent holds the device points here. */
+#session-primary.nudge { animation: nudge 0.9s ease-out 2; }
+@keyframes nudge {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #session-primary.nudge { animation: none; outline: 2px solid var(--accent); outline-offset: 2px; }
+}
 #session-stop { color: var(--fg-2); }
 #session-stop:hover { color: var(--danger); }
 
