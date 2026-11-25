@@ -1163,8 +1163,8 @@ for the second pass, whose identifiers tell the screens apart (#22).
   `-WatchFaces`); the iPhone (iOS 27.3) ran `WidgetRenderer_Default` with lock screen widgets
   showing. `ui` now lists them as `hosted` (drawing inside SpringBoard) and waits for the second
   pass when only SpringBoard and renderers are on screen.
-- Not yet checked: whether an iPad home screen has the same `spotlight-pill` identifier as the
-  iPhone's. If `surface` is still missing there, read it with `ui --full` and add its identifier.
+- An iPad home screen has no `spotlight-pill` (page dots instead), so `surface` was still missing
+  there: #62.
 - A passcode-locked iPhone (iOS 27.3, Wi-Fi, lock screen showing) gave no elements at all, with
   `--full --all` too: only the SpringBoard application, so no `surface` either.
 
@@ -1173,3 +1173,47 @@ the app was still zooming in. The first pass (#10) is taken as soon as it comes,
 sends it during the animation. Nothing in a single dump says the screen is moving; two readings
 in a row with the same frames do. Not measured further (that needs input on the device), so the
 agent guide tells agents to read again after a launch instead of `ui` waiting on every reading.
+
+### 61. An iPad's accessibility frames are turned like its touchscreen: `ui` was portrait in landscape
+
+iPad Pro 13-inch (M4), iPadOS 27.2.1, Wi-Fi, home screen held in landscape. `getdisplayinfo` said
+`rot0` with a landscape panel (1376x1032 points) and `nativeOrientation` `rot270` (#58). The
+SpringBoard application element's frame was the landscape screen, `{{0, 0}, {1376, 1032}}`, but every
+other frame (and activation point) was in the touchscreen's portrait space, 1032x1376: the page dots
+read `{{138, 655}, {41, 66}}` while the screenshot showed them at about (680, 868), the dock's icons
+had `x` 27.5 and `y` from 206 to 1083, and icons whose portrait `y` was past 1032 were dropped as off
+screen.
+
+On an iPhone in landscape (`rot270` from a `rot0` panel and touchscreen) frames were landscape
+points (#27). One rule fits both: the accessibility service turns the touchscreen's space by
+`currentOrientation` as if the touchscreen were the panel, so frames come out turned by
+`nativeOrientation` alone (quarter turns commute, so `currentOrientation` drops out).
+`Screen::build` turns each element's frame back by the display's `touch_rotation` onto the screen,
+the application frames giving the screen's size; it does so before dropping off-screen elements.
+Phones and both panels of a foldable say `rot0`, so their frames are unchanged. Checked: the page
+dots, icons and dock matched the screenshot. Not checked: an iPad held in portrait (the same rule
+predicts frames turned the same way there).
+
+### 62. Home screen widgets have frames of their own; an iPad's home screen has no Search pill
+
+Same iPad and screen as #61, with a stocks widget and a clock widget on the page.
+
+- **Widget frames are relative to the widget.** The elements of `WidgetRenderer_Default` (#60)
+  had frames from the widget's own top-left: the clock read `{{0, 0}, {170, 170}}` while it showed
+  at about (510, 78), the stocks rows started at `{{17.5, 17.5}, ...}`. The dump has no element for
+  the view hosting the widget: SpringBoard's application element lists the widget's rows directly
+  among the icons, and no SpringBoard element has the widget's frame. The rows carry a different
+  attribute 12 than SpringBoard's elements (a context id, probably), nothing with an offset. Like
+  the share sheet (#21) there is nothing to add, so `ui` keeps the widgets' elements for their
+  text and drops their frames; a tap by ref or label refuses them and points at screenshot
+  coordinates. Untried: asking for the widget element's parent with a single-attribute request.
+- **No Search pill.** The iPhone's home screen has a `spotlight-pill`; the iPad's (landscape) shows
+  page dots, an `adjustable` element with no identifier and a localized value ("page 1 of 2"),
+  which Control Center's page control also is (with the identifier `Page control`). What the
+  home screen's app icons, dock included, do have is custom actions (attribute 13) whose
+  `AXPCustomActionIdentifier` ends in a selector, which is not localized:
+  `_accessibilityToggleJigglyMode` (edit mode), `_accessibilityShowTodayView` and
+  `_accessibilityShowAppLibrary`. `ui` now names the screen `home_screen` when an element on screen
+  offers `_accessibilityToggleJigglyMode` (after the other SpringBoard screens are ruled out) or
+  when the Search pill is there. Not checked on an iPhone: it was locked, so whether its icons carry
+  the same actions is unknown; its Search pill still counts.

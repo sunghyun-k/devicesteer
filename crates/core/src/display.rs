@@ -52,6 +52,21 @@ impl Rotation {
             Self::R270 => (1.0 - v, u),
         }
     }
+
+    /// The inverse of [`Self::turn_share`]: where a point of the turned space lies on the screen.
+    pub(crate) fn unturn_share(self, (p, q): (f64, f64)) -> (f64, f64) {
+        match self {
+            Self::R0 => (p, q),
+            Self::R90 => (1.0 - q, p),
+            Self::R180 => (1.0 - p, 1.0 - q),
+            Self::R270 => (q, 1.0 - p),
+        }
+    }
+
+    /// Whether the turn swaps width and height.
+    pub(crate) fn is_quarter(self) -> bool {
+        matches!(self, Self::R90 | Self::R270)
+    }
 }
 
 /// The display in use.
@@ -297,6 +312,15 @@ mod tests {
         let (a, b) = (d.report_point((100.0, 516.0)), d.report_point((1200.0, 516.0)));
         assert_eq!(a.0, b.0);
         assert!(b.1 > a.1);
+    }
+
+    #[test]
+    fn unturning_undoes_every_turn() {
+        for r in [Rotation::R0, Rotation::R90, Rotation::R180, Rotation::R270] {
+            for p in [(0.0, 0.0), (0.25, 0.75), (1.0, 0.5)] {
+                assert_eq!(r.unturn_share(r.turn_share(p)), p, "{r:?}");
+            }
+        }
     }
 
     #[test]

@@ -300,8 +300,9 @@ impl Controller {
             }
         }
         let names: HashMap<i64, ProcName> = pids.iter().map(|&p| (p, self.describe(p))).collect();
+        let touch_rotation = self.display().await?.touch_rotation;
         let screen = tokio::task::spawn_blocking(move || {
-            let mut screen = Screen::build(&dump, opts);
+            let mut screen = Screen::build(&dump, opts, touch_rotation);
             screen.name_processes(|pid| names.get(&pid).cloned().unwrap_or_default());
             screen
         })

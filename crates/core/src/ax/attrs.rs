@@ -7,12 +7,15 @@
 //! there, change one thing, read again. Numbers not listed here are passed
 //! through untouched in the raw dump.
 //!
-//! Seen but not used: 1 activation point, 13 custom actions, 48 and 43 other
+//! Seen but not used: 1 activation point, 48 and 43 other
 //! frames, 61 a second role-like number, 73 language, 78 trait descriptions
 //! ("버튼"), 87/88 alternative labels, 128 a pointer string.
 
 /// Text VoiceOver would speak for the element. String or attributed string.
 pub const LABEL: i64 = 3;
+/// Custom actions: an array of dictionaries whose `AXPCustomActionIdentifier` is
+/// "Name:<localized name>\nTarget:<pointer>\nSelector:<selector>". The selector is not localized.
+pub const CUSTOM_ACTIONS: i64 = 13;
 /// Every child element, on screen or not.
 pub const CHILDREN: i64 = 8;
 /// Children the phone considers visible.

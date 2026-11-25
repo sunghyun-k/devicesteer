@@ -933,7 +933,7 @@ mod tests {
         let mut next = key(91, "Next keyboard");
         next.value = Some("English (US)".into());
         elements.push(next);
-        Screen { width: 428.0, height: 926.0, apps: vec![], surface: None, elements }
+        Screen { width: 428.0, height: 926.0, elements, ..Default::default() }
     }
 
     #[test]

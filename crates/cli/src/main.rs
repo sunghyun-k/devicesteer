@@ -699,13 +699,13 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                 } else if at.starts_with('@') {
                     let saved = load_refs(&c.session.udid)?;
                     let e = saved.find(&at).map_err(anyhow::Error::msg)?;
-                    let point = saved.tap_point(e).context("that element has no frame to tap")?;
+                    let point = saved.tap_point(e).context("that element has no frame in screen points (widgets have none); tap the point a screenshot shows it at")?;
                     (point, json!({ "ref": e.reference, "role": e.role, "frame": e.frame }))
                 } else {
                     let screen = c.ui(BuildOptions::default(), false).await?;
                     save_refs(&c.session.udid, &screen);
                     let e = screen.find(&at).map_err(anyhow::Error::msg)?;
-                    let point = screen.tap_point(e).context("that element has no frame to tap")?;
+                    let point = screen.tap_point(e).context("that element has no frame in screen points (widgets have none); tap the point a screenshot shows it at")?;
                     (point, serde_json::to_value(e)?)
                 };
                 let sent = c.tap(point, || {}).await?;

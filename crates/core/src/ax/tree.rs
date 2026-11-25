@@ -5,7 +5,10 @@
 
 use std::collections::HashSet;
 
-use crate::apps::{ProcName, SPRINGBOARD, draws_in_springboard};
+use crate::{
+    apps::{ProcName, SPRINGBOARD, draws_in_springboard},
+    display::Rotation,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +44,22 @@ impl Rect {
         let (x0, y0) = (self.x.max(o.x), self.y.max(o.y));
         let (x1, y1) = ((self.x + self.w).min(o.x + o.w), (self.y + self.h).min(o.y + o.h));
         (x1 > x0 && y1 > y0).then_some(Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
+    }
+
+    /// The rectangle on a `screen`-sized screen for one in the space `turn` makes of it (see
+    /// [`Screen::build`]).
+    fn unturn(&self, turn: Rotation, (sw, sh): (f64, f64)) -> Rect {
+        if turn == Rotation::R0 || sw <= 0.0 || sh <= 0.0 {
+            return *self;
+        }
+        let (tw, th) = if turn.is_quarter() { (sh, sw) } else { (sw, sh) };
+        let corner = |x: f64, y: f64| {
+            let (u, v) = turn.unturn_share((x / tw, y / th));
+            (u * sw, v * sh)
+        };
+        let (a, b) = (corner(self.x, self.y), corner(self.x + self.w, self.y + self.h));
+        let r = |v: f64| (v * 10.0).round() / 10.0;
+        Rect { x: r(a.0.min(b.0)), y: r(a.1.min(b.1)), w: r((a.0 - b.0).abs()), h: r((a.1 - b.1).abs()) }
     }
 
     fn intersects(&self, o: &Rect) -> bool {
@@ -120,13 +139,13 @@ pub struct AppInfo {
     /// Not an app the screen shows but a process drawing inside one: the keyboard, web content,
     /// a share sheet, the widgets on the home and lock screens (listed as applications, PITFALLS
     /// #60). Some of these report frames relative to their own view, not the screen
-    /// (PITFALLS #21).
+    /// (PITFALLS #21); a widget's elements are listed without a frame (PITFALLS #62).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hosted: bool,
 }
 
 /// One reading of the screen.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Screen {
     /// Screen size in points, from the application frames.
     pub width: f64,
@@ -138,6 +157,10 @@ pub struct Screen {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<String>,
     pub elements: Vec<Element>,
+    /// An element on screen offers the home screen's edit mode (`_accessibilityToggleJigglyMode`),
+    /// as the home screen's icons do (PITFALLS #62).
+    #[serde(skip)]
+    pub(crate) home_icons: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -182,6 +205,18 @@ fn frame_of(raw: &RawElement) -> Option<Rect> {
         .and_then(Rect::parse)
 }
 
+/// Whether one of the element's custom actions calls `selector`.
+fn has_action(raw: &RawElement, selector: &str) -> bool {
+    let Some(actions) = raw.attrs.get(&attrs::CUSTOM_ACTIONS).and_then(Ka::as_array) else { return false };
+    actions.iter().any(|a| match a {
+        Ka::Dict(pairs) => pairs.iter().any(|(k, v)| {
+            k.as_str() == Some("AXPCustomActionIdentifier")
+                && v.as_str().is_some_and(|id| id.lines().any(|l| l.strip_prefix("Selector:") == Some(selector)))
+        }),
+        _ => false,
+    })
+}
+
 fn children_of(raw: &RawElement, all: bool) -> Vec<ObjKey> {
     let pick = |n: i64| -> Vec<ObjKey> {
         raw.attrs
@@ -200,8 +235,16 @@ fn children_of(raw: &RawElement, all: bool) -> Vec<ObjKey> {
 }
 
 impl Screen {
-    pub fn build(dump: &Dump, opts: BuildOptions) -> Screen {
-        let mut screen = Screen { width: 0.0, height: 0.0, apps: Vec::new(), surface: None, elements: Vec::new() };
+    /// The elements of a dump, in screen points.
+    ///
+    /// `touch_rotation` is how the touchscreen is turned from the panel ([`Display`]'s
+    /// `touch_rotation`). The application frames are screen points, but the elements' frames come
+    /// turned by it as well: on an iPad in landscape they are portrait (PITFALLS #61). Phones and
+    /// foldables have `rot0` there.
+    ///
+    /// [`Display`]: crate::Display
+    pub fn build(dump: &Dump, opts: BuildOptions, touch_rotation: Rotation) -> Screen {
+        let mut screen = Screen::default();
         // The screen is as large as the largest application frame.
         for key in &dump.applications {
             if let Some(f) = dump.elements.get(key).and_then(frame_of) {
@@ -228,7 +271,7 @@ impl Screen {
                 screen.apps.push(AppInfo { pid: key.pid, name: label, bundle_id: None, system: false, hosted: false });
                 continue;
             }
-            let frame = frame_of(raw);
+            let frame = frame_of(raw).map(|f| f.unturn(touch_rotation, (screen.width, screen.height)));
             let on_screen = match frame {
                 Some(f) if bounds.w > 0.0 => f.w > 0.0 && f.h > 0.0 && f.intersects(&bounds),
                 Some(f) => f.w > 0.0 && f.h > 0.0,
@@ -247,6 +290,7 @@ impl Screen {
             if !printed.insert(format!("{}|{role}|{label:?}|{value:?}|{frame:?}", key.pid)) {
                 continue;
             }
+            screen.home_icons |= has_action(raw, "_accessibilityToggleJigglyMode");
             screen.elements.push(Element {
                 reference: format!("@e{}", screen.elements.len() + 1),
                 role: role.to_string(),
@@ -289,6 +333,14 @@ impl Screen {
             // SpringBoard's screens; counting it as an app hid the home screen (PITFALLS #60).
             app.hosted |= draws_in_springboard(app.bundle_id.as_deref());
         }
+        // A widget's frames are relative to the widget, and the dump has nothing that says where
+        // the widget is (PITFALLS #62): a tap at them would land near the top-left corner. They stay
+        // listed for their text.
+        let widgets: Vec<i64> =
+            self.apps.iter().filter(|a| draws_in_springboard(a.bundle_id.as_deref())).map(|a| a.pid).collect();
+        for e in self.elements.iter_mut().filter(|e| widgets.contains(&e.pid)) {
+            e.frame = None;
+        }
         self.surface = self.system_surface().map(str::to_string);
     }
 
@@ -314,7 +366,7 @@ impl Screen {
             Some("control_center")
         } else if any(&|i| i == "flashlight-orb-button" || i == "camera-orb-button") {
             Some("cover_sheet")
-        } else if any(&|i| i == "spotlight-pill") {
+        } else if self.home_icons || any(&|i| i == "spotlight-pill") {
             Some("home_screen")
         } else {
             None
@@ -432,7 +484,7 @@ mod tests {
     }
 
     fn screen(elements: Vec<Element>) -> Screen {
-        Screen { width: 428.0, height: 926.0, apps: vec![], surface: None, elements }
+        Screen { width: 428.0, height: 926.0, elements, ..Default::default() }
     }
 
     #[test]
@@ -535,7 +587,7 @@ mod tests {
             order: elements.keys().copied().collect(),
             elements,
         };
-        let mut s = Screen::build(&dump, BuildOptions::default());
+        let mut s = Screen::build(&dump, BuildOptions::default(), Rotation::R0);
         s.name_processes(|pid| match pid {
             40 => ProcName { name: Some("SpringBoard".into()), bundle_id: Some(SPRINGBOARD.into()) },
             _ => ProcName {
@@ -551,6 +603,79 @@ mod tests {
         assert!(s.elements.iter().any(|e| e.pid == wr && e.label.as_deref() == Some("Calendar widget")));
     }
 
+    /// [`raw`] with the custom actions a home screen icon has (names made up, selectors as seen).
+    fn icon(frame: &str, label: &str) -> RawElement {
+        let mut r = raw(false, frame, Some(label), None, &[]);
+        let action = |name: &str, selector: &str| {
+            Ka::Dict(vec![
+                (Ka::Str("AXPCustomActionName".into()), Ka::Str(name.into())),
+                (Ka::Str("AXPCustomActionIdentifier".into()), Ka::Str(format!("Name:{name}\nTarget:0x1\nSelector:{selector}"))),
+            ])
+        };
+        r.attrs.insert(
+            attrs::CUSTOM_ACTIONS,
+            Ka::Array(vec![action("Edit", "_accessibilityToggleJigglyMode"), action("Today", "_accessibilityShowTodayView")]),
+        );
+        r
+    }
+
+    #[test]
+    fn ipad_landscape_home_screen_frames_are_turned_and_widgets_lose_theirs() {
+        // The shape of an iPad Pro 13-inch home screen in landscape (iPadOS 27.2.1, panel rot0,
+        // touchscreen rot270): the application frame is landscape, every element's frame is in the
+        // touchscreen's portrait space, a widget's frames are its own, and there is no
+        // spotlight-pill (page dots instead). Frames as seen; labels made up.
+        let (sb, wr) = (38, 1377);
+        let key = |pid: i64, object_id: u64| ObjKey { pid, object_id };
+        let mut elements = std::collections::HashMap::new();
+        let sb_children = [key(wr, 1), key(sb, 2), key(sb, 3), key(sb, 4), key(sb, 5)];
+        elements.insert(key(sb, 1), raw(true, "{{0, 0}, {1376, 1032}}", Some(" "), None, &sb_children));
+        elements.insert(key(wr, 1), raw(false, "{{0, 0}, {170, 170}}", Some("Clock"), None, &[]));
+        elements.insert(key(sb, 2), icon("{{814.5, 747.5}, {95.5, 79}}", "App One"));
+        // Past the landscape screen's height until it is turned.
+        elements.insert(key(sb, 3), icon("{{814.5, 1146}, {95.5, 72}}", "App Two"));
+        elements.insert(key(sb, 4), icon("{{27.5, 206.5}, {68, 68}}", "Dock App"));
+        let mut dots = raw(false, "{{138, 655}, {41, 66}}", None, None, &[]);
+        dots.attrs.insert(attrs::TRAITS, Ka::UInt(traits::ADJUSTABLE));
+        dots.attrs.insert(attrs::VALUE, Ka::Str("page 1 of 2".into()));
+        elements.insert(key(sb, 5), dots);
+        let dump = Dump {
+            kind: super::super::dump::DumpKind::Initial,
+            applications: vec![key(sb, 1)],
+            order: elements.keys().copied().collect(),
+            elements,
+        };
+        let mut s = Screen::build(&dump, BuildOptions::default(), Rotation::R270);
+        s.name_processes(|pid| match pid {
+            38 => ProcName { name: Some("SpringBoard".into()), bundle_id: Some(SPRINGBOARD.into()) },
+            _ => ProcName {
+                name: Some("WidgetRenderer_Default".into()),
+                bundle_id: Some("com.apple.chrono.WidgetRenderer-Default".into()),
+            },
+        });
+        assert_eq!((s.width, s.height), (1376.0, 1032.0));
+        assert_eq!(s.surface.as_deref(), Some("home_screen"));
+        let frame = |label: &str| s.elements.iter().find(|e| e.label.as_deref() == Some(label)).unwrap().frame;
+        // Where the screenshot showed them: the first icon near the top, the dock at the bottom.
+        assert_eq!(frame("App One"), Some(Rect { x: 747.5, y: 122.0, w: 79.0, h: 95.5 }));
+        assert_eq!(frame("App Two"), Some(Rect { x: 1146.0, y: 122.0, w: 72.0, h: 95.5 }));
+        assert_eq!(frame("Dock App"), Some(Rect { x: 206.5, y: 936.5, w: 68.0, h: 68.0 }));
+        let dots = s.elements.iter().find(|e| e.role == "adjustable").unwrap();
+        assert_eq!(dots.frame, Some(Rect { x: 655.0, y: 853.0, w: 66.0, h: 41.0 }));
+        // The widget is read but not tapped.
+        assert_eq!(frame("Clock"), None);
+        assert!(s.find("Clock").is_err());
+
+        // Without the icons' edit action (and no spotlight-pill) the screen isn't named.
+        let mut plain = dump.clone();
+        for k in [key(sb, 2), key(sb, 3), key(sb, 4)] {
+            plain.elements.get_mut(&k).unwrap().attrs.remove(&attrs::CUSTOM_ACTIONS);
+        }
+        let mut s = Screen::build(&plain, BuildOptions::default(), Rotation::R270);
+        s.name_processes(|_| ProcName { name: None, bundle_id: Some(SPRINGBOARD.into()) });
+        assert_eq!(s.surface, None);
+    }
+
     #[test]
     fn rect_parses_ns_rect_strings() {
         assert_eq!(Rect::parse("{{16, 120.25}, {396, 52}}"), Some(Rect { x: 16.0, y: 120.3, w: 396.0, h: 52.0 }));
@@ -562,9 +687,8 @@ mod tests {
         let s = Screen {
             width: 400.0,
             height: 800.0,
-            apps: vec![],
-            surface: None,
             elements: vec![el(1, "button", "General"), el(2, "button", "General Info"), el(3, "text", "Wi-Fi"), el(4, "text", "Wi-Fi Calling")],
+            ..Default::default()
         };
         assert_eq!(s.find("General").unwrap().reference, "@e1");
         assert_eq!(s.find("wi-fi").unwrap().reference, "@e3");

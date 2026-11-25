@@ -151,6 +151,8 @@ devicesteer screenshot -o /absolute/path/screen.png
   for the lock screen and notifications, `control_center`, `app_switcher`, `permission_alert`).
   No `surface` means `ui` didn't recognise the screen, not that an app is open: check `apps`
   (a locked device may list SpringBoard with no elements at all).
+- Widgets (home and lock screen) are listed with their text but **no frame**: their positions
+  aren't known, so tap them at the point a screenshot shows.
 - Refs (`@e12`) are valid **until the next `ui`**. Read again after anything that changes the screen.
 - **Right after a launch or a screen change, the tree can still be moving**: a reading taken while
   an app zooms in had frames ~190 pt from where the screenshot showed them, and one had no elements
