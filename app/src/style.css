@@ -247,6 +247,10 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .list-message .detail { color: var(--fg-3); font-size: 13px; overflow-wrap: anywhere; }
 .list-message:not(.loading) .spinner { display: none; }
 .list-message.error .title { color: var(--danger); }
+/* Under the list: starting a device that isn't listed yet. */
+.side-foot { flex: none; padding: 8px 12px 12px; border-top: 1px solid var(--hairline); }
+.side-foot .btn { width: 100%; justify-content: flex-start; color: var(--fg-2); }
+.side-foot .btn:hover { color: var(--fg); }
 
 /* ---------- center ---------- */
 
@@ -386,24 +390,59 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 }
 /* A step waiting for the person holding the device: a tinted box with a live dot, the time
    left, and what to do now in full-strength text. */
-.setup-step .wait {
+:is(.setup-step, .pair) .wait {
   margin-top: 6px; padding: 10px 12px; border-radius: var(--r-md);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
 }
-.setup-step .wait-head { display: flex; align-items: center; gap: 7px; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); }
-.setup-step .wait-label { flex: 1; min-width: 0; }
-.setup-step .wait-time { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--fg-2); }
-.setup-step .wait-time.low { color: var(--warning); }
-.setup-step .pulse {
+:is(.setup-step, .pair) .wait-head { display: flex; align-items: center; gap: 7px; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); }
+:is(.setup-step, .pair) .wait-label { flex: 1; min-width: 0; }
+:is(.setup-step, .pair) .wait-time { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--fg-2); }
+:is(.setup-step, .pair) .wait-time.low { color: var(--warning); }
+:is(.setup-step, .pair) .pulse {
   flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
   animation: wait-pulse 1.6s var(--ease) infinite;
 }
 @keyframes wait-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
-.setup-step .wait-msg { margin-top: 5px; font-size: 13.5px; color: var(--fg); user-select: text; -webkit-user-select: text; }
-@media (prefers-reduced-motion: reduce) { .setup-step .pulse { animation: none; } }
+:is(.setup-step, .pair) .wait-msg { margin-top: 5px; font-size: 13.5px; color: var(--fg); user-select: text; -webkit-user-select: text; }
+@media (prefers-reduced-motion: reduce) { :is(.setup-step, .pair) .pulse { animation: none; } }
 .setup-step .error { margin-top: 8px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 .setup-step .actions { display: flex; gap: 8px; margin-top: 10px; }
+
+/* Pairing over Wi-Fi: no device yet, so the card is all the stage shows. It scrolls rather than
+   cut off in a short window. The steps on the device read like the setup card's, all at full
+   strength (they are instructions, not states); the current ones are bold. */
+#stage[data-state="pair"] #intro { justify-content: flex-start; overflow-y: auto; }
+#stage[data-state="pair"] #intro > :not(#intro-card) { display: none; }
+#stage[data-state="pair"] #intro-card { margin: auto 0; }
+.pair-steps { list-style: none; margin: 10px 0 0; padding: 0; }
+.pair-step { display: flex; gap: 12px; padding: 9px 0; }
+.pair-step + .pair-step { border-top: 1px solid var(--hairline); }
+.pair-step .mark {
+  display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid var(--line); color: var(--fg-2); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.pair-step .mark .icon { width: 15px; height: 15px; stroke-width: 2; }
+.pair-step.now .mark { border-color: var(--fg); color: var(--fg); }
+.pair-step.done .mark { border-color: transparent; background: var(--tile); color: var(--fg-2); }
+.pair-step .body { flex: 1; min-width: 0; }
+.pair-step .title { line-height: 22px; font-size: var(--fs-md); }
+.pair-step.now .title { font-weight: 600; }
+.pair-step.done .title { color: var(--fg-3); }
+.pair-step .desc { margin-top: 1px; color: var(--fg-2); font-size: var(--fs-sm); }
+.pair-step.done .desc { color: var(--fg-3); }
+.pair .wait { margin-top: 12px; }
+/* The code: big, monospaced and centered, so it reads from across a desk. */
+.pair-code { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 10px 0 4px; }
+.pair-code-label { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-3); }
+.pair-code-digits {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 40px; font-weight: 600; line-height: 1.15;
+  letter-spacing: 0.1em; margin-right: -0.1em; font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap;
+}
+.pair .with-code .wait-msg { text-align: center; color: var(--fg-2); }
+.pair-done { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: var(--fs-sm); color: var(--fg-2); }
+.pair .error { margin-top: 12px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.pair .actions { display: flex; gap: 8px; margin-top: 12px; }
 
 #scroller {
   position: absolute; inset: 0; overflow: auto; display: flex; padding: 20px 28px 16px;

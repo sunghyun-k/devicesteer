@@ -83,6 +83,32 @@ async fn setup_run(
     }
 }
 
+/// Pairs a device over Wi-Fi, without a cable (`devicesteer_core::setup::pair_wifi`): this
+/// computer offers itself on the local network, the person starts pairing on the device and types
+/// the code the progress carries. Returns the new device's state. Shares the setup step's slot,
+/// so `setup_cancel` ends it and a setup step started meanwhile replaces it.
+#[tauri::command]
+async fn setup_pair_wifi(
+    wait_secs: Option<u64>,
+    channel: Channel<devicesteer_core::setup::Progress>,
+    viewer: State<'_, Viewer>,
+) -> Result<devicesteer_core::SetupStatus, String> {
+    use devicesteer_core::setup;
+    let wait = wait_secs.map_or(SETUP_WAIT, |s| std::time::Duration::from_secs(s.clamp(10, 3600)));
+    let progress: setup::ProgressFn = Arc::new(move |p| {
+        let _ = channel.send(p);
+    });
+    let task = tokio::spawn(setup::pair_wifi(wait, progress));
+    if let Some(old) = viewer.setup.lock().await.replace(task.abort_handle()) {
+        old.abort();
+    }
+    match task.await {
+        Ok(r) => r.map_err(|e| format!("{e:#}")),
+        Err(e) if e.is_cancelled() => Err("cancelled".into()),
+        Err(e) => Err(format!("Wi-Fi pairing failed: {e}")),
+    }
+}
+
 /// Ends the running setup step, if any. Pairing that the device already accepted stays.
 #[tauri::command]
 async fn setup_cancel(viewer: State<'_, Viewer>) -> Result<(), String> {
@@ -293,7 +319,7 @@ pub fn run() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, settings_window::open_settings, settings_window::show_move_sheet])
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_pair_wifi, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, settings_window::open_settings, settings_window::show_move_sheet])
         .run(tauri::generate_context!())
         .expect("error while running the DeviceSteer app");
 }

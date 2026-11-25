@@ -294,6 +294,14 @@ enum SetupAction {
     /// Mount the personalized Developer Disk Image (Apple signs it for this device). A restart
     /// can unmount it. No action on the device.
     DiskImage,
+    /// Pair a device over Wi-Fi, without a cable (iOS 27 and later). This computer offers itself
+    /// as "DeviceSteer"; the user picks it on the device (Settings > Privacy & Security > Developer
+    /// Mode > Pair with "DeviceSteer"), enters the device's passcode, then the 6-digit code this
+    /// prints in a progress line (`code`). Waits up to --wait for each.
+    Wifi,
+    /// Forget this computer's Wi-Fi pairing with --udid. The device keeps its side until the user
+    /// removes it there.
+    Forget,
 }
 
 #[derive(Subcommand)]
@@ -498,6 +506,11 @@ async fn run(command: Command) -> Result<serde_json::Value> {
                     setup::developer_mode(udid, (wait > 0).then_some(wait_for), progress).await?
                 }
                 Some(SetupAction::DiskImage) => setup::disk_image(udid, ddi.as_deref(), progress).await?,
+                Some(SetupAction::Wifi) => setup::pair_wifi(wait_for, progress).await?,
+                Some(SetupAction::Forget) => {
+                    let u = udid.context("pass --udid with the device whose Wi-Fi pairing to forget")?;
+                    return Ok(json!({ "udid": u, "forgot": setup::forget_wifi(u)? }));
+                }
                 None => setup::run(udid, wait_for, ddi.as_deref(), progress).await?,
             };
             serde_json::to_value(status)?

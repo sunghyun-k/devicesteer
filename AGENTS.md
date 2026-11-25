@@ -54,7 +54,8 @@ Cargo.toml          Workspace; pins idevice to a git commit (see below)
 crates/core/        devicesteer-core: all device I/O. Tunnel session, display info, media streams
                     (media.rs), HID input, keyboard (keyboard.rs: key names and layouts;
                     typing.rs: `type` and `paste`), accessibility tree (ax/), video frames, MP4
-                    recording, and Controller, which ties them together for one device
+                    recording, Wi-Fi pairing and discovery without usbmuxd (remote.rs), and
+                    Controller, which ties them together for one device
 crates/daemon/      devicesteer-daemon: the per-device daemon (Unix socket; a named pipe limited
                     to the current user on Windows), its wire format, agent/human control state,
                     and the Client both the CLI and the viewer use

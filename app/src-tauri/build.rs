@@ -6,6 +6,7 @@ const COMMANDS: &[&str] = &[
     "list_devices",
     "setup_status",
     "setup_run",
+    "setup_pair_wifi",
     "setup_cancel",
     "attach",
     "watch",

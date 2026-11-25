@@ -131,6 +131,10 @@ pub struct Progress {
     /// 0..1, for downloads and uploads.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fraction: Option<f64>,
+    /// Wi-Fi pairing: the code this computer made up, which the person types on the device once
+    /// it asks (after the device's own passcode). Show it large.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
 }
 
 /// Receives [`Progress`] reports. Cheap to clone.
@@ -142,7 +146,7 @@ pub fn no_progress() -> ProgressFn {
 }
 
 fn report(progress: &ProgressFn, step: SetupStep, waiting_for_user: bool, message: impl Into<String>) {
-    progress(Progress { step, waiting_for_user, message: message.into(), fraction: None });
+    progress(Progress { step, waiting_for_user, message: message.into(), fraction: None, code: None });
 }
 
 // ---------- reading the state ----------
@@ -297,6 +301,9 @@ async fn pick(udid: Option<&str>) -> Result<(UsbmuxdDevice, Vec<Transport>)> {
 
 /// The setup state of `udid` (or the only connected device).
 pub async fn status(udid: Option<&str>) -> Result<SetupStatus> {
+    if let crate::session::Target::Remote(u) = crate::session::pick_target(udid).await? {
+        return remote_status(&u).await;
+    }
     let (device, transports) = pick(udid).await?;
     let provider = device.to_provider(mux_addr(), "devicesteer");
     let p = probe(&provider).await?;
@@ -381,6 +388,10 @@ pub async fn run(udid: Option<&str>, wait: Duration, ddi: Option<&Path>, progres
 ///
 /// Waits up to `wait` for the user. Errors if they tap Don't Trust.
 pub async fn trust(udid: Option<&str>, wait: Duration, progress: ProgressFn) -> Result<SetupStatus> {
+    // A device we reach through our Wi-Fi pairing already trusts this computer.
+    if let crate::session::Target::Remote(u) = crate::session::pick_target(udid).await? {
+        return remote_status(&u).await;
+    }
     let (device, transports) = pick(udid).await?;
     let provider = device.to_provider(mux_addr(), "devicesteer");
     let before = probe(&provider).await?;
@@ -391,7 +402,10 @@ pub async fn trust(udid: Option<&str>, wait: Duration, progress: ProgressFn) -> 
         return status(Some(&device.udid)).await;
     }
     if !transports.contains(&Transport::Usb) {
-        bail!("pairing works over USB only: connect the device with a cable, then run `devicesteer setup trust` again");
+        bail!(
+            "trust works over USB only: connect the device with a cable, then run `devicesteer setup trust` again. \
+             Or pair it over Wi-Fi instead with `devicesteer setup wifi` (iOS 27 and later)"
+        );
     }
     let s = SetupStep::Trust;
     let mut mux = step("usbmuxd connection", mux_addr().connect(0)).await?;
@@ -447,9 +461,13 @@ pub async fn developer_mode(udid: Option<&str>, wait: Option<Duration>, progress
         StepState::Needed => {}
     }
     let udid = before.udid.clone();
-    let (device, _) = pick(Some(&udid)).await?;
-    let provider = device.to_provider(mux_addr(), "devicesteer");
-    let mut amfi = step("AMFI connection", AmfiClient::connect(&provider)).await?;
+    let mut amfi = match crate::session::pick_target(Some(&udid)).await? {
+        crate::session::Target::Remote(_) => crate::Session::open(Some(&udid)).await?.connect::<AmfiClient>().await?,
+        crate::session::Target::Mux(device) => {
+            let provider = device.to_provider(mux_addr(), "devicesteer");
+            step("AMFI connection", AmfiClient::connect(&provider)).await?
+        }
+    };
     step("revealing the Developer Mode switch", amfi.reveal_developer_mode_option_in_ui()).await?;
     report(
         &progress,
@@ -496,6 +514,9 @@ pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: Pro
         StepState::Needed => {}
     }
     let udid = before.udid.clone();
+    if let crate::session::Target::Remote(_) = crate::session::pick_target(Some(&udid)).await? {
+        return remote_disk_image(&udid, source, progress).await;
+    }
     let (device, _) = pick(Some(&udid)).await?;
     let provider = device.to_provider(mux_addr(), "devicesteer");
 
@@ -536,6 +557,7 @@ pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: Pro
                         waiting_for_user: false,
                         message: "Uploading the disk image".into(),
                         fraction: Some(if total == 0 { 1.0 } else { sent as f64 / total as f64 }),
+                        code: None,
                     });
                 }
             },
@@ -558,6 +580,121 @@ pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: Pro
             })
         }
     }
+}
+
+// ---------- over our own Wi-Fi pairing ----------
+
+/// What the person does on the device to pair over Wi-Fi, before any code is shown.
+pub const WIFI_PAIR_STEPS: &str = "On the device (iOS 27 or later, on the same network as this computer): \
+    Settings > Privacy & Security > Developer Mode, then under Other Devices tap Pair with \"DeviceSteer\" and tap Pair. \
+    It asks for its own passcode first; after that it asks for a 6-digit code, which this computer shows";
+
+/// Forgets this computer's Wi-Fi pairing with `udid`. True when there was one. The device keeps
+/// its side until the person removes it there.
+pub fn forget_wifi(udid: &str) -> Result<bool> {
+    crate::remote::forget(udid)
+}
+
+/// Pairs a device over Wi-Fi without a cable (PITFALLS #56): this computer offers itself as
+/// "DeviceSteer", the person starts pairing on the device, enters the device's passcode, then the
+/// code reported in [`Progress::code`]. Returns the new device's state.
+///
+/// Gives up after `wait` without a device, and after `wait` again while the code isn't entered.
+pub async fn pair_wifi(wait: Duration, progress: ProgressFn) -> Result<SetupStatus> {
+    let s = SetupStep::Trust;
+    let p = progress.clone();
+    let udid = crate::remote::pair(wait, move |e| match e {
+        crate::remote::PairEvent::Advertising => report(&p, s, true, WIFI_PAIR_STEPS),
+        crate::remote::PairEvent::Code(code) => p(Progress {
+            step: s,
+            waiting_for_user: true,
+            message: format!(
+                "Enter {code} on the device, where it asks for the code shown on DeviceSteer (the device took its \
+                 own passcode before it got here)"
+            ),
+            fraction: None,
+            code: Some(code),
+        }),
+    })
+    .await?;
+    report(&progress, s, false, "Paired over Wi-Fi");
+    remote_status(&udid).await
+}
+
+/// The setup state of a device reached through our Wi-Fi pairing, read through its tunnel:
+/// lockdown and the image mounter are RSD services there. Trust is done (the pairing is it).
+async fn remote_status(udid: &str) -> Result<SetupStatus> {
+    let mut session = crate::Session::open(Some(udid)).await?;
+    let mut p = Probe::default();
+    let mut lockdown: LockdownClient = session.connect().await?;
+    p.developer_mode = Some(
+        match lockdown.get_value(Some("DeveloperModeStatus"), Some("com.apple.security.mac.amfi")).await {
+            Ok(v) => v.as_boolean().unwrap_or(false),
+            Err(IdeviceError::UnexpectedResponse(_)) => false,
+            Err(e) => bail!("Developer Mode read failed (connection error: {e:?})"),
+        },
+    );
+    if p.developer_mode == Some(true) {
+        let mut mounter: ImageMounter = session.connect().await?;
+        let list = step("mounted image list", mounter.copy_devices()).await?;
+        p.disk_image = Some(is_mounted(&list, MOUNT_PATH));
+    }
+    Ok(describe(udid, vec![Transport::Wifi], &p))
+}
+
+/// [`disk_image`] for a device reached through our Wi-Fi pairing: the same image, mounted through
+/// the tunnel's image mounter.
+async fn remote_disk_image(udid: &str, source: Option<&Path>, progress: ProgressFn) -> Result<SetupStatus> {
+    let s = SetupStep::DiskImage;
+    let mut session = crate::Session::open(Some(udid)).await?;
+    let mut lockdown: LockdownClient = session.connect().await?;
+    let ecid = step("lockdown read", lockdown.get_value(Some("UniqueChipID"), None))
+        .await?
+        .as_unsigned_integer()
+        .context("the device did not report its UniqueChipID")?;
+    let mut mounter: ImageMounter = session.connect().await?;
+    let ids = step("personalization identifiers", mounter.query_personalization_identifiers(None)).await?;
+    let id = |k: &str| ids.get(k).and_then(|v| v.as_unsigned_integer());
+    let (board, chip) = (id("BoardId").context("no BoardId")?, id("ChipID").context("no ChipID")?);
+
+    let image = find_disk_image(source, board, chip, &progress).await?;
+    report(&progress, s, false, format!("Using the developer disk image from {}", image.origin));
+    let manifest = std::fs::read(&image.manifest)?;
+    let dmg = std::fs::read(&image.image).with_context(|| format!("could not read {}", image.image.display()))?;
+    let trust_cache = std::fs::read(&image.trust_cache)?;
+
+    report(&progress, s, false, "Asking Apple to sign the disk image for this device");
+    let mut adapter = session.adapter().clone();
+    let mut rsd = session.rsd().clone();
+    let p = progress.clone();
+    mounter
+        .mount_personalized_with_callback_rsd(
+            &mut adapter,
+            &mut rsd,
+            dmg,
+            trust_cache,
+            &manifest,
+            None,
+            ecid,
+            move |((sent, total), ())| {
+                let p = p.clone();
+                async move {
+                    p(Progress {
+                        step: SetupStep::DiskImage,
+                        waiting_for_user: false,
+                        message: "Uploading the disk image".into(),
+                        fraction: Some(if total == 0 { 1.0 } else { sent as f64 / total as f64 }),
+                        code: None,
+                    });
+                }
+            },
+            (),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("mounting the developer disk image failed: {e:?}"))?;
+    report(&progress, s, false, "Mounted");
+    drop(session);
+    remote_status(udid).await
 }
 
 // ---------- finding the disk image ----------
@@ -626,6 +763,7 @@ async fn download_disk_image(dir: &Path, progress: &ProgressFn) -> Result<()> {
             waiting_for_user: false,
             message: format!("Downloading the developer disk image ({name})"),
             fraction: Some(i as f64 / DDI_FILES.len() as f64),
+            code: None,
         });
         let url = format!("https://raw.githubusercontent.com/doronz88/DeveloperDiskImage/{DDI_REPO_COMMIT}/{DDI_REPO_DIR}/{name}");
         let res = tokio::time::timeout(Duration::from_secs(300), idevice::http::get(&url))

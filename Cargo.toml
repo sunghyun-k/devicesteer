@@ -34,6 +34,9 @@ idevice = { git = "https://github.com/jkcoxson/idevice", rev = "c8fff6d7fb2690ea
   "amfi",
   "mobile_image_mounter",
   "tss",
+  # Wi-Fi without usbmuxd: CoreDevice's own remote pairing over `_remotepairing._tcp`, then a
+  # TLS-PSK tunnel to the device (PITFALLS #50).
+  "remote_pairing",
 ] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

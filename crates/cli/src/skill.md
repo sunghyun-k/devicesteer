@@ -24,10 +24,11 @@ A device listed with `setup` isn't ready yet; see the next section. A device lis
 `unsupported` runs an OS older than iOS 17 and can't be used at all: no command or setup step works
 on it. Tell the user why (the field says) and don't try it.
 
-Only devices usbmuxd lists show up. A device on Wi-Fi is listed only once it was paired over USB
-and "Show this iPhone when on Wi-Fi" (Finder, or Apple Devices on Windows) is on, and sometimes not
-even then; when the user expects a Wi-Fi device that isn't listed, ask them to connect it with a
-cable.
+A device on Wi-Fi shows up when usbmuxd lists it (paired over USB, "Show this iPhone when on
+Wi-Fi" on), or when it was paired over Wi-Fi with `devicesteer setup wifi` and is awake on the same
+network (`transports: ["wifi"]`). When the user expects a Wi-Fi device that isn't listed, ask them
+to wake and unlock it; if it was never paired with this computer, pair it (next section) or ask
+them to connect it with a cable.
 
 ## Set up a new device
 
@@ -40,6 +41,8 @@ devicesteer setup --udid <UDID>                 # does every step that isn't don
 devicesteer setup trust --udid <UDID>           # pair over USB; waits for the user to tap Trust
 devicesteer setup developer-mode --udid <UDID>  # shows the switch; waits while the user turns it on
 devicesteer setup disk-image --udid <UDID>      # mounts the disk image; nothing to do on the device
+devicesteer setup wifi                          # pair a device over Wi-Fi, no cable (iOS 27+)
+devicesteer setup forget --udid <UDID>          # drop this computer's Wi-Fi pairing with it
 ```
 
 - **The first two steps need the person holding the device.** Before you run one, tell the user
@@ -54,6 +57,14 @@ devicesteer setup disk-image --udid <UDID>      # mounts the disk image; nothing
   says); don't loop on a step the user hasn't done.
 - `trust` works over USB only. If the user taps **Don't Trust**, the error says how to get the
   prompt back.
+- **`setup wifi` pairs without a cable** (iOS 27 and later, same network). It takes no `--udid`:
+  the device starts it. Tell the user first: on the device, Settings > Privacy & Security >
+  Developer Mode, under Other Devices tap **Pair with "DeviceSteer"**, then **Pair**; the device
+  asks for **its own passcode** first, then for a 6-digit code. That code appears in a progress
+  line as `"code"` once the device connects (after the passcode): give it to the user right away,
+  saying it is the code DeviceSteer shows, not the passcode. Never type it on the device yourself. The result is the new
+  device's state (its `udid`); a device paired this way already trusts this computer, and the
+  other steps work over Wi-Fi.
 - `disk-image` uses Xcode's copy when there is one, or downloads Apple's image (about 17 MB) the
   first time; `--ddi <folder>` names another. Apple signs it for the device over the network.
 

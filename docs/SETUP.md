@@ -8,7 +8,7 @@
 | Developer Mode | `developer_mode` | AMFI shows the switch in Settings > Privacy & Security; setup waits while the device restarts | the user turns it on, taps Restart, then Turn On and the passcode |
 | Developer tools | `disk_image` | the personalized Developer Disk Image (DDI) is signed for the device by Apple's TSS server, uploaded and mounted | nobody; may be needed again after a restart (PITFALLS #32) |
 
-Code: `crates/core/src/setup.rs`. CLI: `devicesteer setup [status|trust|developer-mode|disk-image]`.
+Code: `crates/core/src/setup.rs`. CLI: `devicesteer setup [status|trust|developer-mode|disk-image|wifi|forget]`.
 Viewer: a device that isn't ready is listed with "Needs setup: <step>", and selecting it shows a
 card with the three steps instead of View Screen (`renderSetup` in `app/src/main.ts`, Tauri
 commands `setup_status`, `setup_run` with progress, `setup_cancel`). The card re-reads the state
@@ -27,6 +27,34 @@ retry it). The viewer lists it under Unavailable as "Needs iOS 17 or later" and 
 showing setup (`?mock&select=9`). The OS version comes from lockdown's public values, so this works
 before trust too. PITFALLS #49.
 
+## Pairing over Wi-Fi (iOS 27 and later)
+
+A device on the same network can be paired without a cable: `devicesteer setup wifi`, or **Pair
+over Wi-Fi** in the viewer. This is CoreDevice's remote pairing, the one Xcode 27's "Pair Nearby
+Device" makes, not a lockdown pair record: usbmuxd doesn't know about it, and it is DeviceSteer's
+own (Xcode's pairing can't be read). The pairing starts on the device:
+
+1. On the device: Settings > Privacy & Security > Developer Mode. Under **Other Devices**, tap
+   **Pair with "DeviceSteer"**. It asks "Pair with 'DeviceSteer'?" (the computer will be able to
+   reach its settings and data over Ethernet or Wi-Fi): tap **Pair**.
+2. The device asks for **its own passcode**. This is not DeviceSteer's code.
+3. It then asks for "the 6-digit code shown on DeviceSteer". The CLI prints it in a progress line
+   (`"code"`); the viewer shows it large. Type it on the device.
+
+Meanwhile this computer advertises `_remotepairing-pairable-host._tcp` and waits (`--wait`, for the
+device and again for the code). The pairing is kept in the state directory under
+`remote-pairing/<UDID>.plist` (owner-only: it holds the private key), with what the device last
+said about itself in `<UDID>.json`; `devicesteer setup forget --udid <UDID>` deletes both. The
+device keeps its side until it is removed there.
+
+Afterwards the device is listed with `transports: ["wifi"]` while it is awake on the network: it is
+found by its `_remotepairing._tcp` advert, whose `authTag` only our stored pairing can check (the
+advert's identifier changes all the time). Every command reaches it through a TLS-PSK tunnel made
+after pair-verify, and USB or usbmuxd's Wi-Fi is used first when the device is there too. Trust is
+done by the pairing; `developer_mode` and `disk_image` are read and done through the tunnel (lockdown
+and the image mounter are RSD services there). Code: `crates/core/src/remote.rs`;
+observations: `docs/PITFALLS.md` #50, #55, #56.
+
 ## How each step is detected
 
 - **trust**: usbmuxd has a pair record for the UDID (`ReadPairRecord`) and lockdown accepts a
@@ -37,6 +65,7 @@ before trust too. PITFALLS #49.
   Not `LookupImage` (PITFALLS #31).
 
 All three go through lockdown, not the tunnel, so they work before the developer services exist.
+For a device paired over Wi-Fi they go through the tunnel's lockdown and image mounter instead.
 
 ## Where the Developer Disk Image comes from
 
@@ -74,7 +103,12 @@ has one build identity per board, so a device newer than its Xcode needs a newer
 
 ## Windows
 
-Pairing saves the record through Apple's usbmuxd (installed with Apple Devices or iTunes), which
+Wi-Fi pairing and discovery use their own mDNS socket (`mdns-sd`), not Bonjour, so they need
+nothing installed. The first `setup wifi` makes Windows Firewall ask whether DeviceSteer may accept
+connections: allow it on private networks, or the device can't connect to pair (PITFALLS #59). A
+device paired over Wi-Fi needs no usbmuxd, so it works without Apple Devices installed.
+
+USB pairing saves the record through Apple's usbmuxd (installed with Apple Devices or iTunes), which
 keeps its own store. There is no Xcode copy on Windows, so the disk image comes from `--ddi` or
 the download.
 

@@ -8,6 +8,9 @@
 //!   -> userspace TCP stack -> RSD handshake -> RemoteXPC services
 //! ```
 //!
+//! A device paired over Wi-Fi with DeviceSteer itself (`remote.rs`) skips usbmuxd and lockdown:
+//! `_remotepairing._tcp` -> pair-verify -> TLS-PSK -> CDTunnel, then the same from the TCP stack on.
+//!
 //! The same path works on macOS and Windows (Apple's usbmuxd ships with iTunes / Apple Devices
 //! there). Nothing needs root or a TUN interface.
 
@@ -24,6 +27,7 @@ mod models;
 mod mp4;
 pub mod paths;
 mod record;
+mod remote;
 mod resample;
 mod video;
 mod session;

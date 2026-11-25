@@ -19,6 +19,12 @@ uuid.workspace = true
 sha2 = "0.10"
 # MP4 boxes for recordings (Apache-2.0). 2026.4+ needs rustc 1.93; the workspace builds on 1.88.
 shiguredo_mp4 = "=2026.3.0"
+# Finds devices on the local network (`_remotepairing._tcp`) on macOS and Windows alike, with no
+# system Bonjour service needed.
+mdns-sd = { version = "0.22", default-features = false, features = ["async"] }
+
+[dev-dependencies]
+base64 = "0.22"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

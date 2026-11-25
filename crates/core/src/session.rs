@@ -44,7 +44,16 @@ pub struct Session {
     pub transport: Transport,
     adapter: AdapterHandle,
     rsd: RsdHandshake,
-    _heartbeat: Option<Heartbeat>,
+    _keep: Keep,
+}
+
+/// What keeps the tunnel open besides the adapter.
+enum Keep {
+    Nothing,
+    /// usbmuxd's Wi-Fi: the device drops CoreDeviceProxy unless its heartbeat is answered.
+    Heartbeat { _beat: Heartbeat },
+    /// Our own Wi-Fi pairing: the pairing connection the tunnel was asked on (PITFALLS #55).
+    Pairing { _tunnel: Box<crate::remote::RemoteTunnel> },
 }
 
 impl std::fmt::Debug for Session {
@@ -59,32 +68,42 @@ impl std::fmt::Debug for Session {
 impl Session {
     /// Opens a tunnel to `udid`, or to the only connected device when `udid` is `None`.
     ///
-    /// USB is preferred when the device is reachable both ways.
+    /// USB is preferred when the device is reachable both ways; then usbmuxd's Wi-Fi; then our
+    /// own Wi-Fi pairing for a device usbmuxd doesn't list (PITFALLS #50).
     pub async fn open(udid: Option<&str>) -> Result<Self> {
-        // Before the tunnel: an iOS 16 device fails somewhere inside it with an error that reads
-        // like a dropped connection, which the daemon would keep retrying.
-        ensure_supported(udid).await?;
-        match Self::open_tunnel(udid).await {
-            Ok(s) => Ok(s),
-            // A device that isn't set up fails somewhere along the way with an error that doesn't
-            // say why; the setup state does. The original words stay, "connection" included.
-            Err(e) => match crate::setup::status(udid).await {
-                Ok(s) if !s.ready => Err(e.context(format!("the device is not set up: {}", s.next))),
-                _ => Err(e),
-            },
+        match pick_target(udid).await? {
+            Target::Mux(device) => {
+                // Before the tunnel: an iOS 16 device fails somewhere inside it with an error
+                // that reads like a dropped connection, which the daemon would keep retrying.
+                let provider = device.to_provider(mux_addr(), "devicesteer");
+                if let Some(r) = crate::devices::unsupported_in(&crate::setup::public_values(&provider).await) {
+                    bail!("{r}, so it can't be used: tell the user");
+                }
+                let udid = device.udid.clone();
+                match Self::open_tunnel(device).await {
+                    Ok(s) => Ok(s),
+                    // A device that isn't set up fails somewhere along the way with an error
+                    // that doesn't say why; the setup state does. The original words stay,
+                    // "connection" included.
+                    Err(e) => match Box::pin(crate::setup::status(Some(&udid))).await {
+                        Ok(s) if !s.ready => Err(e.context(format!("the device is not set up: {}", s.next))),
+                        _ => Err(e),
+                    },
+                }
+            }
+            Target::Remote(udid) => Self::open_remote(&udid).await,
         }
     }
 
-    async fn open_tunnel(udid: Option<&str>) -> Result<Self> {
-        let device = pick_device(mux_devices().await?, udid)?;
+    async fn open_tunnel(device: UsbmuxdDevice) -> Result<Self> {
         let transport = transport_of(&device.connection_type).context("unknown usbmuxd connection type")?;
         let provider = device.to_provider(mux_addr(), "devicesteer");
 
         // Over Wi-Fi the device closes CoreDeviceProxy (and the tunnel with it) unless some client
         // answers its heartbeat. USB needs none.
-        let heartbeat = match transport {
-            Transport::Wifi => Some(Heartbeat::start(&provider).await?),
-            Transport::Usb => None,
+        let keep = match transport {
+            Transport::Wifi => Keep::Heartbeat { _beat: Heartbeat::start(&provider).await? },
+            Transport::Usb => Keep::Nothing,
         };
 
         let proxy = step("CoreDeviceProxy connection", CoreDeviceProxy::connect(&provider)).await?;
@@ -96,7 +115,37 @@ impl Session {
         let stream = step("RSD connection over the tunnel", adapter.connect(rsd_port)).await?;
         let rsd = step("RSD handshake", RsdHandshake::new(stream)).await?;
 
-        Ok(Self { udid: device.udid, transport, adapter, rsd, _heartbeat: heartbeat })
+        Ok(Self { udid: device.udid, transport, adapter, rsd, _keep: keep })
+    }
+
+    /// Over the network with our own pairing, for a device usbmuxd doesn't list.
+    async fn open_remote(udid: &str) -> Result<Self> {
+        let tunnel = crate::remote::open(udid).await?;
+        let mut adapter = tunnel.adapter.clone();
+        let stream = step("RSD connection over the tunnel", adapter.connect(tunnel.rsd_port)).await?;
+        let rsd = step("RSD handshake", RsdHandshake::new(stream)).await?;
+        let prop = |k: &str| rsd.properties.get(k).and_then(|v| v.as_string()).map(str::to_owned);
+        // The pairing was matched by its advert's tag; this is the device's own word for it.
+        if let Some(seen) = prop("UniqueDeviceID")
+            && seen != udid
+        {
+            bail!("the device on the network is not {udid} (it says it is {seen}); run `devices` and retry");
+        }
+        let version = prop("ProductVersion").or_else(|| prop("OSVersion"));
+        if let Some(r) = version.as_deref().and_then(|v| crate::devices::unsupported_reason(v, prop("DeviceClass").as_deref())) {
+            bail!("{r}, so it can't be used: tell the user");
+        }
+        crate::remote::remember(
+            udid,
+            crate::remote::About {
+                name: None,
+                product_type: prop("ProductType"),
+                device_class: prop("DeviceClass"),
+                os_version: version,
+                build_version: prop("BuildVersion"),
+            },
+        );
+        Ok(Self { udid: udid.to_string(), transport: Transport::Wifi, adapter, rsd, _keep: Keep::Pairing { _tunnel: Box::new(tunnel) } })
     }
 
     /// The services RSD lists, sorted by name.
@@ -298,8 +347,9 @@ impl Clipboard {
 /// Errors when the device `udid` names (or the only one) is too old for DeviceSteer, with a
 /// message that doesn't read as a connection failure. Reads only what lockdown tells anyone, so it
 /// works before trust; when even that can't be read it lets the caller go on and fail as it would.
+/// A device on our own Wi-Fi pairing runs iOS 27 or later (it paired that way), so it passes.
 pub async fn ensure_supported(udid: Option<&str>) -> Result<()> {
-    let device = pick_device(mux_devices().await?, udid)?;
+    let Target::Mux(device) = pick_target(udid).await? else { return Ok(()) };
     let provider = device.to_provider(mux_addr(), "devicesteer");
     match crate::devices::unsupported_in(&crate::setup::public_values(&provider).await) {
         Some(r) => bail!("{r}, so it can't be used: tell the user"),
@@ -319,7 +369,67 @@ pub fn missing_device_hint() -> &'static str {
 
 /// The UDID `udid` names, or the only connected device's when it is `None`.
 pub async fn resolve_udid(udid: Option<&str>) -> Result<String> {
-    Ok(pick_device(mux_devices().await?, udid)?.udid)
+    Ok(match pick_target(udid).await? {
+        Target::Mux(d) => d.udid,
+        Target::Remote(u) => u,
+    })
+}
+
+/// How a device is reached.
+pub(crate) enum Target {
+    /// Through usbmuxd (USB, or Wi-Fi when usbmuxd lists it).
+    Mux(UsbmuxdDevice),
+    /// Through our own Wi-Fi pairing.
+    Remote(String),
+}
+
+/// The device `udid` names, or the only one: usbmuxd first, then our Wi-Fi pairings.
+///
+/// Without `udid`, the network is searched only when we hold pairings, so a USB-only setup pays
+/// nothing for it.
+pub(crate) async fn pick_target(udid: Option<&str>) -> Result<Target> {
+    // No usbmuxd (Windows without Apple's device support) still leaves Wi-Fi pairings usable.
+    let (mux, mux_err) = match mux_devices().await {
+        Ok(l) => (l, None),
+        Err(e) => (Vec::new(), Some(e)),
+    };
+    if let Some(u) = udid {
+        if let Ok(d) = pick_device(mux, Some(u)) {
+            return Ok(Target::Mux(d));
+        }
+        if crate::remote::pairing(u).is_some() {
+            return Ok(Target::Remote(u.to_string()));
+        }
+        if let Some(e) = mux_err {
+            return Err(e);
+        }
+        bail!("device {u} is not connected (no usbmuxd connection and no Wi-Fi pairing). Run `devices` to see what is");
+    }
+
+    let stored = crate::remote::pairings();
+    let mut remote: Vec<String> = Vec::new();
+    if !stored.is_empty() {
+        let adverts = crate::remote::browse(crate::remote::BROWSE_WAIT).await.unwrap_or_default();
+        let (matched, _) = crate::remote::match_adverts(adverts, &stored);
+        remote = matched.into_iter().map(|(_, p)| p.udid).collect();
+    }
+    let usable: Vec<&UsbmuxdDevice> = mux.iter().filter(|d| transport_of(&d.connection_type).is_some()).collect();
+    remote.retain(|u| !usable.iter().any(|d| &d.udid == u));
+    let mut all: Vec<String> = usable.iter().map(|d| d.udid.clone()).chain(remote.iter().cloned()).collect();
+    all.sort();
+    all.dedup();
+    match all.len() {
+        0 => match mux_err {
+            Some(e) => Err(e),
+            None => bail!(
+                "no device is connected (usbmuxd lists none, and no Wi-Fi-paired device answers). Connect one over \
+                 USB, or pair one over Wi-Fi with `devicesteer setup wifi`"
+            ),
+        },
+        1 if !remote.is_empty() => Ok(Target::Remote(all.swap_remove(0))),
+        1 => Ok(Target::Mux(pick_device(mux, None)?)),
+        n => bail!("{n} devices are connected; pass --udid with one of: {}", all.join(", ")),
+    }
 }
 
 fn pick_device(all: Vec<UsbmuxdDevice>, udid: Option<&str>) -> Result<UsbmuxdDevice> {
