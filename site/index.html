@@ -47,9 +47,10 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<!-- Image slots: every picture on this page is a <picture class="slot"> with a light and a dark
+<!-- Image slots: the pictures on this page are <picture class="slot"> with a light and a dark
      file. To swap one, replace the files in /images (or change the paths) and set the <img>'s
-     width and height to the new image's pixel size; the frame keeps that aspect ratio. -->
+     width and height to the new image's pixel size; the frame keeps that aspect ratio. The hero
+     is a video instead: see MEDIA_BASE in hero.js. -->
 
 <a class="skip" href="#main">Skip to content</a>
 
@@ -89,12 +90,31 @@
       <p class="get-alt" id="get-alt">On Windows? <a href="#windows">Get it for Windows</a>.</p>
       <p class="meta">Free and open source (MIT) · iOS / iPadOS 27 or later · USB or Wi-Fi · no Xcode</p>
     </div>
-    <!-- Image slot: the viewer. -->
-    <picture class="slot frame hero-shot">
-      <source srcset="/images/viewer-dark.webp" media="(prefers-color-scheme: dark)">
-      <img src="/images/viewer-light.webp" width="2200" height="1760"
-        alt="The DeviceSteer viewer: a device list, the live iPhone screen with an agent's touch labelled 'Open Wi-Fi settings', a bar reading 'Agent is in control' with Stop and Take over, and device settings on the right">
-    </picture>
+    <!-- The viewer, drawn, playing a recording of an agent session on a real device. The
+         media lives at MEDIA_BASE in hero.js (the poster's src here too); hero.js plays it and
+         moves the overlay. Without it the poster shows with the first label. -->
+    <figure class="hv" id="hero-viewer" role="img"
+      aria-label="The DeviceSteer viewer playing a recording: an agent opens Settings, switches the iPhone to Dark mode and goes back to the Home Screen, each touch labelled, while a bar under the screen reads 'Agent is in control' with Stop and Take over">
+      <div class="hv-title" aria-hidden="true"><i></i><i></i><i></i><span>iPhone</span></div>
+      <div class="hv-stage" aria-hidden="true">
+        <div class="hv-dev">
+          <div class="vglow"></div>
+          <div class="hv-screen">
+            <img class="hv-poster" src="/media/hero-poster.webp" width="720" height="1048" alt="">
+          </div>
+          <div class="hv-overlay">
+            <span class="vcursor"><span class="press"></span><svg class="arrow" viewBox="0 0 20 27" width="20" height="27"><path d="M1.5 1.5 V20.6 L6.1 16.3 L9.3 23.9 L12.6 22.5 L9.4 15.1 H15.6 Z"/></svg><span class="vlabel">Open the Settings app</span></span>
+            <span class="vlabel bottom" hidden></span>
+          </div>
+        </div>
+        <div class="vsession">
+          <span class="vdot"></span>
+          <span class="vstate">Agent is in control</span>
+          <span class="vgoal">Turn on dark mode</span>
+          <b class="vghost">Stop</b><b class="vbtn">Take over</b>
+        </div>
+      </div>
+    </figure>
   </div>
 </section>
 
@@ -140,7 +160,7 @@
         <div class="vdev">
           <div class="vglow"></div>
           <div class="vscreen">
-            <p class="vstatus"><span>9:41</span><i></i></p>
+            <p class="vstatus"><span>9:41</span><b class="isl"></b><i></i></p>
             <p class="ttl">Settings</p>
             <div class="grp"><span><i class="ic b"></i>Wi-Fi</span><span><i class="ic b"></i>Bluetooth</span><span><i class="ic g"></i>General</span></div>
             <div class="grp"><span class="hit"><i class="ic b"></i>Display &amp; Brightness
@@ -303,6 +323,7 @@ devicesteer session finish</pre>
   </div>
 </footer>
 
+<script src="/hero.js" defer></script>
 <script>
 // Points the download buttons at the visitor's system. Without this script the page shows the
 // macOS buttons, which is also what Macs get.
