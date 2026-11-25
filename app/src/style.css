@@ -633,7 +633,7 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .group.info .row.stack output { text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: var(--fs-sm); }
 
-/* The Agents pane and sheet: a switch row per link, with the name over its path and, when
+/* The Settings window's Agents pane and the first-launch sheet: a switch row per link, with the name over its path and, when
    something needs the person, a line saying what. */
 .agent-row .text { flex: 1; min-width: 0; padding: 4px 0; }
 .agent-row .name { font-size: 13.5px; font-weight: 500; }
@@ -663,6 +663,27 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .sheet .error-text { margin-top: 8px; }
 .sheet .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .error-text { color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+
+/* ---------- the Settings window (settings.html) ----------
+   Like a Mac settings window: a toolbar of panes, each an icon over its name, under the window's
+   title, which names the pane shown. On macOS the title and the traffic lights are drawn over the
+   page (titleBarStyle Overlay, settings_window.rs), so the toolbar starts below them. */
+#prefs { display: flex; flex-direction: column; height: 100vh; }
+.prefs-head { flex: none; display: flex; justify-content: center; padding: 8px 12px 7px; border-bottom: 1px solid var(--hairline); }
+:root.mac .prefs-head { padding-top: 30px; }
+.prefs-tabs { display: flex; gap: 4px; }
+.prefs-tabs [role="tab"] {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 68px; height: 50px; padding: 0 10px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--fg-3); font-size: var(--fs-xs); font-weight: 500;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.prefs-tabs [role="tab"] .icon { width: 22px; height: 22px; }
+.prefs-tabs [role="tab"]:hover { background: color-mix(in srgb, var(--tile) 50%, transparent); color: var(--fg-2); }
+.prefs-tabs [role="tab"][aria-selected="true"] { background: var(--tile); color: var(--fg); }
+#prefs .pane { padding: 4px 28px 24px; }
+.prefs-lead { margin-top: 14px; color: var(--fg-2); font-size: var(--fs-sm); }
+#update-found .btn { margin-top: 8px; }
 
 /* ---------- narrow windows ----------
    The window keeps the size the user gives it (PITFALLS #29). Below a width that fits all three

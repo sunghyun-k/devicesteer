@@ -25,7 +25,7 @@ Both extras come from `app/src-tauri/tauri.bundle.conf.json`, which bundling pas
 `--config`. They are not in `tauri.conf.json` because Tauri's build script requires every
 `externalBin` to exist, which would break `cargo build` and `tauri dev` before the CLI is built.
 
-The app's Agents pane links `~/.local/bin/devicesteer` and each agent's skill folder to these
+The app's Settings window (Agents) links `~/.local/bin/devicesteer` and each agent's skill folder to these
 through `~/.local/share/devicesteer/current` (see `app/src-tauri/src/agent_setup.rs` for why), so
 an update replaces the CLI and the skill along with the app.
 
@@ -116,8 +116,9 @@ Nothing here goes into the repository except the updater's **public** key.
 
 - Notarization takes minutes and can be slower; the script waits. If Apple rejects a
   submission, the script prints its log and stops.
-- The app checks for updates five seconds after launch and from the Agents pane (Check Now). It
-  shows a banner; Restart to Update installs and relaunches. Device daemons are separate processes
+- The app checks for updates five seconds after launch and on request in Settings › Updates
+  (Check Now). The launch check shows a banner (Restart to Update), the Settings one its own
+  Install and Restart; both install and relaunch. Device daemons are separate processes
   and keep running the old code until they stop (`devicesteer daemon stop`, or they exit when
   idle).
 - Windows releases are not set up yet: `scripts/build-cli.sh` builds the `.exe` sidecar, but

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window",
+  "description": "Permissions for the main window: every command of the app",
   "windows": [
     "main"
   ],
@@ -10,6 +10,30 @@
     "core:window:allow-start-dragging",
     "core:window:allow-internal-toggle-maximize",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "allow-list-devices",
+    "allow-setup-status",
+    "allow-setup-run",
+    "allow-setup-cancel",
+    "allow-attach",
+    "allow-watch",
+    "allow-detach",
+    "allow-send",
+    "allow-clipboard-to-device",
+    "allow-clipboard-from-device",
+    "allow-clipboard-sync",
+    "allow-report",
+    "allow-initial-udid",
+    "allow-recording-path",
+    "allow-save-screenshot",
+    "allow-reveal",
+    "allow-restore-input-source",
+    "allow-agent-setup-status",
+    "allow-agent-setup-change",
+    "allow-app-location",
+    "allow-app-move-to-applications",
+    "allow-app-version",
+    "allow-set-show-touches",
+    "allow-open-settings"
   ]
 }

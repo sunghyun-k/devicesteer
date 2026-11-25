@@ -1,165 +1,21 @@
-// The inspector's Agents pane and the launch sheets: moving the app to Applications when it runs
-// from its disk image (app/src-tauri/src/app_location.rs), then installing the `devicesteer`
-// command and the DeviceSteer skill for the coding agents on this Mac (agent_setup.rs does the
-// work and explains the links), plus updates from GitHub Releases.
+// The main window's launch sheets: moving the app to Applications when it runs from its disk
+// image (app/src-tauri/src/app_location.rs), then installing the `devicesteer` command and the
+// DeviceSteer skill for the coding agents on this Mac (agent_setup.rs does the work and explains
+// the links), and the banner that offers an update. The Settings window (settings.ts) changes the
+// links later and checks for updates on request.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { $, el, pref, conflict, conflictText, CLI_NEEDED, type AppLocation, type Status } from "./agent-common";
 
-type LinkState =
-  | { state: "installed" }
-  | { state: "missing" }
-  | { state: "other_link"; points_to: string }
-  | { state: "not_a_link"; is_dir: boolean };
-
-type Item = { id: string; name: string; path: string; detected: boolean } & LinkState;
-
-interface Status {
-  unavailable: string | null;
-  cli: Item;
-  on_path: boolean | null;
-  agents: Item[];
-}
-
-/** Where the app runs from (app_location.rs). `reason` is set when it should move. */
-interface AppLocation {
-  reason: "disk_image" | "translocated" | null;
-  exists: boolean;
-  existing_version: string | null;
-}
-
-const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  if (className) e.className = className;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
-
-/** Remembered per viewer; never needed for correctness. */
-const pref = {
-  get(key: string): string | null {
-    try {
-      return localStorage.getItem(`devicesteer.${key}`);
-    } catch {
-      return null;
-    }
-  },
-  set(key: string, value: string): void {
-    try {
-      localStorage.setItem(`devicesteer.${key}`, value);
-    } catch {
-      // Private mode or blocked storage: the sheet may show again, nothing worse.
-    }
-  },
-};
-
-let status: Status | undefined;
 let appLocation: AppLocation | undefined;
 let appVersion = "";
-let busy = false;
-/** The item a Replace button was pressed for: the next press confirms. */
-let confirming: string | undefined;
 
-const statusLine = $<HTMLParagraphElement>("#agent-status");
-
-function say(text: string, error = false): void {
-  statusLine.textContent = text;
-  statusLine.classList.toggle("error", error);
-}
-
-const CLI_NEEDED = "Agents need the command-line tool to operate devices. Without it, the skills won’t work.";
-
-const conflict = (i: Item) => i.state === "other_link" || i.state === "not_a_link";
-
-/** What is at the item's path when it isn't ours, in words. */
-function conflictText(i: Item): string {
-  if (i.state === "other_link") return `A link to ${i.points_to || "somewhere else"} is already there.`;
-  if (i.state === "not_a_link") return `A ${i.is_dir ? "folder" : "file"} is already there. Replacing it moves it aside.`;
-  return "";
-}
-
-async function refresh(): Promise<void> {
-  try {
-    status = await invoke<Status>("agent_setup_status");
-    render();
-  } catch (e) {
-    say(String(e), true);
-  }
-}
-
-async function change(i: Item, install: boolean, replace = false): Promise<boolean> {
-  busy = true;
-  render();
-  try {
-    const r = await invoke<{ note: string | null }>("agent_setup_change", { id: i.id, install, replace });
-    say(r.note ?? (install ? `Installed ${i.path}.` : `Removed ${i.path}.`));
-    return true;
-  } catch (e) {
-    say(String(e), true);
-    return false;
-  } finally {
-    busy = false;
-    confirming = undefined;
-    await refresh();
-  }
-}
-
-/** One switch row: the name, the path, and what is wrong if anything is. */
-function itemRow(i: Item, extra?: HTMLElement): HTMLDivElement {
-  const off = !!status?.unavailable;
-  const row = el("div", "row agent-row");
-  row.dataset.id = i.id;
-  const text = el("div", "text");
-  text.append(el("div", "name", i.name), el("div", "path mono", i.path));
-  if (!i.detected && i.state !== "installed") text.append(el("div", "note", "Not found on this Mac"));
-  if (conflict(i)) text.append(el("div", "note warn", conflictText(i)));
-  if (extra) text.append(extra);
-  row.append(text);
-  if (conflict(i)) {
-    const sure = confirming === i.id;
-    const b = el("button", `btn small${sure ? " danger" : ""}`, sure ? "Confirm Replace" : "Replace…");
-    b.type = "button";
-    b.disabled = off || busy;
-    b.title = "Replace what is there with DeviceSteer’s link";
-    b.addEventListener("click", () => {
-      if (!sure) {
-        confirming = i.id;
-        render();
-      } else void change(i, true, true);
-    });
-    row.append(b);
-  } else {
-    const sw = el("input", "");
-    sw.type = "checkbox";
-    sw.setAttribute("role", "switch");
-    sw.setAttribute("aria-label", i.name);
-    sw.checked = i.state === "installed";
-    sw.disabled = off || busy || (!i.detected && !sw.checked);
-    sw.addEventListener("change", () => void change(i, sw.checked));
-    row.append(sw);
-  }
-  return row;
-}
-
-function render(): void {
-  const s = status;
-  if (!s) return;
-  $<HTMLDivElement>("#agent-unavailable").hidden = !s.unavailable;
-  $<HTMLParagraphElement>("#agent-unavailable-text").textContent = s.unavailable ?? "";
-  $<HTMLButtonElement>("#agent-move").hidden = !appLocation?.reason;
-  let pathNote: HTMLElement | undefined;
-  if (s.cli.state === "installed" && s.on_path === false) {
-    pathNote = el("div", "note warn", "~/.local/bin isn’t on your shell’s PATH. Add it to your shell profile, e.g. export PATH=\"$HOME/.local/bin:$PATH\" in ~/.zshrc, then open a new terminal.");
-  } else if (s.cli.state === "missing" && !s.unavailable) {
-    // A warning once a skill is installed without it: that skill can't do anything.
-    const skills = s.agents.some((a) => a.state === "installed");
-    pathNote = el("div", `note${skills ? " warn" : ""}`, CLI_NEEDED);
-  }
-  $<HTMLDivElement>("#agent-cli").replaceChildren(itemRow(s.cli, pathNote));
-  $<HTMLDivElement>("#agent-skills").replaceChildren(...s.agents.map((a) => itemRow(a)));
+/** Opens the Settings window at `tab` (settings_window.rs). */
+export function openSettings(tab?: "agents" | "updates"): void {
+  void invoke("open_settings", { tab: tab ?? null }).catch(() => {});
 }
 
 // ---------- first launch ----------
@@ -183,7 +39,7 @@ function renderSheet(s: Status): void {
       text.append(el("div", "note", "Already set up"));
     } else if (conflict(i)) {
       box.disabled = true;
-      text.append(el("div", "note warn", `${conflictText(i)} Replace it from the Agents pane if you want.`));
+      text.append(el("div", "note warn", `${conflictText(i)} Replace it in Settings › Agents if you want.`));
     } else {
       box.checked = true;
       if (i.id === "cli") {
@@ -212,7 +68,6 @@ async function offerOnFirstLaunch(): Promise<void> {
   pref.set("agent-setup-offered", "1");
   const todo = [s.cli, ...s.agents.filter((a) => a.detected)].some((i) => i.state === "missing");
   if (!todo) return;
-  status = s;
   renderSheet(s);
   sheet.showModal();
 }
@@ -234,16 +89,14 @@ $<HTMLFormElement>("#agent-sheet-form").addEventListener("submit", async (e) => 
     }
   }
   ok.disabled = false;
-  await refresh();
   if (failed.length) {
     err.textContent = failed.join(" ");
     return;
   }
   sheet.close();
-  if (status?.cli.state === "installed" && status.on_path === false) {
-    say("~/.local/bin isn’t on your shell’s PATH: see Command-Line Tool above.", true);
-    $<HTMLButtonElement>("#tab-app").click();
-  }
+  // The tool works only once its folder is on PATH: Settings › Agents says how to add it.
+  const s = await invoke<Status>("agent_setup_status").catch(() => undefined);
+  if (s?.cli.state === "installed" && s.on_path === false) openSettings("agents");
 });
 
 // ---------- move to Applications ----------
@@ -284,11 +137,15 @@ function openMoveSheet(): void {
 }
 
 $<HTMLButtonElement>("#move-sheet-later").addEventListener("click", () => {
-  // Asked again by the next version; until then the Agents pane keeps the hint and a button.
+  // Asked again by the next version; until then Settings › Agents keeps the hint and a button.
   pref.set("move-declined", appVersion);
   moveSheet.close();
 });
-$<HTMLButtonElement>("#agent-move").addEventListener("click", openMoveSheet);
+// Settings › Agents' Move button: the sheet belongs to this window (settings_window.rs).
+void listen("move-sheet", async () => {
+  appLocation ??= await invoke<AppLocation>("app_location").catch(() => undefined);
+  if (appLocation?.reason && !moveSheet.open) openMoveSheet();
+}).catch(() => {});
 $<HTMLFormElement>("#move-sheet-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (appLocation?.exists && !moveReplacing) {
@@ -328,25 +185,19 @@ async function offerMove(): Promise<boolean> {
 // ---------- updates ----------
 
 const banner = $<HTMLDivElement>("#update-banner");
-const updateText = $<HTMLSpanElement>("#update-text");
-const checkBtn = $<HTMLButtonElement>("#update-check");
 let pendingUpdate: Update | undefined;
 
-async function checkForUpdate(quiet: boolean): Promise<void> {
-  checkBtn.disabled = true;
-  if (!quiet) updateText.textContent = "Checking…";
+/** Looks for an update once after launch, quietly: only a found one shows, as the banner. */
+async function checkForUpdate(): Promise<void> {
   try {
     const u = await check();
     pendingUpdate = u ?? undefined;
     if (u) {
-      updateText.textContent = `Version ${u.version} is available.`;
       $<HTMLParagraphElement>("#update-banner-text").textContent = `DeviceSteer ${u.version} is available.`;
       banner.hidden = false;
-    } else if (!quiet) updateText.textContent = "DeviceSteer is up to date.";
-  } catch (e) {
-    if (!quiet) updateText.textContent = `Couldn’t check for updates: ${e}`;
-  } finally {
-    checkBtn.disabled = false;
+    }
+  } catch {
+    // Offline or GitHub unreachable: Settings › Updates says so when asked.
   }
 }
 
@@ -373,22 +224,15 @@ async function installUpdate(): Promise<void> {
   }
 }
 
-checkBtn.addEventListener("click", () => void checkForUpdate(false));
 $<HTMLButtonElement>("#update-install").addEventListener("click", () => void installUpdate());
 $<HTMLButtonElement>("#update-dismiss").addEventListener("click", () => (banner.hidden = true));
-
-/** Called by main.ts when the Agents pane shows. */
-export function showAgentsPane(): void {
-  if (!busy) void refresh();
-}
 
 export function initAgents(): void {
   void (async () => {
     appVersion = await invoke<string>("app_version").catch(() => "");
-    $<HTMLOutputElement>("#app-version").value = appVersion;
     // A copy that should move can't set up agents; the moved copy offers that when it opens.
     if (!(await offerMove())) await offerOnFirstLaunch();
   })();
   // Development builds aren't released, so there is nothing to update them to.
-  if (!import.meta.env.DEV) window.setTimeout(() => void checkForUpdate(true), 5000);
+  if (!import.meta.env.DEV) window.setTimeout(() => void checkForUpdate(), 5000);
 }

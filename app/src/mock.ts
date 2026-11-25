@@ -13,7 +13,12 @@
 // `session=agent|delegated_to_user|user` (a session already runs when the device is attached),
 // `lights=0` (no stand-in for the macOS traffic lights), `setup=ok|deny|fail` (how the setup
 // steps end: done, the user taps Don't Trust, or an error), `select=<udid suffix>` (pick that
-// device first, such as `select=6` for the one that needs Trust).
+// device first, such as `select=6` for the one that needs Trust), `update=1` (a newer version is
+// out).
+//
+// The Settings window: http://localhost:1420/settings.html?mock (also `theme`, `agents`,
+// `location`, `update`, `tab=agents|updates`). In the main window, the More menu's Settings… opens
+// it in a new tab where the window has no app menu.
 //
 // Unplugging: `x` (or `mock.unplug()`) takes the device last attached or set up off the list,
 // and again puts it back; Developer Mode's setup step leaves the list while the device restarts,
@@ -457,6 +462,23 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     }
     case "plugin:updater|check":
       await sleep(400);
+      // `update=1`: a newer version is out.
+      return params.get("update") === "1"
+        ? { rid: 1, currentVersion: "0.1.0", version: "1.0.0-beta.2", date: null, body: "", rawJson: {} }
+        : null;
+    case "plugin:window|set_title":
+      // Stands in for the title macOS draws over the Settings window's toolbar.
+      document.body.dataset.title = String(args.value ?? "");
+      return null;
+    case "open_settings": {
+      // The real app opens a second window; here it opens in a new tab.
+      const q = new URLSearchParams({ mock: "" });
+      for (const k of ["theme", "agents", "location", "update"]) if (params.get(k)) q.set(k, params.get(k)!);
+      if (args.tab) q.set("tab", String(args.tab));
+      window.open(`/settings.html?${q}`, "devicesteer-settings");
+      return null;
+    }
+    case "show_move_sheet":
       return null;
     case "initial_udid":
       if (params.get("select")) return DEVICES.find((d) => d.udid.endsWith(params.get("select")!))?.udid ?? null;
@@ -753,22 +775,29 @@ function panel(): void {
   });
 }
 
-/** The three dots where macOS draws the traffic lights (trafficLightPosition in tauri.conf.json),
- * so the headers' room for them reads. */
-function lights(): void {
+/** The three dots where macOS draws the traffic lights (trafficLightPosition in tauri.conf.json;
+ * the default place in the Settings window, with its title), so the headers' room for them reads. */
+function lights(window_: "main" | "settings"): void {
   const style = document.createElement("style");
   style.textContent =
-    ":root.mac body::after{content:'';position:fixed;z-index:50;left:17px;top:16px;pointer-events:none;" +
-    "width:14px;height:14px;border-radius:50%;background:#ff5f57;box-shadow:23px 0 #febc2e,46px 0 #28c840}";
+    window_ === "main"
+      ? ":root.mac body::after{content:'';position:fixed;z-index:50;left:17px;top:16px;pointer-events:none;" +
+        "width:14px;height:14px;border-radius:50%;background:#ff5f57;box-shadow:23px 0 #febc2e,46px 0 #28c840}"
+      : ":root.mac body::after{content:'';position:fixed;z-index:50;left:8px;top:8px;pointer-events:none;" +
+        "width:12px;height:12px;border-radius:50%;background:#ff5f57;box-shadow:20px 0 #febc2e,40px 0 #28c840}" +
+        ":root.mac body::before{content:attr(data-title);position:fixed;z-index:50;top:0;left:0;right:0;height:28px;" +
+        "line-height:28px;text-align:center;font-size:13px;font-weight:600;color:var(--fg-2);pointer-events:none}";
   document.head.append(style);
 }
 
-export function installMock(): void {
+/** `window` is the page's window label: `main` (index.html) or `settings` (settings.html). */
+export function installMock(window_: "main" | "settings" = "main"): void {
   const theme = params.get("theme");
   if (theme) document.documentElement.dataset.theme = theme;
-  if (params.get("lights") !== "0") lights();
-  mockWindows("main");
+  if (params.get("lights") !== "0") lights(window_);
+  mockWindows(window_);
   mockIPC((cmd, args) => handle(cmd, (args ?? {}) as Record<string, unknown>), { shouldMockEvents: true });
+  if (window_ === "settings") return;
   (window as unknown as { VideoDecoder: unknown }).VideoDecoder = FakeDecoder;
   window.mock = mock;
   // Module scripts run after the document is parsed, so the body is there.

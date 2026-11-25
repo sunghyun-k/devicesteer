@@ -18,7 +18,7 @@ connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
 2. Open DeviceSteer. On first launch it offers to set up agents: the `devicesteer` command
    (`~/.local/bin/devicesteer`) and the DeviceSteer skill for the coding agents it finds (Claude
    Code, Codex and others that read `~/.agents/skills`, Cursor, GitHub Copilot CLI). Both are links
-   into the app, so they update with it. Change this any time in the inspector's Agents pane.
+   into the app, so they update with it. Change this any time in Settings › Agents (⌘,).
 3. If the pane says `~/.local/bin` isn't on your PATH, add it to your shell profile:
    `export PATH="$HOME/.local/bin:$PATH"`.
 

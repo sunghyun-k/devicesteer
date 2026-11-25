@@ -4,6 +4,7 @@
 mod agent_setup;
 mod app_location;
 mod input_source;
+mod settings_window;
 mod shared_clip;
 mod view_menu;
 
@@ -13,7 +14,7 @@ use devicesteer_core::DeviceInfo;
 use devicesteer_daemon::{Client, Source};
 use serde_json::Value;
 use tauri::{
-    State,
+    Manager, State,
     ipc::{Channel, InvokeResponseBody},
 };
 use tokio::sync::Mutex;
@@ -216,7 +217,6 @@ fn initial_udid() -> Option<String> {
 /// named by `stamp`, the page's local date and time.
 #[tauri::command]
 fn recording_path(app: tauri::AppHandle, stamp: String) -> Result<String, String> {
-    use tauri::Manager;
     let dir = app
         .path()
         .video_dir()
@@ -230,7 +230,6 @@ fn recording_path(app: tauri::AppHandle, stamp: String) -> Result<String, String
 /// home), named by the `x-stamp` header, the page's local date and time. Returns its path.
 #[tauri::command]
 fn save_screenshot(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<String, String> {
-    use tauri::Manager;
     let tauri::ipc::InvokeBody::Raw(png) = request.body() else {
         return Err("save_screenshot takes the PNG as the request body".into());
     };
@@ -260,7 +259,7 @@ fn reveal(path: String) -> Result<(), String> {
     spawned.map(|_| ()).map_err(|e| format!("could not show {path}: {e}"))
 }
 
-/// The app's version, for the App pane.
+/// The app's version, for the Settings window's Updates pane.
 #[tauri::command]
 fn app_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
@@ -281,13 +280,16 @@ pub fn run() {
         .on_menu_event(|app, event| view_menu::on_menu_event(app, &event))
         // Coming back to the window is when someone wants to paste what they copied on the
         // device: read it now rather than at the next poll.
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Focused(true) = event {
-                use tauri::Manager;
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Focused(true) => {
                 window.state::<Viewer>().clip.poke();
             }
+            tauri::WindowEvent::Destroyed if window.label() == "main" => {
+                settings_window::on_main_destroyed(window.app_handle());
+            }
+            _ => {}
         })
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches])
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, settings_window::open_settings, settings_window::show_move_sheet])
         .run(tauri::generate_context!())
         .expect("error while running the DeviceSteer app");
 }

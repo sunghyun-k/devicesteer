@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Permissions for the Settings window: agent setup, updates, and nothing that reaches a device",
+  "windows": [
+    "settings"
+  ],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-title",
+    "updater:default",
+    "process:allow-restart",
+    "allow-agent-setup-status",
+    "allow-agent-setup-change",
+    "allow-app-location",
+    "allow-app-version",
+    "allow-show-move-sheet"
+  ]
+}

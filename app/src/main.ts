@@ -1,5 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { initAgents, showAgentsPane } from "./agents";
+import { initAgents, openSettings } from "./agents";
 import { listen } from "@tauri-apps/api/event";
 
 // Dev only: `?mock` runs the viewer against a fake backend in a plain browser (see src/mock.ts).
@@ -1510,8 +1510,8 @@ function editing(): boolean {
 }
 
 /** ⌘ shortcuts that stay with the viewer and the Mac: zoom (⌘0, ⌘9, ⌘+, ⌘−), the keyboard
- * menu's (⌘K, ⌥⌘K, ⇧⌘V, ⇧⌘C), the app menu's Show Touches (⇧⌘T), and quit, close, hide,
- * minimize, settings. Every other ⌘ combination goes to the device (⌘A, ⌘C, ⌘V, ⌘Z…). A menu
+ * menu's (⌘K, ⌥⌘K, ⇧⌘V, ⇧⌘C), the app menu's Show Touches (⇧⌘T) and Settings (⌘,), and quit,
+ * close, hide, minimize. Every other ⌘ combination goes to the device (⌘A, ⌘C, ⌘V, ⌘Z…). A menu
  * shortcut reaches the menu only if the page doesn't take the key. */
 function viewerShortcut(e: KeyboardEvent): boolean {
   if (!e.metaKey) return false;
@@ -1843,6 +1843,18 @@ function updateMenu(): void {
 
 $<HTMLButtonElement>("#menu-stop-view").addEventListener("click", () => void stopView());
 $<HTMLButtonElement>("#menu-reveal").addEventListener("click", () => reveal(recordedPath));
+// Settings is in the app menu on macOS (view_menu.rs, ⌘,); elsewhere the window has no menu bar,
+// so the More menu and Ctrl+, open it.
+if (root.classList.contains("mac")) for (const e of document.querySelectorAll("[data-no-app-menu]")) e.remove();
+else {
+  $<HTMLButtonElement>("#menu-settings").addEventListener("click", () => openSettings());
+  window.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === "Comma") {
+      e.preventDefault();
+      openSettings();
+    }
+  });
+}
 
 // ---------- inspector: settings ----------
 
@@ -1988,7 +2000,7 @@ $<HTMLButtonElement>("#vo-off").addEventListener("click", () => void setSetting(
 
 // ---------- inspector: tabs and info ----------
 
-const TABS = ["settings", "info", "app"];
+const TABS = ["settings", "info"];
 for (const tab of TABS) {
   $<HTMLButtonElement>(`#tab-${tab}`).addEventListener("click", () => {
     for (const t of TABS) {
@@ -1997,7 +2009,6 @@ for (const tab of TABS) {
     }
     prefs.set("tab", tab);
     showInfo();
-    if (tab === "app") showAgentsPane();
   });
 }
 const savedTab = prefs.get("tab");

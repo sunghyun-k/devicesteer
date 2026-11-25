@@ -27,6 +27,6 @@ A device that isn't ready yet (`devices` lists it with `setup`) is set up with `
 the guide says which steps need the person holding the device.
 
 If `devicesteer` is not found, ask the user to install the DeviceSteer app and turn on the
-command-line tool in its Agents pane (it links `~/.local/bin/devicesteer`; that folder must be on
+command-line tool in its Settings, Agents pane (it links `~/.local/bin/devicesteer`; that folder must be on
 PATH), or, in a checkout of the DeviceSteer repository, build it (`cargo build`, then use
 `target/debug/devicesteer`).

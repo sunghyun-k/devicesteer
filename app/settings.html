@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- The app's settings, apart from any device: opened from DeviceSteer › Settings… (⌘,)
+         (settings_window.rs). The panes are settings.ts. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-terminal" viewBox="0 0 20 20"><rect x="2.75" y="4" width="14.5" height="12" rx="2.5" /><path d="m6.25 8.25 2 1.75-2 1.75M10.25 12h3.5" /></symbol>
+      <symbol id="i-download" viewBox="0 0 20 20"><path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 15.75h12" /></symbol>
+    </svg>
+
+    <div id="prefs">
+      <!-- A toolbar of panes under the title, like a Mac settings window. -->
+      <header class="prefs-head" data-tauri-drag-region>
+        <div class="prefs-tabs" role="tablist" aria-label="Settings" data-tauri-drag-region>
+          <button id="tab-agents" role="tab" type="button" aria-selected="true" aria-controls="pane-agents"><svg class="icon"><use href="#i-terminal" /></svg><span>Agents</span></button>
+          <button id="tab-updates" role="tab" type="button" aria-selected="false" aria-controls="pane-updates"><svg class="icon"><use href="#i-download" /></svg><span>Updates</span></button>
+        </div>
+      </header>
+
+      <!-- What agents get: the command and the skill links (settings.ts, agent_setup.rs). -->
+      <div id="pane-agents" class="pane" role="tabpanel" aria-labelledby="tab-agents">
+        <p class="prefs-lead">Coding agents on this Mac operate your devices through DeviceSteer’s command-line tool and skill. Both are links into this app, so they update with it.</p>
+        <div id="agent-unavailable" class="pane-note" hidden>
+          <p id="agent-unavailable-text"></p>
+          <button id="agent-move" class="btn small" type="button" hidden>Move to Applications…</button>
+        </div>
+        <section class="group agents">
+          <h4>Command-Line Tool</h4>
+          <div id="agent-cli"></div>
+        </section>
+        <section class="group agents">
+          <h4>Agent Skills</h4>
+          <div id="agent-skills"></div>
+        </section>
+        <p id="agent-status" role="status"></p>
+      </div>
+
+      <div id="pane-updates" class="pane" role="tabpanel" aria-labelledby="tab-updates" hidden>
+        <section class="group info">
+          <h4>Updates</h4>
+          <div class="row"><span>Version</span><output id="app-version"></output></div>
+          <div class="row"><span id="update-text">Updates come from GitHub Releases.</span><button id="update-check" class="btn small" type="button">Check Now</button></div>
+        </section>
+        <div id="update-found" class="pane-note" hidden>
+          <p id="update-found-text"></p>
+          <button id="update-install" class="btn small" type="button">Install and Restart</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>
