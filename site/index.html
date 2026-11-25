@@ -133,19 +133,29 @@
     </header>
 
     <div class="trust-grid">
-      <!-- Drawn mock-up, not a capture: an agent's labelled tap while it has the device. -->
+      <!-- Drawn mock-up, not a capture, following the viewer's agent session (app/src/style.css,
+           "agent session"): the screen as a plain rectangle in the turning glow, the agent's arrow
+           with its label, and the session strip under the screen. -->
       <div class="stage" aria-hidden="true">
-        <div class="bar"><span class="dot"></span>Agent is in control<span class="bar-btns"><b>Stop</b><b>Take over</b></span></div>
-        <div class="phone">
-          <div class="screen">
-            <div class="isl"></div>
+        <div class="vdev">
+          <div class="vglow"></div>
+          <div class="vscreen">
+            <p class="vstatus"><span>9:41</span><i></i></p>
             <p class="ttl">Settings</p>
             <div class="grp"><span><i class="ic b"></i>Wi-Fi</span><span><i class="ic b"></i>Bluetooth</span><span><i class="ic g"></i>General</span></div>
-            <div class="grp"><span><i class="ic b"></i>Display &amp; Brightness</span><span><i class="ic g"></i>Wallpaper</span><span><i class="ic g"></i>Sounds</span></div>
-            <div class="touch"><span class="ring"></span><span class="lbl"><i></i>open Display settings</span></div>
+            <div class="grp"><span class="hit"><i class="ic b"></i>Display &amp; Brightness
+                <span class="vcursor"><span class="press"></span><svg class="arrow" viewBox="0 0 20 27" width="20" height="27"><path d="M1.5 1.5 V20.6 L6.1 16.3 L9.3 23.9 L12.6 22.5 L9.4 15.1 H15.6 Z"/></svg><span class="vlabel">Open Display settings</span></span>
+              </span><span><i class="ic g"></i>Wallpaper</span><span><i class="ic g"></i>Sounds</span></div>
+            <div class="grp"><span><i class="ic g"></i>Privacy &amp; Security</span><span><i class="ic g"></i>Battery</span></div>
+            <i class="vhome"></i>
           </div>
         </div>
-        <pre class="term"><span class="d">$</span> devicesteer tap @e12 --label "open Display settings"</pre>
+        <div class="vsession">
+          <span class="vdot"></span>
+          <span class="vstate">Agent is in control</span>
+          <span class="vgoal">Turn on dark mode</span>
+          <b class="vghost">Stop</b><b class="vbtn">Take over</b>
+        </div>
       </div>
 
       <ul class="points">

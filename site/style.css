@@ -153,7 +153,7 @@ h3 { font-size: var(--t-base); line-height: 1.35; }
 }
 
 /* safety: the mock-up on the left, the points on the right */
-.trust-grid { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 64px; align-items: start; }
+.trust-grid { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 64px; align-items: start; }
 .points { list-style: none; padding: 0; display: grid; gap: 0; }
 .points li { padding: 22px 0; border-bottom: 1px solid var(--line); }
 .points li:first-child { padding-top: 4px; }
@@ -162,35 +162,70 @@ h3 { font-size: var(--t-base); line-height: 1.35; }
 .points p { color: var(--mute); margin: 0; }
 @media (max-width: 960px) { .trust-grid { grid-template-columns: minmax(0, 1fr); gap: 40px; } .stage { max-width: 420px; } }
 
-.stage { display: flex; flex-direction: column; align-items: center; gap: 16px; }
-.bar { display: flex; align-items: center; gap: 8px; width: 100%; font-size: 12.5px; padding: 6px 6px 6px 12px;
-  border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
-.bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-.bar-btns { margin-left: auto; display: flex; gap: 6px; }
-.bar-btns b { font-weight: 600; padding: 3px 9px; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--line); }
-.phone { width: 232px; height: 360px; border-radius: 38px 38px 0 0; padding: 10px 10px 0; background: #1b1e24;
-  /* The viewer outlines the screen in blue while an agent drives. */
-  box-shadow: 0 0 0 2px var(--accent); }
-.screen { position: relative; height: 100%; border-radius: 29px 29px 0 0; background: #f2f2f7; color: #111;
-  padding: 42px 12px 0; overflow: hidden; font-size: 11.5px; line-height: 1.4; }
-.isl { position: absolute; top: 11px; left: 50%; width: 70px; height: 20px; margin-left: -35px; border-radius: 999px; background: #000; }
-.ttl { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; margin: 4px 4px 10px; }
-.grp { background: #fff; border-radius: 10px; margin-bottom: 12px; }
-.grp span { display: flex; align-items: center; gap: 9px; height: 35px; padding: 0 10px; border-bottom: 1px solid #ececf0; }
-.grp span:last-child { border-bottom: 0; }
-.ic { width: 20px; height: 20px; border-radius: 6px; background: #8e8e93; flex: none; }
+/* The mock-up copies the viewer's agent session (app/src/style.css): its colours are the app's,
+   not the page's, so it looks the same whatever the page's accent. */
+.stage { --app-accent: #4480fc; --app-fg: #1a1c1f; --app-fg2: #5d5d5d; --app-bg: #ffffff; --app-line: #e5e5e5;
+  display: flex; flex-direction: column; align-items: center; gap: 20px; padding-top: 8px; }
+@media (prefers-color-scheme: dark) {
+  .stage { --app-fg: #ffffff; --app-fg2: #b4b4b4; --app-bg: #181818; --app-line: #353535; }
+}
+/* The screen is shown as the rectangle it is, inside a hairline, as in the viewer. */
+.vdev { position: relative; width: 250px; height: 541px; isolation: isolate; }
+.vscreen { position: relative; height: 100%; overflow: hidden; background: #f2f2f7; color: #111;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12); padding: 0 12px; font-size: 11.5px; line-height: 1.4; }
+@media (prefers-color-scheme: dark) { .vscreen { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12); } }
+/* The agent's glow: a turning blue gradient ring, blurred, just outside the screen. */
+.vglow { position: absolute; inset: -1.5px; z-index: -1; pointer-events: none; }
+.vglow::before {
+  content: ""; position: absolute; inset: -6px; padding: 6px;
+  background: conic-gradient(from var(--glow-angle, 0deg), #0a84ff, #64d2ff, #5e5ce6, #0a84ff);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  filter: blur(9px); opacity: 0.85; animation: glow-turn 6s linear infinite;
+}
+@property --glow-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes glow-turn { to { --glow-angle: 360deg; } }
+.vstatus { display: flex; justify-content: space-between; align-items: center; height: 44px; margin: 0;
+  padding: 0 14px; font-size: 13px; font-weight: 600; }
+.vstatus i { width: 22px; height: 10px; border-radius: 3px; background: #111; }
+.ttl { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; margin: 6px 4px 12px; }
+.grp { background: #fff; border-radius: 10px; margin-bottom: 18px; }
+.grp > span { position: relative; display: flex; align-items: center; gap: 9px; height: 38px; padding: 0 10px;
+  border-bottom: 1px solid #ececf0; }
+.grp > span:last-child { border-bottom: 0; }
+.ic { width: 22px; height: 22px; border-radius: 6px; background: #8e8e93; flex: none; }
 .ic.b { background: #0a84ff; }
-.touch { position: absolute; left: 92px; top: 219px; }
-.touch .ring { position: absolute; left: -16px; top: -16px; width: 32px; height: 32px; border-radius: 50%;
-  background: rgba(255, 159, 10, 0.35); border: 2px solid var(--agent); animation: tap 2.4s ease-out infinite; }
-.touch .lbl { position: absolute; left: -60px; top: 22px; display: flex; align-items: center; gap: 6px;
-  white-space: nowrap; font-size: 11px; font-weight: 500; color: #fff; background: rgba(28, 29, 32, 0.92);
-  border-radius: 999px; padding: 4px 10px 4px 8px; }
-.touch .lbl i { width: 6px; height: 6px; border-radius: 50%; background: var(--agent); }
-@keyframes tap { 0% { transform: scale(0.6); opacity: 0; } 15% { transform: scale(1); opacity: 1; }
-  70% { opacity: 1; } 100% { transform: scale(1.25); opacity: 0; } }
-.stage .term { align-self: stretch; margin: 0; padding: 14px 18px; border-radius: 10px; background: var(--term); color: var(--term-fg);
-  font: 12px/1.55 var(--mono); white-space: pre-wrap; }
+.vhome { position: absolute; left: 50%; bottom: 8px; width: 92px; height: 4px; margin-left: -46px; border-radius: 2px; background: #111; }
+/* The agent's pointer: the viewer's macOS-style arrow, a fingertip disc while it presses, and its
+   label beside it (dark like a tooltip, with the agent's orange dot). */
+.vcursor { position: absolute; left: 60px; top: 50%; width: 0; height: 0; z-index: 2; }
+.vcursor .arrow { position: absolute; left: -1.5px; top: -1.5px; overflow: visible;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.45)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.25)); }
+.vcursor .arrow path { fill: #fff; stroke: #1d1d1f; stroke-width: 1.4; stroke-linejoin: round; }
+.vcursor .press { position: absolute; z-index: -1; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35); border: 2px solid rgba(255, 255, 255, 0.9); box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+  opacity: 0; animation: press 3s ease-out infinite; }
+@keyframes press { 0%, 8% { opacity: 1; transform: scale(1); } 30%, 100% { opacity: 0; transform: scale(1.4); } }
+.vlabel { position: absolute; left: 16px; top: 22px; width: max-content; padding: 4px 10px 4px 20px; border-radius: 10px;
+  font-size: 12px; font-weight: 500; line-height: 1.35; color: #f3f3f3; background: rgba(24, 24, 24, 0.9);
+  border: 0.5px solid rgba(255, 255, 255, 0.14); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
+.vlabel::before { content: ""; position: absolute; left: 9px; top: 50%; width: 6px; height: 6px; margin-top: -3px;
+  border-radius: 50%; background: #ff9f0a; }
+/* The session strip under the screen: tinted with who holds the device, a live dot, the state,
+   the goal, Stop and Take over. */
+.vsession { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 400px; height: 40px;
+  padding: 0 5px 0 12px; border-radius: 10px; color: var(--app-fg); font-size: 12.5px; white-space: nowrap;
+  background: color-mix(in srgb, var(--app-accent) 9%, var(--app-bg));
+  border: 1px solid color-mix(in srgb, var(--app-accent) 26%, transparent); }
+.vdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--app-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent) 22%, transparent); animation: live 1.6s ease-in-out infinite; }
+@keyframes live { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--app-accent) 8%, transparent); } }
+.vstate { flex: none; font-weight: 600; }
+.vgoal { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--app-fg2); }
+.vghost, .vbtn { flex: none; font-weight: 500; height: 28px; display: inline-flex; align-items: center; padding: 0 10px;
+  border-radius: 10px; }
+.vghost { color: var(--app-fg2); }
+.vbtn { background: var(--app-bg); border: 1px solid var(--app-line); }
 .term .d, .code .d, .code .c { color: var(--term-dim); }
 
 /* get started: numbered steps on a rail */
@@ -237,6 +272,6 @@ h3 { font-size: var(--t-base); line-height: 1.35; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .touch .ring { animation: none; }
+  .vglow::before, .vdot, .vcursor .press { animation: none; }
   .btn { transition: none; }
 }
