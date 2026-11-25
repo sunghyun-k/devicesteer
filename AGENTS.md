@@ -4,7 +4,8 @@ Guide for anyone changing the code of this repository: coding agents and human c
 
 ## Essentials
 
-1. **Branch:** the rewrite happens on `next`. Don't commit to `main`.
+1. **Branch:** work on a topic branch and open a pull request into `main`. Don't commit to `main`
+   directly.
 2. **Language:** reply in the user's language; write code, comments, docs and commits in English.
 3. **Odd code:** before changing it, read the `PITFALLS #N` entry it cites in `docs/PITFALLS.md`.
 4. **Real devices are personal devices:** pass `--udid`, look at the screen before any input, never
