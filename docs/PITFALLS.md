@@ -1359,3 +1359,27 @@ Socket(Custom { kind: NetworkUnreachable, error: "adapter closed" }))`.
 - A new tunnel goes over USB when usbmuxd lists the device both ways (`pick_device`), and a live
   Wi-Fi tunnel moves to USB when the device shows up there, so a dropped Wi-Fi tunnel isn't what
   the next command meets.
+
+### 67. Windows: the page sees little of the Windows key, and Win+Space is Windows' own
+
+Windows 11, keys injected with `SendInput` into a Chromium page (Edge) that calls `preventDefault`
+on every keydown, to choose which PC keys the viewer sends as Command and Control (`keymap.ts`).
+
+- **A lone Windows key opens Start**: the page gets a `MetaLeft` keydown, then `blur`, and no
+  keyup. So the Windows key can't be Command, the key a PC user presses most with letters.
+- **Win+letter combinations the shell owns** (Win+A, Win+E, Win+Z, Win+1, Win+Left…) reach the page
+  as the `MetaLeft` keydown only, then `blur`: never the letter, never the keyup. Unassigned ones
+  (Win+J on that PC) arrive whole with `metaKey`, but which letters are free depends on the Windows
+  version. The viewer still sends the Windows key as Control, for those; `blur` lets go of every
+  key, and a keyup without its keydown (Win+Space and Win+Left leave one for Space and ArrowLeft)
+  is ignored.
+- **Win+Space switches Windows' input source** and gives the page no Space keydown, so it can't be
+  the device's Control-Space. Ctrl+Space arrives whole, so the viewer sends that as Control-Space
+  and every other Ctrl combination as Command.
+- **Ctrl+letter arrives whole and `preventDefault` stops the browser's action** (Ctrl+A, Ctrl+P,
+  Ctrl+F, Ctrl+R). Edge itself reserves Ctrl+W and Ctrl+Tab (the page sees only the Control
+  keydown); a WebView2 window has no tabs, but that wasn't tested.
+- **The Korean Han/Eng key** arrives as a keyup alone (`key` `HangulMode`, `code` `Lang1` or empty)
+  and switches the Windows IME whatever the page does. The viewer doesn't forward it.
+- A global shortcut of another app (a password manager's Ctrl+Shift+Space) takes the keys before
+  the page, which then sees only `blur`.
