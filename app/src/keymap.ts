@@ -10,7 +10,8 @@
 //   Win+letter ones for itself, and Win+Space switches the PC's own input source). It can't be
 //   Command: alone it opens Start (PITFALLS #67).
 // - Ctrl+Space is Control-Space, which switches the device's input source: with Win+Space taken
-//   by Windows, nothing else could press it (PITFALLS #67). Command-Space (Spotlight) is given up for it.
+//   by Windows, nothing else could press it (PITFALLS #67). Command-Space (Spotlight) is given
+//   up for it.
 //
 // For that last one a Ctrl key goes down on the device only when the next key that isn't a
 // modifier shows which it means: Space makes it Control, anything else Command. A Ctrl pressed
