@@ -10,6 +10,10 @@ rust-version.workspace = true
 name = "devicesteer"
 path = "src/main.rs"
 
+# Windows version information for devicesteer.exe (build.rs); the crate Tauri uses for the app's.
+[build-dependencies]
+tauri-winres = "0.3"
+
 [dependencies]
 devicesteer-core.workspace = true
 devicesteer-daemon.workspace = true

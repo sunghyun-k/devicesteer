@@ -1,0 +1,151 @@
+# Builds the Windows installer (NSIS, x64) with the CLI and the skill inside, and checks what is in
+# it. Runs on pull requests and pushes to main that touch what goes into the app, by hand, and as
+# the build step of release-windows.yml (workflow_call), which attaches the result to a draft
+# release. The installer is kept as a workflow artifact for a week, to try it on a Windows PC.
+#
+# GitHub-hosted runner on purpose: SignPath's open-source signing accepts only builds whose every
+# job ran on GitHub-hosted runners (see the outline in release-windows.yml).
+name: Windows build
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - "crates/**"
+      - "skills/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/build-cli.sh"
+      - "scripts/check-version.sh"
+      - ".github/workflows/build-windows.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "crates/**"
+      - "skills/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/build-cli.sh"
+      - "scripts/check-version.sh"
+      - ".github/workflows/build-windows.yml"
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to build (default: the triggering ref)"
+        type: string
+        default: ""
+      version:
+        description: "Version the build must carry (checked against Cargo.toml, tauri.conf.json and package.json)"
+        type: string
+        default: ""
+    outputs:
+      artifact:
+        description: Name of the workflow artifact that holds the installer
+        value: ${{ jobs.bundle.outputs.artifact }}
+      installer:
+        description: The installer's file name
+        value: ${{ jobs.bundle.outputs.installer }}
+
+permissions: {}
+
+concurrency:
+  group: windows-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  bundle:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      artifact: ${{ steps.check.outputs.artifact }}
+      installer: ${{ steps.check.outputs.installer }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Check the version
+        if: inputs.version != ''
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: scripts/check-version.sh "$VERSION"
+
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install the front end's packages
+        working-directory: app
+        run: npm ci
+
+      # `npm run bundle` adds tauri.bundle.conf.json: its beforeBuildCommand builds the CLI with
+      # scripts/build-cli.sh (under Git for Windows' sh) and bundles it with the skill.
+      # --- SignPath, once approved: the installer can't be signed from the outside only, the exes
+      # --- inside it must be signed before NSIS packs them. Replace this step with:
+      #   1. npm run bundle -- --no-bundle            (builds devicesteer-app.exe and the CLI)
+      #   2. actions/upload-artifact of target/release/devicesteer-app.exe and
+      #      app/src-tauri/binaries/devicesteer-x86_64-pc-windows-msvc.exe (keep its artifact-id)
+      #   3. signpath/github-action-submit-signing-request (pinned by SHA) with
+      #      secrets.SIGNPATH_API_TOKEN, organization-id, project-slug, signing-policy-slug,
+      #      artifact-configuration-slug (a zip of pe-files, product-name DeviceSteer and
+      #      product-version restricted), github-artifact-id, wait-for-completion: true,
+      #      wait-for-completion-timeout-in-seconds: 7200 (every request waits for a manual approval)
+      #   4. copy the signed exes back over both paths
+      #   5. npx tauri bundle --bundles nsis --config src-tauri/tauri.bundle.conf.json
+      #   6. upload the setup.exe and submit it to SignPath again (pe-file), use the signed one
+      # The updater signature is made after all of this, on the release Mac (scripts/release.sh
+      # --windows), so it covers the final, Authenticode-signed installer.
+      - name: Build the installer
+        working-directory: app
+        run: npm run bundle -- --bundles nsis
+
+      - name: Check the installer
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./app/src-tauri/tauri.conf.json").version')
+          installer="DeviceSteer_${version}_x64-setup.exe"
+          setup="target/release/bundle/nsis/$installer"
+          [ -f "$setup" ] || { ls -l target/release/bundle/nsis || true; echo "no $setup"; exit 1; }
+
+          cli=app/src-tauri/binaries/devicesteer-x86_64-pc-windows-msvc.exe
+          [ "$("$cli" --version | tr -d '\r')" = "devicesteer $version" ] || { echo "the CLI reports another version"; exit 1; }
+          # File metadata SignPath requires: ProductName and ProductVersion on every exe.
+          for exe in "$cli" target/release/devicesteer-app.exe; do
+            info=$(powershell -NoProfile -Command "\$v = (Get-Item '$exe').VersionInfo; \"\$(\$v.ProductName)|\$(\$v.ProductVersion)\"" | tr -d '\r')
+            echo "$exe: $info"
+            [ "${info%%|*}" = DeviceSteer ] || { echo "$exe: ProductName isn't DeviceSteer"; exit 1; }
+            [ "${info#*|}" = "$version" ] || { echo "$exe: ProductVersion isn't $version"; exit 1; }
+          done
+
+          # 7-Zip reads NSIS installers: check the CLI and the skill are inside, where
+          # agent_setup.rs looks for them (next to the app, and under skills\).
+          listing=$(7z l "$setup" | tr -d '\r')
+          for f in devicesteer-app.exe devicesteer.exe 'skills\devicesteer\SKILL.md'; do
+            grep -qiF -- "$f" <<<"$listing" || { echo "$listing"; echo "the installer lacks $f"; exit 1; }
+          done
+
+          sha256sum "$setup"
+          echo "installer=$installer" >> "$GITHUB_OUTPUT"
+          echo "artifact=windows-installer" >> "$GITHUB_OUTPUT"
+          echo "setup=$setup" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.check.outputs.artifact }}
+          path: ${{ steps.check.outputs.setup }}
+          if-no-files-found: error
+          retention-days: 7
