@@ -7,8 +7,9 @@
 // state: device lists, connecting and errors, agent sessions, cursor moves with labels, human
 // touches, settings and the VoiceOver warning.
 //
-// URL options: `devices=normal|empty|error|slow|nomux` (nomux: Windows without Apple Devices), `open=1` (show the first device's screen at
-// once, as DEVICESTEER_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
+// URL options: `devices=normal|empty|error|slow|nomux|nomux-empty` (nomux: Windows without Apple
+// Devices, listing the Wi-Fi-paired devices; nomux-empty: and none of those), `open=1` (show the
+// first device's screen at once, as DEVICESTEER_VIEWER_UDID does), `attach=ok|hang|error`, `watch=ok|hang|error`, `panel=0`
 // (no floating panel, for screenshots), `rotation=rot270` (start turned), `theme=light|dark`,
 // `session=agent|delegated_to_user|user` (a session already runs when the device is attached;
 // with `agent`, a press on the screen is blocked and `mock.takeTouches()` shows nothing was sent),
@@ -562,15 +563,19 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       else await sleep(250);
       if (state.devices === "error") throw "usbmuxd device list failed (connection error: Socket(Kind(ConnectionReset)))";
       // Windows without Apple Devices: only the Wi-Fi-paired devices, and what to install.
-      if (state.devices === "nomux")
+      // `nomux-empty`: and no Wi-Fi-paired device answers either.
+      if (state.devices === "nomux" || state.devices === "nomux-empty")
         return {
-          devices: DEVICES.filter((d) => d.transports.includes("wifi") && !d.transports.includes("usb") && !state.unplugged.has(d.udid)),
+          devices:
+            state.devices === "nomux-empty"
+              ? []
+              : DEVICES.filter((d) => d.transports.includes("wifi") && !d.transports.includes("usb") && !state.unplugged.has(d.udid)),
           usbmuxd_missing: NO_USBMUXD,
         };
       return { devices: state.devices === "empty" ? [] : DEVICES.filter((d) => !state.unplugged.has(d.udid)) };
     case "open_apple_devices_store":
       // Stands in for the Store: Apple Devices is installed and running from now on.
-      if (state.devices === "nomux") window.setTimeout(() => (state.devices = "normal"), 4000);
+      if (state.devices.startsWith("nomux")) window.setTimeout(() => (state.devices = "normal"), 4000);
       return null;
     case "attach":
       state.current = args.udid as string;
@@ -811,7 +816,7 @@ const mock = {
     state.settingsFail = on;
   },
   /** `nomux`: Windows without Apple Devices (the Store button "installs" it in 4 s). */
-  devices(kind: "normal" | "empty" | "error" | "slow" | "nomux") {
+  devices(kind: "normal" | "empty" | "error" | "slow" | "nomux" | "nomux-empty") {
     state.devices = kind;
   },
   attach(kind: "ok" | "hang" | "error") {
