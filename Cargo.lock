@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "devicesteer-app"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "arboard",
  "devicesteer-core",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "devicesteer-cli"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -1157,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "devicesteer-core"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "devicesteer-daemon"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
