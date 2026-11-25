@@ -291,9 +291,17 @@
         <p>Download <code>DeviceSteer_&lt;version&gt;_universal.dmg</code> from
           <a href="https://github.com/sunghyun-k/devicesteer/releases">GitHub Releases</a>, open it and drag
           DeviceSteer to Applications. The app keeps itself up to date.</p>
-        <p class="note" id="windows">Windows builds aren't published yet; on Windows, build from source (see the
-          <a href="https://github.com/sunghyun-k/devicesteer#readme">README</a>) and install Apple Devices or
-          iTunes for USB.</p>
+        <div id="windows">
+          <p><strong>On Windows</strong> (10 and 11, x64): for USB, install Apple Devices from the Microsoft Store
+            (or iTunes), open it once and accept its license. Then install DeviceSteer from PowerShell, for your
+            account only and without administrator rights:</p>
+          <pre class="code" aria-label="PowerShell install command">irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</pre>
+          <p class="note">Or run <code>DeviceSteer_&lt;version&gt;_x64-setup.exe</code> from
+            <a href="https://github.com/sunghyun-k/devicesteer/releases">GitHub Releases</a>. It isn't code-signed
+            yet: SmartScreen may stop a downloaded installer (<em>More info</em>, then <em>Run anyway</em>), and
+            Smart App Control on Windows 11 blocks it while it is on. See the
+            <a href="https://github.com/sunghyun-k/devicesteer#windows-10-and-11-x64">README</a>.</p>
+        </div>
       </li>
       <li id="device">
         <h3>Set up your device</h3>
