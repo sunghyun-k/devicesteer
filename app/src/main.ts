@@ -2002,6 +2002,14 @@ function fill(s: HTMLInputElement): void {
   s.style.setProperty("--p", String((Number(s.value) - min) / (max - min)));
 }
 
+/** Liquid Glass's default opacity: an iOS 27.3 iPhone at its default settings read 0.5. */
+const GLASS_DEFAULT = 0.5;
+/** An opacity as the slider reads it out, saying so at the default. */
+function glassValue(o: number): string {
+  const value = num(o, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return Math.abs(o - GLASS_DEFAULT) < 0.001 ? t("settings.defaultValue", { value }) : value;
+}
+
 /** Shows the settings, merged into what is known (an event may carry one key). */
 function showSettings(s: Partial<Settings>): void {
   settings = { ...settings, ...s };
@@ -2010,9 +2018,8 @@ function showSettings(s: Partial<Settings>): void {
   appearance.value = cur.appearance ?? "";
   if (cur.liquid_glass != null) liquidGlass.value = String(cur.liquid_glass);
   liquidGlass.title =
-    cur.liquid_glass != null
-      ? t("settings.clearToTintedValue", { value: num(cur.liquid_glass, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })
-      : t("settings.clearToTinted");
+    cur.liquid_glass != null ? t("settings.clearToTintedValue", { value: glassValue(cur.liquid_glass) }) : t("settings.clearToTinted");
+  if (cur.liquid_glass != null) liquidGlass.setAttribute("aria-valuetext", glassValue(cur.liquid_glass));
   const size = cur.text_size ? TEXT_SIZES.indexOf(cur.text_size) : -1;
   if (size >= 0) textSize.value = String(size);
   textSize.title = size >= 0 ? textSizeName(size) : "";
@@ -2081,7 +2088,10 @@ async function setSetting(name: string, value: (string | number)[]): Promise<voi
 }
 
 appearance.addEventListener("change", () => void setSetting("appearance", [appearance.value]));
-liquidGlass.addEventListener("input", () => fill(liquidGlass));
+liquidGlass.addEventListener("input", () => {
+  fill(liquidGlass);
+  liquidGlass.setAttribute("aria-valuetext", glassValue(Number(liquidGlass.value)));
+});
 liquidGlass.addEventListener("change", () => void setSetting("liquid-glass", [liquidGlass.value]));
 textSize.addEventListener("input", () => {
   fill(textSize);

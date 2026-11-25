@@ -174,6 +174,7 @@
   "settings.liquidGlass": "Liquid Glass",
   "settings.clearToTinted": "清透至著色",
   "settings.clearToTintedValue": "清透至著色：{value}",
+  "settings.defaultValue": "{value}（預設）",
   "settings.textSize": "文字大小",
   "settings.textSizeXS": "特小",
   "settings.textSizeS": "小",

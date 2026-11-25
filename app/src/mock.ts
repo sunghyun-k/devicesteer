@@ -106,7 +106,7 @@ const state = {
   settings: {
     appearance: "dark" as "light" | "dark" | null,
     text_size: "l" as string | null,
-    liquid_glass: 0.35 as number | null,
+    liquid_glass: 0.5 as number | null,
     reduce_motion: false as boolean | null,
     increase_contrast: false as boolean | null,
     show_borders: false as boolean | null,
