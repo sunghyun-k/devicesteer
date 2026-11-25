@@ -2016,6 +2016,8 @@ function showSettings(s: Partial<Settings>): void {
   const size = cur.text_size ? TEXT_SIZES.indexOf(cur.text_size) : -1;
   if (size >= 0) textSize.value = String(size);
   textSize.title = size >= 0 ? textSizeName(size) : "";
+  // Read out the size's name, such as "Large (default)", rather than its step number.
+  if (size >= 0) textSize.setAttribute("aria-valuetext", textSizeName(size));
   fill(liquidGlass);
   fill(textSize);
   for (const [key] of TOGGLES) {
@@ -2084,6 +2086,7 @@ liquidGlass.addEventListener("change", () => void setSetting("liquid-glass", [li
 textSize.addEventListener("input", () => {
   fill(textSize);
   textSize.title = textSizeName(Number(textSize.value));
+  textSize.setAttribute("aria-valuetext", textSize.title);
 });
 textSize.addEventListener("change", () => void setSetting("text-size", [TEXT_SIZES[Number(textSize.value)]]));
 for (const [key, name] of TOGGLES) {

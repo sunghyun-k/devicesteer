@@ -653,19 +653,25 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
    fractional step the ticks drift off the knob's stops towards the right end. */
 .slider {
   --p: 0.5; --w: 137px; --knob: 16px;
-  -webkit-appearance: none; appearance: none; flex: none; width: var(--w); height: 28px; margin: 0;
+  -webkit-appearance: none; appearance: none; flex: none; width: var(--w); height: 30px; margin: 0;
   background: transparent; --knob-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 }
 .slider::-webkit-slider-runnable-track {
   height: 4px; border-radius: 2px;
   background: linear-gradient(90deg, var(--accent) 0 calc(var(--knob) / 2 + (100% - var(--knob)) * var(--p)), var(--track) 0);
 }
-/* The ticks sit on the input's own box, under the track, at each step's knob centre. */
+/* The ticks sit on the input's own box, a pixel under the knob, at each step's knob centre. The
+   device's default step (`--default`) gets a longer one, drawn on the same whole-pixel grid. */
 .slider.ticks {
-  --step: calc((var(--w) - var(--knob)) / 11);
-  background: linear-gradient(90deg, transparent calc(50% - 0.5px), color-mix(in srgb, var(--fg-3) 70%, transparent) 0 calc(50% + 0.5px), transparent 0)
-    calc(var(--knob) / 2 - var(--step) / 2) 100% / var(--step) 5px repeat-x;
+  --step: calc((var(--w) - var(--knob)) / 11); --tick: color-mix(in srgb, var(--fg-3) 70%, transparent);
+  background:
+    linear-gradient(var(--tick), var(--tick)) calc(var(--knob) / 2 - 0.5px + var(--step) * var(--default)) 24px / 1px 6px no-repeat,
+    linear-gradient(90deg, transparent calc(50% - 0.5px), var(--tick) 0 calc(50% + 0.5px), transparent 0)
+      calc(var(--knob) / 2 - var(--step) / 2) 24px / var(--step) 4px repeat-x;
 }
+/* Large (`l`, step 3), iOS's default text size. Liquid Glass gets no default tick: its default
+   opacity hasn't been read off a device. */
+#text-size { --default: 3; }
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none; width: var(--knob); height: var(--knob); margin-top: calc((4px - var(--knob)) / 2);
   border: 0; border-radius: 50%; background: #fff; box-shadow: var(--knob-shadow);
