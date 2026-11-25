@@ -102,8 +102,59 @@ pub(crate) async fn mux_devices() -> Result<Vec<UsbmuxdDevice>> {
     step("usbmuxd device list", mux.get_devices()).await
 }
 
-/// Every device usbmuxd lists, with what lockdown says about it.
+/// Every device usbmuxd lists, with what lockdown says about it, and every device paired over
+/// Wi-Fi that answers on the network (PITFALLS #50).
 pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
+    let stored = crate::remote::pairings();
+    // The network search runs while usbmuxd and lockdown are asked, and only when there is a
+    // pairing it could find.
+    let adverts = async {
+        if stored.is_empty() {
+            Vec::new()
+        } else {
+            crate::remote::browse(crate::remote::BROWSE_WAIT).await.unwrap_or_default()
+        }
+    };
+    let (mut list, adverts) = tokio::join!(list_mux_devices(), adverts);
+    let (matched, _) = crate::remote::match_adverts(adverts, &stored);
+    // No usbmuxd at all (Windows without Apple's device support): Wi-Fi pairings still count.
+    if list.is_err() && !matched.is_empty() {
+        list = Ok(Vec::new());
+    }
+    let mut list = list?;
+    for (_, p) in matched {
+        match list.iter_mut().find(|i| i.udid == p.udid) {
+            Some(info) => {
+                if !info.transports.contains(&Transport::Wifi) {
+                    info.transports.push(Transport::Wifi);
+                }
+            }
+            None => list.push(remote_info(p)),
+        }
+    }
+    Ok(list)
+}
+
+/// A device reached only through our Wi-Fi pairing, described from what it said when we last
+/// connected (its tunnel isn't opened just to list it).
+fn remote_info(p: crate::remote::Pairing) -> DeviceInfo {
+    let a = p.about;
+    DeviceInfo {
+        udid: p.udid,
+        transports: vec![Transport::Wifi],
+        name: a.name,
+        model_name: a.product_type.as_deref().and_then(crate::models::marketing_name).map(str::to_owned),
+        product_type: a.product_type,
+        device_class: a.device_class,
+        unsupported: a.os_version.as_deref().and_then(|v| unsupported_reason(v, None)),
+        os_version: a.os_version,
+        build_version: a.build_version,
+        setup: None,
+        error: None,
+    }
+}
+
+async fn list_mux_devices() -> Result<Vec<DeviceInfo>> {
     let raw = mux_devices().await?;
     let mut out: Vec<(DeviceInfo, UsbmuxdDevice)> = Vec::new();
     for d in raw {

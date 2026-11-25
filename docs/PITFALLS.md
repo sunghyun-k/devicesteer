@@ -15,7 +15,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Topic | Entries |
 |---|---|
 | Screen streams (displayservice) | #1, #2, #7, #11, #13, #27, #28 |
-| Connection and tunnel | #3, #4, #16 |
+| Connection and tunnel | #3, #4, #16, #50, #55 |
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39, #58 |
 | Display info | #9, #27 |
@@ -23,9 +23,9 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Daemon | #14, #23 |
 | Device settings | #24 |
 | Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57 |
-| Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
+| Device setup (pairing, Developer Mode, DDI) | #30, #31, #32, #55, #56, #59 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
-| Windows host | #51, #52, #53, #54, #57 |
+| Windows host | #51, #52, #53, #54, #57, #59 |
 
 ## Entries
 
@@ -1067,3 +1067,86 @@ Swift implementation turned every touch by `nativeOrientation` (`rot270`: `(u, v
 `nativeOrientation` (`touch_rotation`) onto the touchscreen. Phones and both panels of a foldable
 say `rot0` there (#48), so nothing changes for them. The owner then dragged in the viewer with the
 iPad held in landscape and turned to portrait: both went the right way.
+
+### 55. Remote pairing over the network: what the devices allowed
+
+macOS 27, idevice `remote_pairing` at the pinned commit (wire protocol 19 from us; the devices
+answered with 26, minimum 8). A foldable iPhone on iOS 27.3 and an iPad on iPadOS 27.2.1, both
+already paired with Xcode, on the same Wi-Fi as the Mac.
+
+- **The advert's `identifier` changes all the time.** `_remotepairing._tcp` (port 49152) carries
+  TXT `identifier`, `authTag`, `ver`, `minVer`, `flags`; the instance name is the identifier. It
+  changed within minutes, and after every connection to the service. Only `authTag` (SipHash of the
+  identifier under the `altIRK` the device gives at pairing) tells whose advert it is, so stored
+  pairings are matched by tag and kept by UDID.
+- **A device answers on every interface it shares with the host**, under one identifier: merge them.
+- **`mdns-sd` doesn't hear a sleeping device**: macOS's Bonjour (`dns-sd -B`) still listed it from
+  its cache or a sleep proxy while our own queries got no answer. It shows up once it wakes.
+- **The `_remotepairing._tcp` handshake says what the device accepts.** `deviceOptions` on the iPad:
+  `allowsPairSetup` false, `allowsPinlessPairing` false, `allowsIncomingTunnelConnections` true. A
+  `setupManualPairing` request then got the connection closed with no prompt and no code: a device
+  doesn't take a new pairing that way. Only pair-verify of an existing pairing and tunnels.
+- **Promptless pairing from the lockdown trust doesn't happen over Wi-Fi.** The iPhone had a usbmuxd
+  pair record (USB trust) and was reached over Wi-Fi lockdown (port 62078, address from its
+  `_apple-mobdev2._tcp` advert, TLS with that record). `com.apple.dt.remotepairingdeviced.lockdown`
+  started, but **closed the connection at the first RPPairing message unless the lockdown heartbeat
+  was being answered** (as CoreDeviceProxy does over Wi-Fi). With the heartbeat, the handshake
+  answered `allowsPairSetup` true, `allowsPinlessPairing` true,
+  `allowsPromptlessAutomationPairingUpgrade` false, `allowsIncomingTunnelConnections` false. The
+  `setupManualPairing` request (method 0, the pinless one) then got **no answer at all** for 10
+  minutes: no `awaitingUserConsent` event, no PIN, no rejection, and nothing on the unlocked
+  device's screen.
+- **Once paired, the tunnel over Wi-Fi works like USB's.** With a pairing made as in #56: TCP to
+  the advert, `attemptPairVerify`, pair-verify with the stored file (about 0.12 s), `createListener`
+  (a new port each time), TCP to it, TLS-PSK with the pair-verify key, CDTunnel (MTU 16000), RSD
+  with 85 services and `UniqueDeviceID` equal to the UDID the device gave at pairing, about 0.3 s
+  in all. Screenshots and the daemon's commands work through it. The tunnel still answered after
+  60 s idle with nothing sent, and 20 s after we closed the pairing connection it was asked on;
+  no heartbeat was needed. A daemon holding it served a screenshot after 6 minutes idle with
+  nothing in its log. Setup reads work through it too: lockdown
+  (`com.apple.mobile.lockdown.remote.trusted`) and the image mounter are RSD services there.
+
+### 56. Pairing over Wi-Fi starts on the device
+
+iOS 27.3, the foldable iPhone of #55. Neither of the ways a host starts a pairing worked (#55), but
+iOS 27 pairs the other way round, as Xcode 27's "Pair Nearby Device" does: the host advertises
+`_remotepairing-pairable-host._tcp` (TXT `name`, `model`, `identifier`, `authTag`, `flags`, `ver`,
+`minVer`) and the device lists it, connects and drives the pairing; the host plays the accessory
+and makes up the code (idevice `PairableHost`).
+
+What the person sees, in order:
+
+1. Settings > Privacy & Security > Developer Mode lists, under **Other Devices**, **Pair with
+   "DeviceSteer"** (the TXT `name`). Tapping it shows an alert, "Pair with 'DeviceSteer'?", saying
+   the computer will be able to reach the device's settings and data over Ethernet or Wi-Fi, with
+   Cancel and Pair.
+2. After Pair, the device asks for **its own passcode** (4 or 6 digits). Only then does it connect
+   to the host. Someone told "a code" can take this for ours.
+3. Then "Enter the 6-digit code shown on DeviceSteer to pair": the host's code.
+
+The device connected to a listener bound to `::` (IPv6, which also takes IPv4 on macOS); which
+family it used wasn't recorded. Its handshake
+offered `allowsPairSetup` true and `allowsPinlessPairing` false. The pairing it leaves behind (our
+Ed25519 key and identifier on the device, its `altIRK` and UDID with us) is the same kind the host
+side uses for pair-verify, so the tunnel of #55 works with it from the first try. The device that
+paired had Developer Mode on; whether Other Devices shows while it is off wasn't tried.
+
+
+### 59. Advertising the pairable host: a silent drop, and Windows' IPv6-only `::`
+
+Two reasons the device never listed "DeviceSteer" (#56) under Other Devices:
+
+- **mdns-sd dropped the registration without an error.** Service names longer than 15 characters
+  (RFC 6335) are refused unless `set_service_name_len_max` raises the limit (30 at most), and
+  `remotepairing-pairable-host` has 27. `register` still returned `Ok`; nothing was sent, and
+  `dns-sd -B _remotepairing-pairable-host._tcp` on another computer saw nothing. The limit is for
+  the type, not the 36-character instance name.
+- **On Windows a listener on `::` takes IPv6 only** (`IPV6_V6ONLY` is on by default there, off on
+  macOS), so a device connecting over IPv4 would have been refused. One listener per family on
+  the same port.
+
+The Windows desktop was on Ethernet with a private network profile; allowing the firewall prompt
+added inbound rules for the program on the private profile only.
+
+After both fixes an iPad on iPadOS 27.2.1 listed "DeviceSteer" from the Windows desktop and paired
+with it; its tunnel, setup reads and screenshots then worked from Windows as from macOS (#55).

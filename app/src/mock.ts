@@ -15,7 +15,9 @@
 // the setup steps end: done, the user taps Don't Trust, an error, nobody ever acts on the device,
 // or the wait runs out; pair `timeout` with `setupwait=15` to shorten it), `select=<udid suffix>`
 // (pick that device first, such as `select=6` for the one that needs Trust, `select=7` for
-// Developer Mode, `select=9` for one too old for DeviceSteer), `update=1` (a newer version is out).
+// Developer Mode, `select=9` for one too old for DeviceSteer), `update=1` (a newer version is out),
+// `pair=ok|hold|nodevice|nocode|fail` (how Pair over Wi-Fi… ends: a new Wi-Fi device, the code
+// stays up forever (for screenshots), no device asks, nobody types the code, or an error).
 //
 // The Settings window: http://localhost:1420/settings.html?mock (also `theme`, `agents`,
 // `location`, `update`, `tab=agents|updates`). In the main window, the More menu's Settings… opens
@@ -116,6 +118,8 @@ const state = {
   setupEnd: (params.get("setup") ?? "ok") as "ok" | "deny" | "fail" | "hold" | "timeout",
   /** Bumped by `setup_cancel`: a running step sees it and stops. */
   setupGen: 0,
+  /** How Wi-Fi pairing ends (`pair=` in the URL). */
+  pairEnd: (params.get("pair") ?? "ok") as "ok" | "hold" | "nodevice" | "nocode" | "fail",
 };
 
 // ---------- placeholder screen ----------
@@ -403,6 +407,41 @@ async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number },
   return setupStatus(d);
 }
 
+/** Plays Wi-Fi pairing the way `setup::pair_wifi` reports it, then lists a new Wi-Fi device. */
+async function pairWifi(channel: { id: number }, args: Record<string, unknown>): Promise<unknown> {
+  const gen = ++state.setupGen;
+  let index = 0;
+  const say = (message: string, waiting: boolean, code?: string) => {
+    if (gen !== state.setupGen) throw "cancelled";
+    window.__TAURI_INTERNALS__.runCallback(channel.id, { index: index++, message: { step: "trust", waiting_for_user: waiting, message, ...(code ? { code } : {}) } });
+  };
+  const wait = async (ms: number) => {
+    await sleep(ms);
+    if (gen !== state.setupGen) throw "cancelled";
+  };
+  const waitSecs = Number(args.waitSecs ?? 600);
+  const end = state.pairEnd;
+  say('On the device (iOS 27 or later, on the same network as this computer): Settings > Privacy & Security > Developer Mode, then under Other Devices tap Pair with "DeviceSteer" and tap Pair. It asks for its own passcode first; after that it asks for a 6-digit code, which this computer shows', true);
+  await wait(2000);
+  if (end === "nodevice")
+    throw `no device asked to pair within ${waitSecs}s. On the device, pick "DeviceSteer" where it lists computers to pair with, then run \`devicesteer setup wifi\` again`;
+  const code = String(Math.floor(Math.random() * 1e6)).padStart(6, "0");
+  say(`Enter ${code} on the device when it asks for the code shown on DeviceSteer (after its own passcode)`, true, code);
+  if (end === "hold") for (;;) await wait(200);
+  await wait(5000);
+  if (end === "nocode") throw `nobody entered the code on the device within ${waitSecs}s`;
+  if (end === "fail") throw "pairing failed: Rejected. Run `devicesteer setup wifi` again";
+  say("Paired over Wi-Fi", false);
+  const udid = "00000000-000000000000000A";
+  let d = DEVICES.find((x) => x.udid === udid);
+  if (!d) {
+    d = { udid, transports: ["wifi"], name: "Desk iPhone", product_type: "iPhone18,1", model_name: "iPhone 17 Pro", device_class: "iPhone", os_version: "27.3" };
+    DEVICES.push(d);
+  }
+  state.unplugged.delete(udid);
+  return setupStatus(d);
+}
+
 // ---------- commands ----------
 
 // ---------- agent setup ----------
@@ -549,6 +588,8 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       if (!d) throw "the device is not connected";
       return setupRun(d, args.step as SetupStep, args.channel as { id: number }, args);
     }
+    case "setup_pair_wifi":
+      return pairWifi(args.channel as { id: number }, args);
     case "setup_cancel":
       state.setupGen++;
       return null;

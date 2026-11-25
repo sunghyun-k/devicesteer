@@ -27,8 +27,9 @@ The app updates itself from GitHub Releases. To build from source instead, see b
 ## Requirements
 
 - An iPhone or iPad on iOS 17 or later; `devicesteer devices` marks an older one `unsupported`.
-  On Wi-Fi a device shows up only once usbmuxd lists it (paired over USB, with "Show this iPhone
-  when on Wi-Fi" on; see PITFALLS #50). `devicesteer setup` makes a new one ready without Xcode:
+  On Wi-Fi a device shows up when usbmuxd lists it (paired over USB, with "Show this iPhone when
+  on Wi-Fi" on), or, on iOS 27 and later, once it was paired over Wi-Fi with `devicesteer setup
+  wifi` (no cable; the pairing is started on the device). `devicesteer setup` makes a new one ready without Xcode:
   it pairs ("Trust This Computer"), shows the Developer Mode switch, and mounts the Developer Disk
   Image (from Xcode's copy when there is one, else Apple's files downloaded from a pinned commit of
   [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) and checked by SHA-256).
@@ -44,6 +45,7 @@ With the app installed, run `devicesteer` instead of `./target/debug/devicesteer
 cargo build
 ./target/debug/devicesteer devices
 ./target/debug/devicesteer setup      --udid <UDID>            # trust, Developer Mode, disk image
+./target/debug/devicesteer setup wifi                          # or pair over Wi-Fi (iOS 27+)
 ./target/debug/devicesteer session start --udid <UDID> "turn on dark mode"   # prints a session id
 export DEVICESTEER_SESSION=<id>                                # or --session <id> on each command
 ./target/debug/devicesteer services   --udid <UDID>

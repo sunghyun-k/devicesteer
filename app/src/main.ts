@@ -43,6 +43,8 @@ interface SetupProgress {
   waiting_for_user: boolean;
   message: string;
   fraction?: number;
+  /** Wi-Fi pairing: the code to type on the device, once it asked for one. */
+  code?: string;
 }
 
 /** How the interface is turned from the panel's native orientation (`devicesteer_core::Rotation`). */
@@ -290,7 +292,7 @@ function renderList(): void {
   if (listError) m = { title: "Couldn't list devices", detail: listError, cls: "error" };
   else if (!listed) m = { title: "Looking for devices…", detail: "", cls: "loading" };
   // A row of the selected device that left the list is enough to drop the empty state.
-  else if (!devices.length && !extra) m = { title: "No devices", detail: "Connect an iPhone or iPad with a cable, unlock it and trust this computer." };
+  else if (!devices.length && !extra) m = { title: "No devices", detail: "Connect an iPhone or iPad with a cable, unlock it and trust this computer. Or pair one over Wi-Fi, without a cable." };
   else if (!ok.length && !bad.length) m = { title: "No matches", detail: `Nothing matches “${search.value.trim()}”.` };
   listMessage.hidden = !m;
   if (m) {
@@ -418,10 +420,10 @@ const ctx = canvas.getContext("2d")!;
 const introArt = $<HTMLDivElement>("#intro-art");
 const viewBtn = $<HTMLButtonElement>("#view-screen");
 
-/** What the stage shows: nothing selected; the selected device with View Screen; its setup; one
- * that can't be used; one that left the list (`gone`); connecting; an error; or the live screen
- * once a frame drew. */
-type StageState = "none" | "intro" | "setup" | "unavailable" | "disconnected" | "connecting" | "error" | "live";
+/** What the stage shows: nothing selected; the selected device with View Screen; its setup;
+ * pairing a new device over Wi-Fi; one that can't be used; one that left the list (`gone`);
+ * connecting; an error; or the live screen once a frame drew. */
+type StageState = "none" | "intro" | "setup" | "pair" | "unavailable" | "disconnected" | "connecting" | "error" | "live";
 
 function stageState(state: StageState, text = ""): void {
   stage.dataset.state = state;
@@ -437,8 +439,10 @@ function showDeviceText(): void {
   const d = selected;
   const name = d ? deviceName(d) : "";
   const meta = d ? [d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ") : "";
-  $<HTMLSpanElement>("#device-name").textContent = d ? name : "No device";
-  $<HTMLSpanElement>("#device-meta").textContent = d ? (gone ? "Disconnected" : meta) : listed && !devices.length ? "Connect a device to begin" : "Choose a device";
+  $<HTMLSpanElement>("#device-name").textContent = d ? name : pairing ? "New Device" : "No device";
+  $<HTMLSpanElement>("#device-meta").textContent = d
+    ? gone ? "Disconnected" : meta
+    : pairing ? "Pairing over Wi-Fi" : listed && !devices.length ? "Connect a device to begin" : "Choose a device";
   $<HTMLHeadingElement>("#intro-name").textContent = name;
   $<HTMLParagraphElement>("#intro-meta").textContent = d ? ([d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ")) : "";
   introArt.classList.toggle("tablet", isTablet(d));
@@ -2127,10 +2131,16 @@ let setupGen = 0;
 const SETUP_POLL_MS = 3000;
 
 /** What each step asks of the person, and the button that starts it. */
-function setupText(step: SetupStep, d: DeviceInfo): { text: string; button?: string; cancel?: boolean } {
+function setupText(step: SetupStep, d: DeviceInfo): { text: string; button?: string; cancel?: boolean; action?: () => void } {
   switch (step) {
     case "trust":
-      if (!d.transports.includes("usb")) return { text: "Connect the device with a USB cable: it can only be paired over USB." };
+      // Trust goes over USB only; our own Wi-Fi pairing needs no cable (iOS 27 and later).
+      if (!d.transports.includes("usb"))
+        return {
+          text: "Connect the device with a USB cable, or pair it over Wi-Fi without one (iOS 27 or later).",
+          button: "Pair over Wi-Fi…",
+          action: openPairing,
+        };
       return {
         text: "Unlock the device and press Pair. When it asks “Trust This Computer?”, tap Trust and enter the passcode.",
         button: "Pair",
@@ -2262,10 +2272,15 @@ async function runSetup(step: SetupStep): Promise<void> {
   }
 }
 
+/** How long a wait for the person lasts, in words: "10 minutes". */
+function waitText(): string {
+  const m = SETUP_WAIT_S / 60;
+  return Number.isInteger(m) ? `${m} minute${m === 1 ? "" : "s"}` : `${SETUP_WAIT_S} seconds`;
+}
+
 /** What the card says when the wait ran out. */
 function setupTimeoutText(step: SetupStep): string {
-  const m = SETUP_WAIT_S / 60;
-  const mins = Number.isInteger(m) ? `${m} minute${m === 1 ? "" : "s"}` : `${SETUP_WAIT_S} seconds`;
+  const mins = waitText();
   return step === "trust"
     ? `Nobody tapped Trust within ${mins}. Unlock the device, press Try Again and tap Trust when it asks.`
     : `Developer Mode wasn’t turned on within ${mins}. Press Try Again to keep waiting. If you turn it on without the app, this card notices by itself.`;
@@ -2273,7 +2288,10 @@ function setupTimeoutText(step: SetupStep): string {
 
 /** The time left to wait, as "9:41 left". */
 function setupTimeLeft(): { text: string; low: boolean } | undefined {
-  const since = setupRun?.waitingSince;
+  return timeLeft(setupRun?.waitingSince);
+}
+
+function timeLeft(since: number | undefined): { text: string; low: boolean } | undefined {
   if (since === undefined) return undefined;
   const left = Math.max(0, Math.ceil(SETUP_WAIT_S - (performance.now() - since) / 1000));
   return { text: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`, low: left < 60 };
@@ -2282,8 +2300,9 @@ function setupTimeLeft(): { text: string; low: boolean } | undefined {
 function startSetupTick(): void {
   stopSetupTick();
   // Only the time changes each second: a full redraw would restart the pulse and the spinner.
+  // The pairing card shares it: only one of the two cards shows at a time.
   setupTick = window.setInterval(() => {
-    const t = setupTimeLeft();
+    const t = setupRun ? setupTimeLeft() : timeLeft(pairing?.waitingSince);
     const out = introCard.querySelector<HTMLElement>(".wait-time");
     if (!t || !out) return;
     out.textContent = t.text;
@@ -2372,11 +2391,11 @@ function renderSetup(): void {
         b.addEventListener("click", cancelSetup);
         actions.append(b);
       } else if (!running && t.button) {
-        const b = el("button", "btn small", setupError?.step === step ? "Try Again" : t.button);
+        const b = el("button", "btn small", setupError?.step === step && !t.action ? "Try Again" : t.button);
         b.type = "button";
         // Nothing to reach while the device is away; Cancel above stays.
-        b.disabled = !!gone;
-        b.addEventListener("click", () => void runSetup(step));
+        b.disabled = !!gone && !t.action;
+        b.addEventListener("click", () => (t.action ? t.action() : void runSetup(step)));
         actions.append(b);
       }
       if (actions.childElementCount) body.append(actions);
@@ -2403,6 +2422,223 @@ function setupReport(): unknown {
     button: introCard.querySelector(".actions .btn")?.textContent ?? null,
   };
 }
+
+// ---------- pairing a device over Wi-Fi ----------
+//
+// No cable and no device to select yet: the card takes the stage on its own. This computer
+// offers itself on the local network while the card waits (`setup_pair_wifi`); the person starts
+// pairing on the device, enters the device's own passcode, then the code shown here.
+
+/** The pairing on the card: waiting for the device to ask, showing the code it asked for, paired
+ * (opening the device), or ended with an error. `waitingSince` (`performance.now()`) starts the
+ * countdown; the core waits afresh once it has shown the code, and so does the card. */
+let pairing:
+  | { phase: "waiting" | "code" | "done" | "failed"; code?: string; waitingSince?: number; error?: string }
+  | undefined;
+/** Bumped when the card is put away or pairing starts again, so a late reply doesn't redraw it. */
+let pairGen = 0;
+/** The device selected before the card opened: Cancel goes back to it. */
+let pairBack: DeviceInfo | undefined;
+
+/** The steps on the device, in its own words (iOS 27). */
+const PAIR_STEPS: { title: string; text: string }[] = [
+  {
+    title: "Start pairing on the device",
+    text: "Open Settings › Privacy & Security › Developer Mode. Under Other Devices, tap Pair with DeviceSteer, then tap Pair.",
+  },
+  { title: "Enter the device’s passcode", text: "The device asks for its own passcode first." },
+  { title: "Enter the code shown here", text: "Then it asks for the 6-digit code shown on DeviceSteer." },
+];
+
+const pairRunning = () => pairing?.phase === "waiting" || pairing?.phase === "code";
+
+/** Opens the pairing card and starts pairing. The selected device is let go of first: the stage
+ * has room for one thing. */
+function openPairing(): void {
+  if (pairing) {
+    introCard.querySelector<HTMLButtonElement>(".actions .btn")?.focus();
+    return;
+  }
+  const back = selected;
+  // Not awaited: all but its last call (letting go of the daemon) is done when it returns, and
+  // `pairing` must be set at once so a device list that comes back meanwhile leaves the card.
+  void detach();
+  gone = undefined;
+  selected = undefined;
+  pairBack = back;
+  void startPairing();
+  stageState("pair");
+  showDeviceText();
+  renderList();
+  if (narrow(720)) showPanel("sidebar", false, false);
+  settingsPane.classList.add("disabled");
+  settingsMessage("Settings show once a device is paired.");
+}
+
+async function startPairing(): Promise<void> {
+  const gen = ++pairGen;
+  pairing = { phase: "waiting" };
+  const channel = new Channel<SetupProgress>();
+  channel.onmessage = (p) => {
+    if (gen !== pairGen || !pairRunning()) return;
+    if (p.code) pairing = { phase: "code", code: p.code, waitingSince: performance.now() };
+    else if (p.waiting_for_user && pairing!.waitingSince === undefined) pairing!.waitingSince = performance.now();
+    startSetupTick();
+    renderPairing();
+  };
+  renderPairing();
+  try {
+    const st = await invoke<SetupStatus>("setup_pair_wifi", { waitSecs: SETUP_WAIT_S, channel });
+    if (gen !== pairGen) return;
+    stopSetupTick();
+    pairing = { phase: "done" };
+    renderPairing();
+    pairBack = undefined;
+    await loadDevices();
+    if (gen !== pairGen) return;
+    // Selecting it shows its setup card, or the intro once it is ready, as for any device.
+    const d = devices.find((x) => x.udid === st.udid) ?? { udid: st.udid, transports: st.transports, setup: st.step ?? undefined };
+    void select(d);
+  } catch (e) {
+    if (gen !== pairGen || !pairing) return;
+    stopSetupTick();
+    pairing = { phase: "failed", error: String(e) === "cancelled" ? "Pairing stopped." : pairErrorText(e) };
+    renderPairing();
+  }
+}
+
+/** Puts the card away and stops pairing if it still waits. */
+function hidePairing(): void {
+  if (!pairing) return;
+  if (pairRunning()) void invoke("setup_cancel").catch(() => {});
+  pairGen++;
+  pairing = undefined;
+  stopSetupTick();
+  introCard.replaceChildren();
+}
+
+/** Cancel or Close: back to the device selected before, if it is still there. */
+function closePairing(): void {
+  const back = pairBack && devices.find((d) => d.udid === pairBack!.udid);
+  pairBack = undefined;
+  hidePairing();
+  if (back) {
+    void select(back);
+    return;
+  }
+  stageState("none");
+  showDeviceText();
+  report();
+}
+
+/** A pairing error as the card shows it. The core's waits fail "... within 600s". */
+function pairErrorText(e: unknown): string {
+  const s = String(e);
+  if (/^no device asked to pair within \d+s/.test(s))
+    return `No device started pairing within ${waitText()}. Check that it is on the same network as this computer, press Try Again, then tap Pair with DeviceSteer on the device.`;
+  if (/^nobody entered the code on the device within \d+s/.test(s))
+    return `The code wasn’t entered on the device within ${waitText()}. Press Try Again for a new code.`;
+  return setupErrorText(s.replace(/\. Run `devicesteer setup wifi` again/, ", then press Try Again"));
+}
+
+/** "123456" as "123 456": two groups read and type more easily. */
+const spacedCode = (c: string) => c.replace(/^(\d{3})(\d{3})$/, "$1 $2");
+
+/** The card: what to do on the device, the wait or the code, and its buttons. */
+function renderPairing(): void {
+  const p = pairing;
+  if (!p) return;
+  const card = el("div", "setup pair");
+  const head = el("div", "setup-head");
+  head.append(
+    el("h3", "", "Pair a device over Wi-Fi"),
+    el("p", "", "For an iPhone or iPad with iOS 27 or later, on the same network as this computer."),
+  );
+  const list = el("ol", "pair-steps");
+  PAIR_STEPS.forEach((s, i) => {
+    // The device connects only after its own passcode was entered (PITFALLS #56): once the code
+    // shows, the first two steps are done. While waiting, both may still be ahead.
+    const done = (p.phase === "code" && i < 2) || p.phase === "done";
+    const now = p.phase === "waiting" ? i < 2 : p.phase === "code" ? i === 2 : false;
+    const li = el("li", `pair-step${done ? " done" : ""}${now ? " now" : ""}`);
+    const mark = el("span", "mark");
+    if (done) mark.append(icon("i-check"));
+    else mark.textContent = String(i + 1);
+    const body = el("div", "body");
+    body.append(el("div", "title", s.title), el("p", "desc", s.text));
+    li.append(mark, body);
+    list.append(li);
+  });
+  card.append(head, list);
+
+  if (p.phase === "waiting" || p.phase === "code") {
+    const box = el("div", `wait${p.phase === "code" ? " with-code" : ""}`);
+    const top = el("div", "wait-head");
+    const left = timeLeft(p.waitingSince);
+    top.append(el("span", "pulse"), el("span", "wait-label", "Waiting for you on the device"), el("span", `wait-time${left?.low ? " low" : ""}`, left?.text ?? ""));
+    box.append(top);
+    if (p.phase === "code" && p.code) {
+      const code = el("div", "pair-code");
+      code.append(el("span", "pair-code-label", "Pairing code"));
+      const digits = el("output", "pair-code-digits", spacedCode(p.code));
+      digits.setAttribute("aria-label", `Pairing code ${p.code.split("").join(" ")}`);
+      code.append(digits);
+      const msg = el("p", "wait-msg", "Type this on the device, where it asks for the code shown on DeviceSteer. It is not the device’s passcode.");
+      msg.setAttribute("role", "status");
+      box.append(code, msg);
+    } else {
+      const msg = el("p", "wait-msg", "This computer shows up on the device as DeviceSteer while this card is open.");
+      msg.setAttribute("role", "status");
+      box.append(msg);
+    }
+    card.append(box);
+  } else if (p.phase === "done") {
+    const line = el("div", "pair-done");
+    line.append(el("span", "spinner"), el("span", "", "Paired. Opening the device…"));
+    line.setAttribute("role", "status");
+    card.append(line);
+  } else if (p.error) {
+    const err = el("p", "error", p.error);
+    err.setAttribute("role", "alert");
+    card.append(err);
+  }
+
+  const actions = el("div", "actions");
+  if (p.phase === "failed") {
+    const again = el("button", "btn small", "Try Again");
+    again.type = "button";
+    again.addEventListener("click", () => void startPairing());
+    const close = el("button", "btn small ghost", "Close");
+    close.type = "button";
+    close.addEventListener("click", closePairing);
+    actions.append(again, close);
+  } else if (p.phase !== "done") {
+    const cancel = el("button", "btn small", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", closePairing);
+    actions.append(cancel);
+  }
+  if (actions.childElementCount) card.append(actions);
+  const hadFocus = introCard.contains(document.activeElement);
+  introCard.replaceChildren(card);
+  if (hadFocus) introCard.querySelector<HTMLButtonElement>(".actions .btn")?.focus();
+  // Nothing is attached while the card shows, so nothing else reports it.
+  report();
+}
+
+/** The card's state, for the report. */
+function pairReport(): unknown {
+  if (!pairing) return null;
+  return {
+    phase: pairing.phase,
+    code: pairing.code ?? null,
+    left: timeLeft(pairing.waitingSince)?.text ?? null,
+    error: pairing.error ?? null,
+    buttons: [...introCard.querySelectorAll(".actions .btn")].map((b) => b.textContent),
+  };
+}
+
+$<HTMLButtonElement>("#pair-wifi").addEventListener("click", openPairing);
 
 // ---------- attaching, viewing ----------
 //
@@ -2441,6 +2677,7 @@ function resetScreen(): void {
 /** Leaves the attached device: everything about it goes. */
 async function detach(): Promise<void> {
   hideSetup();
+  hidePairing();
   window.clearInterval(statsTimer);
   viewerGen++;
   wantView = false;
@@ -2597,6 +2834,7 @@ function report(): void {
       // What the window shows, so a check of the viewer doesn't need anyone to look.
       stage: stage.dataset.state,
       setup: setupReport(),
+      pairing: pairReport(),
       wantView,
       zoom: zoom === "fit" ? "fit" : zoom,
       scale: Math.round(scale * 1000) / 1000,
@@ -2656,6 +2894,8 @@ void (async () => {
   }
   const last = prefs.get("device");
   const pick = devices.find((d) => d.udid === last && !unusable(d)) ?? devices.find((d) => !unusable(d));
+  // Pair over Wi-Fi… pressed while the list loaded: the card stays.
+  if (pairing) return;
   if (pick) void select(pick);
   else showDeviceText();
 })();
