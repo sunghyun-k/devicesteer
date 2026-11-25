@@ -165,10 +165,13 @@ viewer. Pure logic (parsing, geometry) should get unit tests.
   setup steps, supported devices or OS versions, the pairing flow, viewer features or languages)
   updates `site/index.html` and `site/llms.txt` in the same PR, alongside README, `docs/SETUP.md`
   and `crates/cli/src/skill.md`.
-- **Site images come from the viewer's mock mode (`?mock`, fake devices) or are drawn**, never
-  captured from a real device. Keep them small (WebP or AVIF; PNG only where needed, such as
-  `site/og.png` and icons). `.gitignore` ignores `*.png` everywhere else; keep its exceptions for
-  `site/` that narrow. Large media such as video goes to external storage, not the repository.
+- **Site images come from the viewer's mock mode (`?mock`, fake devices) or are drawn.** A capture
+  from a real device is used only when the owner approved it and it was checked for private data
+  (names, notifications, messages, accounts, codes); it lives in external storage, never in the
+  repository, and the page loads it from `MEDIA_BASE` in `site/hero.js`. Keep images small (WebP or
+  AVIF; PNG only where needed, such as `site/og.png` and icons). `.gitignore` ignores `*.png`
+  everywhere else; keep its exceptions for `site/` that narrow. Large media such as video goes to
+  external storage too; `site/tools/hero-cut.py` makes the hero clip from a take.
 
 ## Verifying on a real device: rules you must follow
 
