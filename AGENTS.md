@@ -168,13 +168,13 @@ viewer. Pure logic (parsing, geometry) should get unit tests.
   setup steps, supported devices or OS versions, the pairing flow, viewer features or languages)
   updates `site/index.html` and `site/llms.txt` in the same PR, alongside README, `docs/SETUP.md`
   and `crates/cli/src/skill.md`.
-- **Site images come from the viewer's mock mode (`?mock`, fake devices) or are drawn.** A capture
-  from a real device is used only when the owner approved it and it was checked for private data
-  (names, notifications, messages, accounts, codes); it lives in external storage, never in the
-  repository, and the page loads it from `MEDIA_BASE` in `site/hero.js`. Keep images small (WebP or
-  AVIF; PNG only where needed, such as `site/og.png` and icons). `.gitignore` ignores `*.png`
+- **Images (site and README) are checked for private data before they are committed**: names,
+  notifications, messages, accounts, codes. Captures from the viewer's mock mode (`?mock`, fake
+  devices), drawings and approved captures of a real device all qualify. Keep images small (WebP
+  or AVIF; PNG only where needed, such as `site/og.png` and icons). `.gitignore` ignores `*.png`
   everywhere else; keep its exceptions for `site/` that narrow. Large media such as video goes to
-  external storage too; `site/tools/hero-cut.py` makes the hero clip from a take.
+  external storage (`MEDIA_BASE` in `site/hero.js`); `site/tools/hero-cut.py` makes the hero clip
+  from a take.
 
 ## Verifying on a real device: rules you must follow
 
@@ -194,7 +194,7 @@ on it.
   other sessions' streams and has wedged the device's media daemon until a reboot (PITFALLS #1).
   Stop only the streams you started.
 - **Don't record private data you see on screen** (message previews, codes, account details)
-  anywhere, including chat and reports. Don't commit screenshots or device logs.
+  anywhere, including chat and reports. Don't commit device logs.
 - **Destructive actions** (delete, send, report, purchase) only when the owner explicitly names the
   target.
 - **Device syslog contains personal data:** filter by process, look only at the lines you need,
@@ -217,5 +217,5 @@ foldables have two panels.
   `docs/PITFALLS.md`; the message points to them.
 - **Before committing, remove investigation leftovers:** code marked `TEMP`, ad-hoc debug
   environment variables, temporary subcommands.
-- **Don't commit** screenshots, device logs, or anything captured from a personal device
-  (`.gitignore` ignores `*.png` outside the app icons for that reason).
+- **Don't commit** device logs, or an image that wasn't checked for private data ("Images" under
+  Conventions).
