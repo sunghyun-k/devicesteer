@@ -50,6 +50,10 @@ const VIDEO_SENDER_PORT: u16 = 50001;
 /// "The device microphone or camera is currently in use" (a call, a screen recording): the device
 /// refuses the audio stream, and the video stream alone has to set up the screen-sharing session.
 const ERROR_MEDIA_IN_USE: i64 = 9022;
+/// "Remote control requires iOS 27.0 or later on this device": iOS 17 to 26 refuse both streams
+/// (PITFALLS #65). Such a device is `unsupported` and refused before this; the error stays clear
+/// for one that gets here anyway (an unreadable version).
+const ERROR_NEEDS_NEWER_OS: i64 = 9021;
 /// How long the device may go on listing streams it was told to stop.
 const STOPPING: Duration = Duration::from_millis(1500);
 /// Longest wait for one session's streams to stop.
@@ -448,7 +452,7 @@ impl MediaSession {
                 tracing::debug!("media: audio refused (9022), video sets up the session");
                 self.video = true;
             }
-            Err(e) => return Err(e.context("starting the audio stream failed")),
+            Err(e) => return Err(explain(e).context("starting the audio stream failed")),
         }
 
         if self.video {
@@ -463,6 +467,7 @@ impl MediaSession {
             self.ctl
                 .invoke(FEATURE_START, params, None)
                 .await
+                .map_err(explain)
                 .context("starting the video stream failed")?;
             let udp = self.read(StreamKind::Video, udp);
             self.video_rtcp = Some((udp, ssrc));
@@ -591,6 +596,18 @@ async fn sweep_leftovers(ctl: &mut MediaControl, marker: &Path) {
 /// The device's media server status, without starting anything.
 pub async fn server_status(adapter: &AdapterHandle, rsd: &RsdHandshake) -> Result<plist::Value> {
     MediaControl::connect(adapter, rsd).await?.status().await
+}
+
+/// Adds what to do next to a stream refusal that has a known way out. Must not say "connection"
+/// or "tunnel": the refusal is final, and the daemon would retry those.
+fn explain(e: anyhow::Error) -> anyhow::Error {
+    match error_code(&e) {
+        Some(ERROR_NEEDS_NEWER_OS) => e.context(
+            "the device's iOS doesn't allow the screen sharing and remote control DeviceSteer needs; tell the \
+             user to update it to iOS 27 or later (Settings › General › Software Update)",
+        ),
+        _ => e,
+    }
 }
 
 #[cfg(test)]

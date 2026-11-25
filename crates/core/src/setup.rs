@@ -96,7 +96,7 @@ pub struct SetupStatus {
     pub transports: Vec<Transport>,
     /// All three steps are done: every other command works.
     pub ready: bool,
-    /// Why DeviceSteer can't work with this device at all (older than iOS 17). Then `ready` is
+    /// Why DeviceSteer can't work with this device at all (older than iOS 27). Then `ready` is
     /// false, `step` is absent and every step is `blocked`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<String>,
@@ -227,8 +227,9 @@ pub(crate) async fn probe(provider: &UsbmuxdProvider) -> Result<Probe> {
     }
     let all = step("lockdown read", lockdown.get_value(None, None)).await?;
     p.values = all.into_dictionary().unwrap_or_default();
-    // A device older than iOS 17 has none of the services the steps lead to; checking them would
-    // only make it look ready (it has no Developer Mode before 16, and its own kind of disk image).
+    // A device older than iOS 27 can't be used whatever its steps say (PITFALLS #49, #65); checking
+    // them would only make it look ready, and before iOS 17 they mean something else (no Developer
+    // Mode before 16, and its own kind of disk image).
     p.unsupported = unsupported_in(&p.values);
     if p.unsupported.is_some() {
         return Ok(p);
@@ -259,7 +260,8 @@ pub(crate) async fn public_values(provider: &UsbmuxdProvider) -> plist::Dictiona
     tokio::time::timeout(crate::STEP_TIMEOUT, read).await.ok().flatten().unwrap_or_default()
 }
 
-/// Where the personalized developer disk image is mounted (iOS 17 and later, the only ones probed).
+/// Where the personalized developer disk image is mounted (iOS 17 and later; only 27 and later are
+/// probed).
 const MOUNT_PATH: &str = "/System/Developer";
 
 /// Whether the developer disk image is mounted, from the mounter's list of mounted images.
@@ -857,7 +859,7 @@ mod tests {
     #[test]
     fn unsupported_device_has_no_step_and_is_not_ready() {
         let p = Probe {
-            unsupported: Some("DeviceSteer needs iOS 17 or later; this device runs iOS 15.8.8".into()),
+            unsupported: Some("DeviceSteer needs iOS 27 or later; this device runs iOS 15.8.8, which refuses screen sharing and remote control".into()),
             developer_mode: None,
             disk_image: None,
             ..Default::default()
@@ -867,7 +869,7 @@ mod tests {
         assert!(!s.ready);
         assert_eq!(s.step, None);
         assert!(s.steps.iter().all(|s| s.state == StepState::Blocked));
-        assert!(s.next.starts_with("DeviceSteer needs iOS 17"));
+        assert!(s.next.starts_with("DeviceSteer needs iOS 27"));
         assert!(s.ensure_supported().is_err());
         // Even untrusted: trusting it would not help.
         let p = Probe { untrusted: Some("no pair record".into()), ..p };

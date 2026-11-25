@@ -56,17 +56,17 @@ interface MockDevice {
 
 // Made-up names only: nothing from a real device.
 const DEVICES: MockDevice[] = [
-  { udid: "00000000-0000000000000001", transports: ["usb", "wifi"], name: "Test iPhone", product_type: "iPhone13,4", model_name: "iPhone 12 Pro Max", device_class: "iPhone", os_version: "26.1", build_version: "23B85" },
-  { udid: "00000000-0000000000000002", transports: ["wifi"], name: "Test iPad", product_type: "iPad14,3", model_name: "iPad Pro 11-inch (4th generation)", device_class: "iPad", os_version: "26.0" },
-  { udid: "00000000-0000000000000004", transports: ["usb"], name: "QA iPhone", product_type: "iPhone17,2", model_name: "iPhone 16 Pro Max", device_class: "iPhone", os_version: "26.2" },
-  { udid: "00000000-0000000000000005", transports: ["wifi"], name: "Old iPhone", product_type: "iPhone12,8", model_name: "iPhone SE (2nd generation)", device_class: "iPhone", os_version: "18.7" },
+  { udid: "00000000-0000000000000001", transports: ["usb", "wifi"], name: "Test iPhone", product_type: "iPhone13,4", model_name: "iPhone 12 Pro Max", device_class: "iPhone", os_version: "27.1", build_version: "24B85" },
+  { udid: "00000000-0000000000000002", transports: ["wifi"], name: "Test iPad", product_type: "iPad14,3", model_name: "iPad Pro 11-inch (4th generation)", device_class: "iPad", os_version: "27.0" },
+  { udid: "00000000-0000000000000004", transports: ["usb"], name: "QA iPhone", product_type: "iPhone17,2", model_name: "iPhone 16 Pro Max", device_class: "iPhone", os_version: "27.2" },
+  { udid: "00000000-0000000000000005", transports: ["wifi"], name: "Old iPhone", product_type: "iPhone12,8", model_name: "iPhone SE (2nd generation)", device_class: "iPhone", os_version: "27.0" },
   { udid: "00000000-0000000000000003", transports: ["usb"], product_type: "iPhone15,2", model_name: "iPhone 14 Pro", error: "The device is locked. Unlock it and trust this computer, then refresh." },
   // Too old for DeviceSteer: listed under Unavailable, never set up or attached.
-  { udid: "00000000-0000000000000009", transports: ["usb"], name: "Drawer iPhone", product_type: "iPhone9,4", model_name: "iPhone 7 Plus", device_class: "iPhone", os_version: "15.8.8", build_version: "19H422", unsupported: "DeviceSteer needs iOS 17 or later; this device runs iOS 15.8.8" },
+  { udid: "00000000-0000000000000009", transports: ["usb"], name: "Drawer iPhone", product_type: "iPhone9,4", model_name: "iPhone 7 Plus", device_class: "iPhone", os_version: "15.8.8", build_version: "19H422", unsupported: "DeviceSteer needs iOS 27 or later; this device runs iOS 15.8.8, which refuses screen sharing and remote control" },
   // One device per setup step. An untrusted device tells no name, only its model and OS.
-  { udid: "00000000-0000000000000006", transports: ["usb"], product_type: "iPhone16,1", model_name: "iPhone 15 Pro", device_class: "iPhone", os_version: "26.1", setup: "trust" },
-  { udid: "00000000-0000000000000007", transports: ["usb"], name: "Lab iPhone", product_type: "iPhone14,5", model_name: "iPhone 13", device_class: "iPhone", os_version: "26.0", setup: "developer_mode" },
-  { udid: "00000000-0000000000000008", transports: ["usb", "wifi"], name: "Spare iPad", product_type: "iPad13,18", model_name: "iPad (10th generation)", device_class: "iPad", os_version: "26.1", setup: "disk_image" },
+  { udid: "00000000-0000000000000006", transports: ["usb"], product_type: "iPhone16,1", model_name: "iPhone 15 Pro", device_class: "iPhone", os_version: "27.1", setup: "trust" },
+  { udid: "00000000-0000000000000007", transports: ["usb"], name: "Lab iPhone", product_type: "iPhone14,5", model_name: "iPhone 13", device_class: "iPhone", os_version: "27.0", setup: "developer_mode" },
+  { udid: "00000000-0000000000000008", transports: ["usb", "wifi"], name: "Spare iPad", product_type: "iPad13,18", model_name: "iPad (10th generation)", device_class: "iPad", os_version: "27.1", setup: "disk_image" },
 ];
 
 const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];

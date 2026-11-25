@@ -26,7 +26,8 @@ The app updates itself from GitHub Releases. To build from source instead, see b
 
 ## Requirements
 
-- An iPhone or iPad on iOS 17 or later; `devicesteer devices` marks an older one `unsupported`.
+- An iPhone or iPad on iOS / iPadOS 27 or later; `devicesteer devices` marks an older one
+  `unsupported` (before iOS 27 the device refuses screen sharing and remote control).
   On Wi-Fi a device shows up when usbmuxd lists it (paired over USB, with "Show this iPhone when
   on Wi-Fi" on), or, on iOS 27 and later, once it was paired over Wi-Fi with `devicesteer setup
   wifi` (no cable; the pairing is started on the device). `devicesteer setup` makes a new one ready without Xcode:

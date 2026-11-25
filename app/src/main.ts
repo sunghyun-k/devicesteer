@@ -20,7 +20,7 @@ interface DeviceInfo {
   build_version?: string;
   /** The first setup step the device still needs; absent when it is ready. */
   setup?: SetupStep;
-  /** Why DeviceSteer can't work with it at all (older than iOS 17). It has no `setup`. */
+  /** Why DeviceSteer can't work with it at all (older than iOS 27). It has no `setup`. */
   unsupported?: string;
   error?: string;
 }
@@ -244,7 +244,7 @@ function row(d: DeviceInfo, disconnected = false): HTMLLIElement {
   const status = disconnected
     ? t("device.disconnected")
     : d.unsupported
-    ? t("device.needsIos17")
+    ? t("device.needsIos27")
     : d.error
     ? t("device.unavailable")
     : d.setup

@@ -21,7 +21,7 @@ Pass `--udid <UDID>` with every command whenever more than one device is listed.
 which device the user means, ask; don't pick one.
 
 A device listed with `setup` isn't ready yet; see the next section. A device listed with
-`unsupported` runs an OS older than iOS 17 and can't be used at all: no command or setup step works
+`unsupported` runs an OS older than iOS 27 and can't be used at all: no command or setup step works
 on it. Tell the user why (the field says) and don't try it.
 
 A device on Wi-Fi shows up when usbmuxd lists it (paired over USB, "Show this iPhone when on
