@@ -26,9 +26,11 @@ pub fn open(app: &AppHandle, tab: Option<&str>) -> tauri::Result<()> {
         Some(t) => format!("settings.html?tab={t}"),
         None => "settings.html".into(),
     };
+    // In the viewer's language (`view_menu::Labels`); the page sets the pane's name as the title
+    // once it loads, as Mac settings windows do.
+    let title = app.state::<crate::view_menu::State>().labels.lock().unwrap().settings_window.clone();
     let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App(page.into()))
-        // The page sets the pane's name as the title once it loads, as Mac settings windows do.
-        .title("Settings")
+        .title(title)
         .inner_size(560.0, 600.0)
         .resizable(false)
         .maximizable(false)

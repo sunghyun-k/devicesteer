@@ -1,6 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { initAgents, openSettings } from "./agents";
 import { listen } from "@tauri-apps/api/event";
+import { errorText, localize, num, onLanguageChange, t, type Key } from "./i18n";
 
 // Dev only: `?mock` runs the viewer against a fake backend in a plain browser (see src/mock.ts).
 // Vite replaces `import.meta.env.DEV` with false in builds, which drops the mock entirely.
@@ -216,7 +217,7 @@ function osLabel(d: DeviceInfo): string | undefined {
 }
 
 function deviceName(d: DeviceInfo): string {
-  return d.name ?? modelName(d) ?? "Unknown device";
+  return d.name ?? modelName(d) ?? t("device.unknown");
 }
 
 /** What Apple calls the model, or its identifier when the core doesn't know it. */
@@ -228,7 +229,7 @@ const unusable = (d: DeviceInfo | undefined) => !!d?.error || !!d?.unsupported;
 /** What the stage says about a device that is too old. */
 function unsupportedText(d: DeviceInfo): string {
   const os = osLabel(d);
-  return `DeviceSteer works only with iOS 17 or later${os ? `, and this device runs ${os}` : ""}. It needs the developer services iOS 17 added. Update the device in Settings › General › Software Update, if its model can run iOS 17.`;
+  return os ? t("device.unsupportedRuns", { os }) : t("device.unsupported");
 }
 
 const isTablet = (d: DeviceInfo | undefined) => d?.device_class === "iPad" || !!d?.product_type?.startsWith("iPad");
@@ -241,20 +242,21 @@ function row(d: DeviceInfo, disconnected = false): HTMLLIElement {
   // One line: the name, then its status in gray: the OS version and how it is connected, or why
   // it can't be used. Other states (setting a device up, say) belong in the status too.
   const status = disconnected
-    ? "Disconnected"
+    ? t("device.disconnected")
     : d.unsupported
-    ? "Needs iOS 17 or later"
+    ? t("device.needsIos17")
     : d.error
-    ? "Unavailable"
+    ? t("device.unavailable")
     : d.setup
-      ? `Needs setup: ${SETUP_SHORT[d.setup]}`
+      ? t("device.setupStatus", { step: setupShort(d.setup) })
       : [d.name ? modelName(d) : undefined, d.transports.includes("usb") ? "USB" : d.transports.length ? "Wi-Fi" : undefined].filter(Boolean).join(" · ");
   const text = el("div", "text");
   text.append(el("span", "name", deviceName(d)), el("span", "status", status));
   li.append(icon(isTablet(d) ? "i-tablet" : "i-phone", "icon glyph"), text);
+  // The core's own reasons (`unsupported`, `error`) stay in English.
   li.title = disconnected
-    ? "Disconnected. Connect the cable again and unlock the device."
-    : d.unsupported ?? d.error ?? (d.setup ? `Needs setup: ${SETUP_TITLE[d.setup]}` : [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · "));
+    ? t("device.disconnectedHelp")
+    : d.unsupported ?? d.error ?? (d.setup ? t("device.needsSetup", { step: setupTitle(d.setup) }) : [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · "));
   if (unusable(d) || disconnected) li.classList.add("unavailable");
   li.addEventListener("click", () => void select(d));
   li.addEventListener("keydown", (e) => {
@@ -289,11 +291,11 @@ function renderList(): void {
   $<HTMLElement>("#sec-unavailable").hidden = !bad.length;
   markSelection();
   let m: { title: string; detail: string; cls?: string } | null = null;
-  if (listError) m = { title: "Couldn't list devices", detail: listError, cls: "error" };
-  else if (!listed) m = { title: "Looking for devices…", detail: "", cls: "loading" };
+  if (listError) m = { title: t("list.error"), detail: listError, cls: "error" };
+  else if (!listed) m = { title: t("list.looking"), detail: "", cls: "loading" };
   // A row of the selected device that left the list is enough to drop the empty state.
-  else if (!devices.length && !extra) m = { title: "No devices", detail: "Connect an iPhone or iPad with a cable, unlock it and trust this computer. Or pair one over Wi-Fi, without a cable." };
-  else if (!ok.length && !bad.length) m = { title: "No matches", detail: `Nothing matches “${search.value.trim()}”.` };
+  else if (!devices.length && !extra) m = { title: t("list.empty"), detail: t("list.emptyDetail") };
+  else if (!ok.length && !bad.length) m = { title: t("list.noMatches"), detail: t("list.noMatchesDetail", { query: search.value.trim() }) };
   listMessage.hidden = !m;
   if (m) {
     listMessage.className = `list-message ${m.cls ?? ""}`;
@@ -311,7 +313,7 @@ function markSelection(): void {
     if (on && busy) {
       // A blue dot at the row's end, like an unread mark.
       const dot = el("span", "busy");
-      dot.title = "An agent session runs on this device";
+      dot.title = t("list.sessionRuns");
       li.append(dot);
     }
   }
@@ -368,8 +370,8 @@ function onSelectedGone(): void {
   gone = { view: wantView };
   if (!setupRun) void detach();
   settingsPane.classList.add("disabled");
-  settingsMessage("Settings show once the device is connected again.");
-  stageState("disconnected", "Connect the cable again and unlock the device. If it is restarting, wait: it continues here once it is back.");
+  settingsMessage(() => t("settings.afterReconnect"));
+  stageState("disconnected", () => t("stage.disconnected"));
   showDeviceText();
   if (setupFor) renderSetup();
 }
@@ -382,7 +384,7 @@ function onSelectedBack(now: DeviceInfo): void {
     // The running step brings the card up to date when it ends.
     selected = now;
     setupFor = now;
-    settingsMessage("Settings show once the device is set up.");
+    settingsMessage(() => t("settings.afterSetup"));
     stageState("setup");
     showDeviceText();
     renderSetup();
@@ -426,24 +428,35 @@ const viewBtn = $<HTMLButtonElement>("#view-screen");
  * connecting; an error; or the live screen once a frame drew. */
 type StageState = "none" | "intro" | "setup" | "pair" | "unavailable" | "disconnected" | "connecting" | "error" | "live";
 
-function stageState(state: StageState, text = ""): void {
+/** What the stage says, kept to say it again in another language. */
+let stageText: () => string = () => "";
+
+/** `text`: the reason or progress to show, written in the current language when it is a function. */
+function stageState(state: StageState, text: string | (() => string) = ""): void {
+  stageText = typeof text === "function" ? text : () => text;
   stage.dataset.state = state;
   center.classList.toggle("live", state === "live");
-  $<HTMLSpanElement>("#intro-busy-text").textContent = state === "connecting" ? text || "Connecting…" : "";
-  $<HTMLParagraphElement>("#intro-reason").textContent = state === "error" || state === "unavailable" || state === "disconnected" ? text : "";
+  showStageText();
   updateMenu();
   if (state === "live") layout();
   syncKeyboard();
+}
+
+function showStageText(): void {
+  const state = stage.dataset.state;
+  const text = stageText();
+  $<HTMLSpanElement>("#intro-busy-text").textContent = state === "connecting" ? text || t("common.connecting") : "";
+  $<HTMLParagraphElement>("#intro-reason").textContent = state === "error" || state === "unavailable" || state === "disconnected" ? text : "";
 }
 
 function showDeviceText(): void {
   const d = selected;
   const name = d ? deviceName(d) : "";
   const meta = d ? [d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ") : "";
-  $<HTMLSpanElement>("#device-name").textContent = d ? name : pairing ? "New Device" : "No device";
+  $<HTMLSpanElement>("#device-name").textContent = d ? name : pairing ? t("device.new") : t("device.none");
   $<HTMLSpanElement>("#device-meta").textContent = d
-    ? gone ? "Disconnected" : meta
-    : pairing ? "Pairing over Wi-Fi" : listed && !devices.length ? "Connect a device to begin" : "Choose a device";
+    ? gone ? t("device.disconnected") : meta
+    : pairing ? t("device.pairingWifi") : listed && !devices.length ? t("device.connectToBegin") : t("device.choose");
   $<HTMLHeadingElement>("#intro-name").textContent = name;
   $<HTMLParagraphElement>("#intro-meta").textContent = d ? ([d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ")) : "";
   introArt.classList.toggle("tablet", isTablet(d));
@@ -729,11 +742,12 @@ const activeSession = () => (control.session && control.session.owner !== "finis
 function panelFor(s: AgentSession): { state: string; button: string; action: string } {
   switch (s.owner) {
     case "delegated_to_user":
-      return { state: `Waiting for you: ${s.reason ?? ""}`, button: "Done", action: "done" };
+      // The reason is the agent's own words, in whatever language it wrote them.
+      return { state: t("session.waitingForYou", { reason: s.reason ?? "" }), button: t("session.done"), action: "done" };
     case "user":
-      return { state: "You are in control", button: "Hand back", action: "hand_back" };
+      return { state: t("session.youInControl"), button: t("session.handBack"), action: "hand_back" };
     default:
-      return { state: "Agent is in control", button: "Take over", action: "take_over" };
+      return { state: t("session.agentInControl"), button: t("session.takeOver"), action: "take_over" };
   }
 }
 
@@ -1341,7 +1355,7 @@ document.addEventListener("visibilitychange", () => {
 const blockedHint = document.createElement("div");
 blockedHint.className = "blocked-hint";
 blockedHint.setAttribute("role", "status");
-blockedHint.textContent = "The agent is in control. Take over to use the device.";
+blockedHint.textContent = t("session.blockedHint");
 blockedHint.hidden = true;
 overlay.append(blockedHint);
 let blockedHintTimer: number | undefined;
@@ -1495,7 +1509,7 @@ function syncSharedClipboard(): void {
       if (supported !== false) return;
       // No way to see password managers' private items on this platform (shared_clip.rs).
       clipShared.disabled = true;
-      clipShared.title = "The shared clipboard works on macOS only for now";
+      clipShared.title = t("keyboard.sharedMacOnly");
     })
     .catch((e) => {
       stats.lastError = String(e);
@@ -1516,12 +1530,7 @@ function showKeyboardState(): void {
         ? "on"
         : "connecting";
   kbButton.dataset.forwarding = state;
-  kbButton.title = {
-    on: "Keyboard: a hardware keyboard is connected and keys go to the device while the pointer is over the screen (⌘K to stop)",
-    connecting: "Keyboard: connecting the hardware keyboard…",
-    paused: "Keyboard: paused while the agent is in control (⌘K to turn off)",
-    off: "Keyboard",
-  }[state];
+  kbButton.title = t(({ on: "keyboard.stateOn", connecting: "keyboard.stateConnecting", paused: "keyboard.statePaused", off: "keyboard.label" } as const)[state]);
   kbButton.setAttribute("aria-label", kbButton.title);
   kbForward.setAttribute("aria-checked", String(forwarding));
   kbSoftware.disabled = !hardwareKeyboard;
@@ -1556,7 +1565,7 @@ function syncKeyboard(): void {
       if (cmd === "keyboard_connect") {
         forwarding = false;
         showKeyboardState();
-        showNote(`Couldn't connect the hardware keyboard: ${e}`, { error: true });
+        showNote(t("keyboard.connectFailed", { error: errorText(e) }), { error: true });
       }
     });
 }
@@ -1695,7 +1704,7 @@ kbForward.addEventListener("click", () => setForwarding(!forwarding));
 
 function toggleSoftwareKeyboard(): void {
   if (!hardwareKeyboard) {
-    showNote("The on-screen keyboard shows by itself while no hardware keyboard is connected (⌘K connects one).", { icon: "i-keyboard" });
+    showNote(t("keyboard.softwareAlone"), { icon: "i-keyboard" });
     return;
   }
   // The Eject key: with a hardware keyboard attached, iOS shows or hides the on-screen keyboard
@@ -1718,7 +1727,7 @@ async function clipboardOp(cmd: "clipboard_to_device" | "clipboard_from_device")
   try {
     return (await invoke(cmd)) as Record<string, unknown>;
   } catch (e) {
-    showNote(String(e), { error: true });
+    showNote(errorText(e), { error: true });
   } finally {
     clipBusy = false;
   }
@@ -1727,18 +1736,19 @@ async function clipboardOp(cmd: "clipboard_to_device" | "clipboard_from_device")
 async function sendClipboard(): Promise<void> {
   // The agent's input (and a paste waiting for `paste --restore`) would be disturbed.
   if (!humanHasDevice()) {
-    showNote("The agent has the device: take over first to send the clipboard.", { error: true });
+    showNote(t("clipboard.agentHasDevice"), { error: true });
     return;
   }
-  if (await clipboardOp("clipboard_to_device")) showNote("Copied to iPhone - paste on the device", { icon: "i-clip-send" });
+  if (await clipboardOp("clipboard_to_device")) showNote(t("clipboard.sent", { device: deviceKind() }), { icon: "i-clip-send" });
 }
 
 async function getClipboard(): Promise<void> {
   const r = await clipboardOp("clipboard_from_device");
   if (!r) return;
-  if (r.kind === "text") showNote("Copied from iPhone", { icon: "i-clip-get" });
-  else if (r.kind === "empty") showNote("The iPhone clipboard is empty.", { icon: "i-clip-get" });
-  else showNote("The iPhone clipboard holds no text (an image or other content); only text is copied.", { error: true });
+  const device = deviceKind();
+  if (r.kind === "text") showNote(t("clipboard.got", { device }), { icon: "i-clip-get" });
+  else if (r.kind === "empty") showNote(t("clipboard.empty", { device }), { icon: "i-clip-get" });
+  else showNote(t("clipboard.notText", { device }), { error: true });
 }
 
 clipShared.addEventListener("click", () => {
@@ -1763,7 +1773,11 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-/** The note over the stage: `text`, then the file name when there is a file to show. */
+/** "iPhone" or "iPad", as the device in a note. */
+const deviceKind = () => (isTablet(selected) ? "iPad" : "iPhone");
+
+/** The note over the stage. With a file to show, `text` has a `{file}` placeholder where its
+ * name goes, in bold. */
 function showNote(text: string, o: { path?: string; error?: boolean; icon?: string } = {}): void {
   notePath = o.path;
   note.hidden = false;
@@ -1773,7 +1787,8 @@ function showNote(text: string, o: { path?: string; error?: boolean; icon?: stri
   if (o.path) {
     const name = document.createElement("strong");
     name.textContent = fileName(o.path);
-    noteText.append(`${text} `, name);
+    const [before, after = ""] = text.split("{file}");
+    noteText.append(before, name, after);
     noteText.title = o.path;
   } else {
     noteText.textContent = text;
@@ -1783,9 +1798,10 @@ function showNote(text: string, o: { path?: string; error?: boolean; icon?: stri
 }
 
 function reveal(path: string | undefined): void {
-  if (path) invoke("reveal", { path }).catch((e) => showNote(String(e), { error: true }));
+  if (path) invoke("reveal", { path }).catch((e) => showNote(errorText(e), { error: true }));
 }
-noteReveal.textContent = navigator.userAgent.includes("Windows") ? "Show in Explorer" : "Show in Finder";
+const showRevealText = () => (noteReveal.textContent = t(navigator.userAgent.includes("Windows") ? "note.showInExplorer" : "note.showInFinder"));
+showRevealText();
 noteReveal.addEventListener("click", () => reveal(notePath));
 $<HTMLButtonElement>("#note-dismiss").addEventListener("click", () => (note.hidden = true));
 
@@ -1807,12 +1823,12 @@ shotBtn.addEventListener("click", async () => {
   shotBtn.disabled = true;
   try {
     const blob = await new Promise<Blob | null>((done) => canvas.toBlob(done, "image/png"));
-    if (!blob) throw new Error("the screen could not be encoded as PNG");
+    if (!blob) throw t("screenshot.notEncoded");
     const png = new Uint8Array(await blob.arrayBuffer());
     const path = await invoke<string>("save_screenshot", png, { headers: { "x-stamp": stamp() } });
-    showNote("Screenshot saved to", { path, icon: "i-camera" });
+    showNote(t("screenshot.saved"), { path, icon: "i-camera" });
   } catch (e) {
-    showNote(`Screenshot failed: ${e}`, { error: true });
+    showNote(t("screenshot.failed", { error: errorText(e) }), { error: true });
   } finally {
     shotBtn.disabled = false;
   }
@@ -1844,17 +1860,17 @@ function showRecording(): void {
   recordBtn.setAttribute("aria-pressed", String(!!recording));
   recordBtn.querySelector("use")!.setAttribute("href", recording ? "#i-stop" : "#i-record");
   if (!recording) {
-    recordLabel.textContent = "Record";
-    recordBtn.title = "Record the screen";
-    recordBtn.setAttribute("aria-label", "Record");
+    recordLabel.textContent = t("record.label");
+    recordBtn.title = t("record.help");
+    recordBtn.setAttribute("aria-label", t("record.label"));
     return;
   }
   const r = recording;
   const tick = () => (recordLabel.textContent = clock((performance.now() - r.since) / 1000));
   tick();
   recordTimer = window.setInterval(tick, 500);
-  recordBtn.title = `Stop recording (${fileName(r.path)})`;
-  recordBtn.setAttribute("aria-label", "Stop recording");
+  recordBtn.title = t("record.stopFile", { file: fileName(r.path) });
+  recordBtn.setAttribute("aria-label", t("record.stop"));
 }
 
 function onRecording(e: RecordingEvent): void {
@@ -1863,10 +1879,10 @@ function onRecording(e: RecordingEvent): void {
     if (!note.classList.contains("error")) note.hidden = true;
   } else {
     recording = undefined;
-    if (e.error) showNote(`Recording failed: ${e.error}`, { error: true });
+    if (e.error) showNote(t("record.failed", { error: e.error }), { error: true });
     else {
       recordedPath = e.path;
-      showNote(`Recording saved${e.summary ? ` (${clock(e.summary.seconds)})` : ""} to`, { path: e.path });
+      showNote(e.summary ? t("record.savedLength", { length: clock(e.summary.seconds) }) : t("record.saved"), { path: e.path });
     }
   }
   showRecording();
@@ -1884,7 +1900,7 @@ recordBtn.addEventListener("click", async () => {
       await invoke("send", { cmd: "record_start", args: { path } });
     }
   } catch (e) {
-    showNote(String(e), { error: true });
+    showNote(errorText(e), { error: true });
   } finally {
     recordBtn.disabled = false;
   }
@@ -1958,7 +1974,12 @@ const longitude = $<HTMLInputElement>("#longitude");
 
 /** Text sizes from smallest to largest, as the CLI names them (`devicesteer_core::TEXT_SIZES`). */
 const TEXT_SIZES = ["xs", "s", "m", "l", "xl", "xxl", "xxxl", "ax1", "ax2", "ax3", "ax4", "ax5"];
-const TEXT_SIZE_NAMES = ["Extra Small", "Small", "Medium", "Large (default)", "Extra Large", "XXL", "XXXL", "AX1", "AX2", "AX3", "AX4", "AX5"];
+/** Each text size's name, for the slider's tooltip; the larger ones go by their short names. */
+function textSizeName(i: number): string {
+  const named: (Key | undefined)[] = ["settings.textSizeXS", "settings.textSizeS", "settings.textSizeM", "settings.textSizeL", "settings.textSizeXL"];
+  const key = named[i];
+  return key ? t(key) : (TEXT_SIZES[i]?.toUpperCase() ?? "");
+}
 /** On/off items: the field in `Settings` and the name `settings_set` takes. */
 const TOGGLES: [keyof Settings, string][] = [
   ["reduce_motion", "reduce-motion"],
@@ -1988,10 +2009,13 @@ function showSettings(s: Partial<Settings>): void {
   voWarning.hidden = cur.voiceover !== true;
   appearance.value = cur.appearance ?? "";
   if (cur.liquid_glass != null) liquidGlass.value = String(cur.liquid_glass);
-  liquidGlass.title = cur.liquid_glass != null ? `Clear to tinted: ${cur.liquid_glass.toFixed(2)}` : "Clear to tinted";
+  liquidGlass.title =
+    cur.liquid_glass != null
+      ? t("settings.clearToTintedValue", { value: num(cur.liquid_glass, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })
+      : t("settings.clearToTinted");
   const size = cur.text_size ? TEXT_SIZES.indexOf(cur.text_size) : -1;
   if (size >= 0) textSize.value = String(size);
-  textSize.title = size >= 0 ? TEXT_SIZE_NAMES[size] : "";
+  textSize.title = size >= 0 ? textSizeName(size) : "";
   fill(liquidGlass);
   fill(textSize);
   for (const [key] of TOGGLES) {
@@ -2017,32 +2041,38 @@ function showSettings(s: Partial<Settings>): void {
   }
 }
 
-function settingsMessage(text: string, error = false): void {
-  settingsStatus.textContent = text;
+/** What the settings pane says, kept to say it again in another language. */
+let settingsText: () => string = () => "";
+
+/** `text`: written in the current language when it is a function; a string is shown as it is
+ * (the daemon's errors). */
+function settingsMessage(text: string | (() => string), error = false): void {
+  settingsText = typeof text === "function" ? text : () => text;
+  settingsStatus.textContent = settingsText();
   settingsStatus.classList.toggle("error", error);
 }
 
 async function readSettings(): Promise<void> {
-  settingsMessage("Reading settings…");
+  settingsMessage(() => t("settings.reading"));
   try {
     showSettings(await invoke<Settings>("send", { cmd: "settings", args: {} }));
     settingsMessage("");
   } catch (e) {
-    settingsMessage(String(e), true);
+    settingsMessage(errorText(e), true);
   }
 }
 
 /** Changes one item; on failure the controls go back to the last known values. */
 async function setSetting(name: string, value: (string | number)[]): Promise<void> {
   settingsPane.setAttribute("aria-busy", "true");
-  settingsMessage("Applying…");
+  settingsMessage(() => t("settings.applying"));
   try {
     const r = await invoke<{ settings: Settings }>("send", { cmd: "settings_set", args: { name, value: value.map(String) } });
     showSettings(r.settings);
     settingsMessage("");
   } catch (e) {
     showSettings({});
-    settingsMessage(String(e), true);
+    settingsMessage(errorText(e), true);
   } finally {
     settingsPane.removeAttribute("aria-busy");
   }
@@ -2053,7 +2083,7 @@ liquidGlass.addEventListener("input", () => fill(liquidGlass));
 liquidGlass.addEventListener("change", () => void setSetting("liquid-glass", [liquidGlass.value]));
 textSize.addEventListener("input", () => {
   fill(textSize);
-  textSize.title = TEXT_SIZE_NAMES[Number(textSize.value)];
+  textSize.title = textSizeName(Number(textSize.value));
 });
 textSize.addEventListener("change", () => void setSetting("text-size", [TEXT_SIZES[Number(textSize.value)]]));
 for (const [key, name] of TOGGLES) {
@@ -2072,7 +2102,7 @@ locationMode.addEventListener("change", () => {
 function simulateLocation(): void {
   const [lat, lon] = [latitude.value, longitude.value].map((v) => (v.trim() ? Number(v) : NaN));
   if (!(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 180)) {
-    settingsMessage("Enter a latitude (-90 to 90) and a longitude (-180 to 180) in degrees.", true);
+    settingsMessage(() => t("settings.locationInvalid"), true);
     return;
   }
   void setSetting("location", ["set", lat, lon]);
@@ -2120,46 +2150,46 @@ function showInfo(): void {
     $<HTMLOutputElement>("#info-model").append(" ", code);
   }
   out("os", d ? [osLabel(d), d.build_version ? `(${d.build_version})` : ""].filter(Boolean).join(" ") : "");
-  out("connection", d ? d.transports.map((t) => (t === "wifi" ? "Wi-Fi" : "USB")).join(", ") : "");
+  out("connection", d ? d.transports.map((x) => (x === "wifi" ? "Wi-Fi" : "USB")).join(t("common.listSeparator")) : "");
   out("udid", d?.udid ?? "");
   const now = performance.now();
   stats.fpsWindow = stats.fpsWindow.filter((t) => now - t < 1000);
   const dm = stats.decodeMs.slice(-60);
-  const states: Record<string, string> = {
-    none: "",
-    intro: "Not shown",
-    setup: "Needs setup",
-    unavailable: "Unavailable",
-    disconnected: "Disconnected",
-    connecting: "Connecting…",
-    error: "Error",
-    live: stats.supported === false ? "Decoder unsupported" : "Live",
+  const states: Record<string, Key | undefined> = {
+    intro: "info.streamNotShown",
+    setup: "info.streamNeedsSetup",
+    unavailable: "device.unavailable",
+    disconnected: "device.disconnected",
+    connecting: "common.connecting",
+    error: "info.streamError",
+    live: stats.supported === false ? "info.streamUnsupported" : "info.streamLive",
   };
-  out("stream", states[stage.dataset.state ?? "none"] ?? "");
+  const state = states[stage.dataset.state ?? "none"];
+  out("stream", state ? t(state) : "");
   const live = stage.dataset.state === "live";
+  const ms = (n: number, digits: number) => t("info.ms", { ms: num(n, { minimumFractionDigits: digits, maximumFractionDigits: digits }) });
   out("video", live && config ? `${config.codec.split(".")[0].toUpperCase()} ${config.display_px.join("×")}` : "");
-  out("screen", live && config ? `${config.screen.join("×")} pt, ${config.orientation}` : "");
-  out("fps", live ? `${stats.fpsWindow.length} fps` : "");
-  out("decoded", live ? `${stats.decoded} of ${stats.received}${stats.dropped ? `, ${stats.dropped} dropped` : ""}` : "");
-  out("decode", live && dm.length ? `${avg(dm).toFixed(1)} ms` : "");
-  out("touch", stats.touchMs.length ? `${avg(stats.touchMs).toFixed(0)} ms` : "");
+  out("screen", live && config ? t(config.orientation === "landscape" ? "info.screenLandscape" : "info.screenPortrait", { size: config.screen.join("×") }) : "");
+  out("fps", live ? t("info.fps", { fps: stats.fpsWindow.length }) : "");
+  out(
+    "decoded",
+    live
+      ? [t("info.decodedOf", { decoded: stats.decoded, received: stats.received }), stats.dropped ? t("info.dropped", { count: stats.dropped }) : ""].filter(Boolean).join(t("common.listSeparator"))
+      : "",
+  );
+  out("decode", live && dm.length ? ms(avg(dm), 1) : "");
+  out("touch", stats.touchMs.length ? ms(avg(stats.touchMs), 0) : "");
   $<HTMLParagraphElement>("#info-error").textContent = stats.lastError;
 }
 
 // ---------- setup: a device that isn't ready ----------
 
 /** Step names in the setup card, and short ones for a sidebar row's status. */
-const SETUP_TITLE: Record<SetupStep, string> = {
-  trust: "Trust this computer",
-  developer_mode: "Developer Mode",
-  disk_image: "Prepare developer tools",
-};
-/** Short, and different in their first letters: a narrow sidebar cuts the status off. */
-const SETUP_SHORT: Record<SetupStep, string> = {
-  trust: "Trust",
-  developer_mode: "Dev Mode",
-  disk_image: "Tools",
-};
+const setupTitle = (step: SetupStep): string =>
+  t(({ trust: "setup.trust.title", developer_mode: "setup.developerMode.title", disk_image: "setup.diskImage.title" } as const)[step]);
+/** Short, and different at their start: a narrow sidebar cuts the status off. */
+const setupShort = (step: SetupStep): string =>
+  t(({ trust: "setup.trust.short", developer_mode: "setup.developerMode.short", disk_image: "setup.diskImage.short" } as const)[step]);
 const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];
 
 const introCard = $<HTMLDivElement>("#intro-card");
@@ -2191,27 +2221,12 @@ function setupText(step: SetupStep, d: DeviceInfo): { text: string; button?: str
     case "trust":
       // Trust goes over USB only; our own Wi-Fi pairing needs no cable (iOS 27 and later).
       if (!d.transports.includes("usb"))
-        return {
-          text: "Connect the device with a USB cable, or pair it over Wi-Fi without one (iOS 27 or later).",
-          button: "Pair over Wi-Fi…",
-          action: openPairing,
-        };
-      return {
-        text: "Unlock the device and press Pair. When it asks “Trust This Computer?”, tap Trust and enter the passcode.",
-        button: "Pair",
-        cancel: true,
-      };
+        return { text: t("setup.trust.noCable"), button: t("sidebar.pairWifi"), action: openPairing };
+      return { text: t("setup.trust.text"), button: t("setup.trust.button"), cancel: true };
     case "developer_mode":
-      return {
-        text: "Press Show Switch, then on the device open Settings › Privacy & Security › Developer Mode, turn it on and tap Restart. After the restart, unlock it, tap Turn On and enter the passcode.",
-        button: "Show Switch",
-        cancel: true,
-      };
+      return { text: t("setup.developerMode.text"), button: t("setup.developerMode.button"), cancel: true };
     case "disk_image":
-      return {
-        text: "Installs Apple’s developer tools on the device, downloading them once if Xcode isn’t installed. Nothing to do on the device; needed again after some restarts.",
-        button: "Prepare",
-      };
+      return { text: t("setup.diskImage.text"), button: t("setup.diskImage.button") };
   }
 }
 
@@ -2330,15 +2345,13 @@ async function runSetup(step: SetupStep): Promise<void> {
 /** How long a wait for the person lasts, in words: "10 minutes". */
 function waitText(): string {
   const m = SETUP_WAIT_S / 60;
-  return Number.isInteger(m) ? `${m} minute${m === 1 ? "" : "s"}` : `${SETUP_WAIT_S} seconds`;
+  const [n, unit] = Number.isInteger(m) ? [m, "minute"] : [SETUP_WAIT_S, "second"];
+  return num(n, { style: "unit", unit, unitDisplay: "long" });
 }
 
 /** What the card says when the wait ran out. */
 function setupTimeoutText(step: SetupStep): string {
-  const mins = waitText();
-  return step === "trust"
-    ? `Nobody tapped Trust within ${mins}. Unlock the device, press Try Again and tap Trust when it asks.`
-    : `Developer Mode wasn’t turned on within ${mins}. Press Try Again to keep waiting. If you turn it on without the app, this card notices by itself.`;
+  return t(step === "trust" ? "setup.trust.timeout" : "setup.developerMode.timeout", { duration: waitText() });
 }
 
 /** The time left to wait, as "9:41 left". */
@@ -2349,7 +2362,7 @@ function setupTimeLeft(): { text: string; low: boolean } | undefined {
 function timeLeft(since: number | undefined): { text: string; low: boolean } | undefined {
   if (since === undefined) return undefined;
   const left = Math.max(0, Math.ceil(SETUP_WAIT_S - (performance.now() - since) / 1000));
-  return { text: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`, low: left < 60 };
+  return { text: t("setup.timeLeft", { time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` }), low: left < 60 };
 }
 
 function startSetupTick(): void {
@@ -2371,14 +2384,15 @@ function stopSetupTick(): void {
 }
 
 /** A progress message as the card shows it: the core writes "Settings > Privacy & Security" and
- * leaves the final period off. */
+ * leaves the final period off. It stays in English: the core has no codes for its messages. */
 function setupMessage(m: string): string {
   const t = m.replace(/ > /g, " › ");
   return /[.!?…]$/.test(t) ? t : `${t}.`;
 }
 
 /** A setup error as the viewer shows it: the core writes for agents ("run `devicesteer setup
- * trust` again"); here the step's own button does that. */
+ * trust` again"); here the step's own button does that. It stays in English, as the core wrote
+ * it. */
 function setupErrorText(e: unknown): string {
   const t = String(e)
     .replace(/:? run `devicesteer setup[^`]*` first/g, "")
@@ -2398,7 +2412,7 @@ function renderSetup(): void {
   const states = setupStates(d);
   const card = el("div", "setup");
   const head = el("div", "setup-head");
-  head.append(el("h3", "", "Set up this device"), el("p", "", "The screen can be shown once these steps are done."));
+  head.append(el("h3", "", t("setup.heading")), el("p", "", t("setup.lead")));
   const list = el("ol", "setup-steps");
   SETUP_ORDER.forEach((step, i) => {
     const state = states[step] ?? "blocked";
@@ -2409,13 +2423,13 @@ function renderSetup(): void {
     else if (state === "done") mark.append(icon("i-check"));
     else mark.textContent = String(i + 1);
     const body = el("div", "body");
-    body.append(el("div", "title", SETUP_TITLE[step]));
+    body.append(el("div", "title", setupTitle(step)));
     if (state === "needed") {
-      const t = setupText(step, d);
+      const st = setupText(step, d);
       const p = running ? setupRun?.progress : undefined;
       // While it runs, the step's own progress says what to do now (it repeats the description
       // at first, then follows the device: restarting, confirm after the restart).
-      if (!running) body.append(el("p", "desc", t.text));
+      if (!running) body.append(el("p", "desc", st.text));
       if (running && p?.waiting_for_user) {
         // Waiting for the person, maybe for minutes: say so plainly, with what to do now and the
         // time left, so the card doesn't look stuck.
@@ -2423,14 +2437,14 @@ function renderSetup(): void {
         const top = el("div", "wait-head");
         const left = setupTimeLeft();
         const time = el("span", `wait-time${left?.low ? " low" : ""}`, left?.text ?? "");
-        top.append(el("span", "pulse"), el("span", "wait-label", "Waiting for you on the device"), time);
+        top.append(el("span", "pulse"), el("span", "wait-label", t("setup.waitingOnDevice")), time);
         const msg = el("p", "wait-msg", setupMessage(p.message));
         msg.setAttribute("role", "status");
         box.append(top, msg);
         body.append(box);
       } else if (running) {
         const line = el("div", "progress");
-        line.append(el("span", "msg", p?.message ?? "Starting…"));
+        line.append(el("span", "msg", p?.message ?? t("setup.starting")));
         if (p?.fraction !== undefined) {
           const bar = el("div", "bar");
           bar.style.setProperty("--f", String(Math.max(0, Math.min(1, p.fraction))));
@@ -2440,17 +2454,17 @@ function renderSetup(): void {
       }
       if (setupError?.step === step) body.append(el("p", "error", setupError.text));
       const actions = el("div", "actions");
-      if (running && t.cancel) {
-        const b = el("button", "btn small", "Cancel");
+      if (running && st.cancel) {
+        const b = el("button", "btn small", t("common.cancel"));
         b.type = "button";
         b.addEventListener("click", cancelSetup);
         actions.append(b);
-      } else if (!running && t.button) {
-        const b = el("button", "btn small", setupError?.step === step && !t.action ? "Try Again" : t.button);
+      } else if (!running && st.button) {
+        const b = el("button", "btn small", setupError?.step === step && !st.action ? t("common.tryAgain") : st.button);
         b.type = "button";
         // Nothing to reach while the device is away; Cancel above stays.
-        b.disabled = !!gone && !t.action;
-        b.addEventListener("click", () => (t.action ? t.action() : void runSetup(step)));
+        b.disabled = !!gone && !st.action;
+        b.addEventListener("click", () => (st.action ? st.action() : void runSetup(step)));
         actions.append(b);
       }
       if (actions.childElementCount) body.append(actions);
@@ -2496,13 +2510,10 @@ let pairGen = 0;
 let pairBack: DeviceInfo | undefined;
 
 /** The steps on the device, in its own words (iOS 27). */
-const PAIR_STEPS: { title: string; text: string }[] = [
-  {
-    title: "Start pairing on the device",
-    text: "Open Settings › Privacy & Security › Developer Mode. Under Other Devices, tap Pair with DeviceSteer, then tap Pair.",
-  },
-  { title: "Enter the device’s passcode", text: "The device asks for its own passcode first." },
-  { title: "Enter the code shown here", text: "Then it asks for the 6-digit code shown on DeviceSteer." },
+const pairSteps = (): { title: string; text: string }[] => [
+  { title: t("pair.step1.title"), text: t("pair.step1.text") },
+  { title: t("pair.step2.title"), text: t("pair.step2.text") },
+  { title: t("pair.step3.title"), text: t("pair.step3.text") },
 ];
 
 const pairRunning = () => pairing?.phase === "waiting" || pairing?.phase === "code";
@@ -2527,7 +2538,7 @@ function openPairing(): void {
   renderList();
   if (narrow(720)) showPanel("sidebar", false, false);
   settingsPane.classList.add("disabled");
-  settingsMessage("Settings show once a device is paired.");
+  settingsMessage(() => t("settings.afterPairing"));
 }
 
 async function startPairing(): Promise<void> {
@@ -2557,7 +2568,7 @@ async function startPairing(): Promise<void> {
   } catch (e) {
     if (gen !== pairGen || !pairing) return;
     stopSetupTick();
-    pairing = { phase: "failed", error: String(e) === "cancelled" ? "Pairing stopped." : pairErrorText(e) };
+    pairing = { phase: "failed", error: String(e) === "cancelled" ? t("pair.stopped") : pairErrorText(e) };
     renderPairing();
   }
 }
@@ -2589,10 +2600,8 @@ function closePairing(): void {
 /** A pairing error as the card shows it. The core's waits fail "... within 600s". */
 function pairErrorText(e: unknown): string {
   const s = String(e);
-  if (/^no device asked to pair within \d+s/.test(s))
-    return `No device started pairing within ${waitText()}. Check that it is on the same network as this computer, press Try Again, then tap Pair with DeviceSteer on the device.`;
-  if (/^nobody entered the code on the device within \d+s/.test(s))
-    return `The code wasn’t entered on the device within ${waitText()}. Press Try Again for a new code.`;
+  if (/^no device asked to pair within \d+s/.test(s)) return t("pair.noDevice", { duration: waitText() });
+  if (/^nobody entered the code on the device within \d+s/.test(s)) return t("pair.noCode", { duration: waitText() });
   return setupErrorText(s.replace(/\. Run `devicesteer setup wifi` again/, ", then press Try Again"));
 }
 
@@ -2605,12 +2614,9 @@ function renderPairing(): void {
   if (!p) return;
   const card = el("div", "setup pair");
   const head = el("div", "setup-head");
-  head.append(
-    el("h3", "", "Pair a device over Wi-Fi"),
-    el("p", "", "For an iPhone or iPad with iOS 27 or later, on the same network as this computer."),
-  );
+  head.append(el("h3", "", t("pair.heading")), el("p", "", t("pair.lead")));
   const list = el("ol", "pair-steps");
-  PAIR_STEPS.forEach((s, i) => {
+  pairSteps().forEach((s, i) => {
     // The device connects only after its own passcode was entered (PITFALLS #56): once the code
     // shows, the first two steps are done. While waiting, both may still be ahead.
     const done = (p.phase === "code" && i < 2) || p.phase === "done";
@@ -2630,26 +2636,26 @@ function renderPairing(): void {
     const box = el("div", `wait${p.phase === "code" ? " with-code" : ""}`);
     const top = el("div", "wait-head");
     const left = timeLeft(p.waitingSince);
-    top.append(el("span", "pulse"), el("span", "wait-label", "Waiting for you on the device"), el("span", `wait-time${left?.low ? " low" : ""}`, left?.text ?? ""));
+    top.append(el("span", "pulse"), el("span", "wait-label", t("setup.waitingOnDevice")), el("span", `wait-time${left?.low ? " low" : ""}`, left?.text ?? ""));
     box.append(top);
     if (p.phase === "code" && p.code) {
       const code = el("div", "pair-code");
-      code.append(el("span", "pair-code-label", "Pairing code"));
+      code.append(el("span", "pair-code-label", t("pair.code")));
       const digits = el("output", "pair-code-digits", spacedCode(p.code));
-      digits.setAttribute("aria-label", `Pairing code ${p.code.split("").join(" ")}`);
+      digits.setAttribute("aria-label", t("pair.codeAria", { digits: p.code.split("").join(" ") }));
       code.append(digits);
-      const msg = el("p", "wait-msg", "Type this on the device, where it asks for the code shown on DeviceSteer. It is not the device’s passcode.");
+      const msg = el("p", "wait-msg", t("pair.typeCode"));
       msg.setAttribute("role", "status");
       box.append(code, msg);
     } else {
-      const msg = el("p", "wait-msg", "This computer shows up on the device as DeviceSteer while this card is open.");
+      const msg = el("p", "wait-msg", t("pair.shownAs"));
       msg.setAttribute("role", "status");
       box.append(msg);
     }
     card.append(box);
   } else if (p.phase === "done") {
     const line = el("div", "pair-done");
-    line.append(el("span", "spinner"), el("span", "", "Paired. Opening the device…"));
+    line.append(el("span", "spinner"), el("span", "", t("pair.paired")));
     line.setAttribute("role", "status");
     card.append(line);
   } else if (p.error) {
@@ -2660,15 +2666,15 @@ function renderPairing(): void {
 
   const actions = el("div", "actions");
   if (p.phase === "failed") {
-    const again = el("button", "btn small", "Try Again");
+    const again = el("button", "btn small", t("common.tryAgain"));
     again.type = "button";
     again.addEventListener("click", () => void startPairing());
-    const close = el("button", "btn small ghost", "Close");
+    const close = el("button", "btn small ghost", t("common.close"));
     close.type = "button";
     close.addEventListener("click", closePairing);
     actions.append(again, close);
   } else if (p.phase !== "done") {
-    const cancel = el("button", "btn small", "Cancel");
+    const cancel = el("button", "btn small", t("common.cancel"));
     cancel.type = "button";
     cancel.addEventListener("click", closePairing);
     actions.append(cancel);
@@ -2769,18 +2775,19 @@ async function select(d: DeviceInfo, opts: { view?: boolean } = {}): Promise<voi
   settingsPane.classList.toggle("disabled", unusable(d) || !!d.setup);
   if (d.unsupported) {
     // Not even setup: no step makes it usable, and the daemon refuses it.
-    settingsMessage("This device can't be used with DeviceSteer.");
-    stageState("unavailable", unsupportedText(d));
+    settingsMessage(() => t("settings.unsupported"));
+    stageState("unavailable", () => unsupportedText(d));
     return;
   }
   if (d.error) {
-    settingsMessage("Settings show once the device is available.");
+    settingsMessage(() => t("settings.afterAvailable"));
+    // The core's reason, in English.
     stageState("unavailable", d.error);
     return;
   }
   if (d.setup) {
     // Nothing to attach to yet: the daemon needs a device that is set up.
-    settingsMessage("Settings show once the device is set up.");
+    settingsMessage(() => t("settings.afterSetup"));
     stageState("setup");
     showSetup(d);
     return;
@@ -2797,13 +2804,13 @@ async function attach(d: DeviceInfo): Promise<void> {
     // Messages of an earlier attachment can still be in flight after another device was picked.
     if (gen === viewerGen) onMessage(m instanceof ArrayBuffer ? new Uint8Array(m) : Uint8Array.from(m));
   };
-  settingsMessage("Connecting…");
+  settingsMessage(() => t("common.connecting"));
   try {
     await invoke("attach", { udid: d.udid, frames: wantView, channel });
   } catch (e) {
     if (gen !== viewerGen) return;
     settingsMessage("");
-    stageState("error", `Couldn't connect to ${deviceName(d)}: ${e}`);
+    stageState("error", () => t("stage.connectFailed", { device: deviceName(d), error: errorText(e) }));
     return;
   }
   if (gen !== viewerGen) return;
@@ -2822,7 +2829,7 @@ async function attach(d: DeviceInfo): Promise<void> {
 async function view(): Promise<void> {
   if (!selected || unusable(selected) || selected.setup || gone) return;
   wantView = true;
-  if (stage.dataset.state !== "live") stageState("connecting", "Starting the screen…");
+  if (stage.dataset.state !== "live") stageState("connecting", () => t("stage.starting"));
   if (!attachedUdid) {
     // Still attaching (it asks for frames now), or it failed: try again.
     if (stage.dataset.state === "error" || !viewerGen) await attach(selected);
@@ -2840,7 +2847,7 @@ async function view(): Promise<void> {
       await attach(selected);
       return;
     }
-    stageState("error", `Couldn't start the screen: ${e}`);
+    stageState("error", () => t("stage.startFailed", { error: errorText(e) }));
   }
 }
 
@@ -2931,8 +2938,44 @@ function report(): void {
   });
 }
 
+// ---------- language ----------
+//
+// Another language picked in Settings (i18n.ts): `localize` has translated the static HTML; the
+// parts drawn from code are drawn again. Notes and errors already shown stay as they were.
+
+/** The app menu's labels (view_menu.rs), which the shell can't translate itself. */
+const MENU_KEYS = [
+  "about", "services", "hide", "hideOthers", "showAll", "quit", "file", "closeWindow", "edit", "undo", "redo", "cut", "copy",
+  "paste", "selectAll", "view", "showTouches", "enterFullScreen", "window", "minimize", "zoom", "help", "settings", "settingsWindow",
+] as const;
+
+function sendMenuLabels(): void {
+  const labels = Object.fromEntries(MENU_KEYS.map((k) => [k, t(`menu.${k}`, { app: "DeviceSteer" })]));
+  void invoke("set_menu_labels", { labels }).catch(() => {});
+}
+
+onLanguageChange(() => {
+  sendMenuLabels();
+  renderList();
+  showDeviceText();
+  showStageText();
+  settingsStatus.textContent = settingsText();
+  onControl(control);
+  blockedHint.textContent = t("session.blockedHint");
+  showKeyboardState();
+  if (clipShared.disabled) clipShared.title = t("keyboard.sharedMacOnly");
+  showRevealText();
+  showRecording();
+  showSettings({});
+  showInfo();
+  if (setupFor) renderSetup();
+  if (pairing) renderPairing();
+});
+
 // ---------- start ----------
 
+localize();
+sendMenuLabels();
 showPanel("sidebar", !narrow(720) && prefs.get("sidebar") !== "0", false);
 showPanel("inspector", !narrow(1000) && prefs.get("inspector") !== "0", false);
 settingsPane.classList.add("disabled");

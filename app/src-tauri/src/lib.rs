@@ -178,16 +178,47 @@ async fn send(cmd: String, args: Value, viewer: State<'_, Viewer>) -> Result<Val
     client.request(&cmd, args).await.map_err(|e| format!("{e:#}"))
 }
 
+/// An error the page shows to the person. `code` names a message in the page's catalogs
+/// (`error.<code>` in app/src/locales/*.json), filled from `detail`; `message` is the English
+/// text, which the page shows as it is when there is no code (the daemon's errors).
+#[derive(Debug, serde::Serialize)]
+struct ViewerError {
+    code: Option<&'static str>,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+impl ViewerError {
+    fn coded(code: &'static str, message: String, detail: Option<String>) -> Self {
+        Self { code: Some(code), message, detail }
+    }
+}
+
+impl From<String> for ViewerError {
+    fn from(message: String) -> Self {
+        Self { code: None, message, detail: None }
+    }
+}
+
+impl From<&str> for ViewerError {
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
+}
+
 /// Puts the Mac clipboard's text on the device clipboard, without pasting it. The text stays in
 /// this process: the page only learns how many characters went.
 #[tauri::command]
-async fn clipboard_to_device(viewer: State<'_, Viewer>) -> Result<Value, String> {
+async fn clipboard_to_device(viewer: State<'_, Viewer>) -> Result<Value, ViewerError> {
     let client = viewer.client.lock().await.clone().ok_or("not attached to a device")?;
     let text = arboard::Clipboard::new()
         .and_then(|mut c| c.get_text())
         .map_err(|e| match e {
-            arboard::Error::ContentNotAvailable => "The Mac clipboard holds no text.".to_string(),
-            e => format!("Couldn't read the Mac clipboard: {e}"),
+            arboard::Error::ContentNotAvailable => {
+                ViewerError::coded("mac_clipboard_empty", "The Mac clipboard holds no text.".into(), None)
+            }
+            e => ViewerError::coded("mac_clipboard_read", format!("Couldn't read the Mac clipboard: {e}"), Some(e.to_string())),
         })?;
     let r = client.request("clipboard_set", serde_json::json!({ "text": text })).await.map_err(|e| format!("{e:#}"))?;
     viewer.clip.note_synced(&text).await;
@@ -196,7 +227,7 @@ async fn clipboard_to_device(viewer: State<'_, Viewer>) -> Result<Value, String>
 
 /// Puts the device clipboard's text on the Mac clipboard. Returns its kind and length only.
 #[tauri::command]
-async fn clipboard_from_device(viewer: State<'_, Viewer>) -> Result<Value, String> {
+async fn clipboard_from_device(viewer: State<'_, Viewer>) -> Result<Value, ViewerError> {
     let client = viewer.client.lock().await.clone().ok_or("not attached to a device")?;
     let mut r = client.request("clipboard_get", serde_json::json!({})).await.map_err(|e| format!("{e:#}"))?;
     let Some(text) = r.as_object_mut().and_then(|o| o.remove("text")) else {
@@ -205,7 +236,7 @@ async fn clipboard_from_device(viewer: State<'_, Viewer>) -> Result<Value, Strin
     let text = text.as_str().unwrap_or_default();
     arboard::Clipboard::new()
         .and_then(|mut c| c.set_text(text))
-        .map_err(|e| format!("Couldn't write the Mac clipboard: {e}"))?;
+        .map_err(|e| ViewerError::coded("mac_clipboard_write", format!("Couldn't write the Mac clipboard: {e}"), Some(e.to_string())))?;
     viewer.clip.note_synced(text).await;
     Ok(r)
 }
@@ -319,7 +350,7 @@ pub fn run() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_pair_wifi, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, settings_window::open_settings, settings_window::show_move_sheet])
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_pair_wifi, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_location::app_location, app_location::app_move_to_applications, app_version, view_menu::set_show_touches, view_menu::set_menu_labels, settings_window::open_settings, settings_window::show_move_sheet])
         .run(tauri::generate_context!())
         .expect("error while running the DeviceSteer app");
 }

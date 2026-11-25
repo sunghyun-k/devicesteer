@@ -35,6 +35,7 @@
     "allow-app-move-to-applications",
     "allow-app-version",
     "allow-set-show-touches",
-    "allow-open-settings"
+    "allow-open-settings",
+    "allow-set-menu-labels"
   ]
 }
