@@ -1150,3 +1150,26 @@ added inbound rules for the program on the private profile only.
 
 After both fixes an iPad on iPadOS 27.2.1 listed "DeviceSteer" from the Windows desktop and paired
 with it; its tunnel, setup reads and screenshots then worked from Windows as from macOS (#55).
+
+### 60. Widgets come as an application of their own: the home screen wasn't recognised
+
+`ui` names a system screen (`surface`) only when SpringBoard is the only app, and only then waits
+for the second pass, whose identifiers tell the screens apart (#22).
+
+- On an iPad's home screen with widgets (iPadOS 27.2.1) the tree listed two applications:
+  SpringBoard and the widget renderer. `ui` therefore skipped the second pass and printed no
+  `surface`. The renderers are `/Applications/WidgetRenderer_*.app` (installation_proxy lists them
+  as `com.apple.chrono.WidgetRenderer-Default`, `-StandBy`, `-Activities`, `-Snapshots`,
+  `-WatchFaces`); the iPhone (iOS 27.3) ran `WidgetRenderer_Default` with lock screen widgets
+  showing. `ui` now lists them as `hosted` (drawing inside SpringBoard) and waits for the second
+  pass when only SpringBoard and renderers are on screen.
+- Not yet checked: whether an iPad home screen has the same `spotlight-pill` identifier as the
+  iPhone's. If `surface` is still missing there, read it with `ui --full` and add its identifier.
+- A passcode-locked iPhone (iOS 27.3, Wi-Fi, lock screen showing) gave no elements at all, with
+  `--full --all` too: only the SpringBoard application, so no `surface` either.
+
+Right after a launch, `ui` frames were ~190 pt away from where a screenshot showed the elements:
+the app was still zooming in. The first pass (#10) is taken as soon as it comes, and the device
+sends it during the animation. Nothing in a single dump says the screen is moving; two readings
+in a row with the same frames do. Not measured further (that needs input on the device), so the
+agent guide tells agents to read again after a launch instead of `ui` waiting on every reading.

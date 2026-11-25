@@ -288,8 +288,10 @@ impl Controller {
         };
         let pids: Vec<i64> = dump.elements.keys().map(|k| k.pid).collect();
         self.learn_processes(&pids).await;
+        // Widget renderers come as applications of their own on the home and lock screens
+        // (PITFALLS #60).
         let springboard_only = !dump.applications.is_empty()
-            && dump.applications.iter().all(|k| self.describe(k.pid).bundle_id.as_deref() == Some(crate::apps::SPRINGBOARD));
+            && dump.applications.iter().all(|k| crate::apps::is_system_ui(self.describe(k.pid).bundle_id.as_deref()));
         if !full && springboard_only {
             // SpringBoard's screens are told apart by identifiers, which only the second pass has
             // (PITFALLS #22).

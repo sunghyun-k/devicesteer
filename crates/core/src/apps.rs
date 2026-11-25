@@ -12,6 +12,23 @@ const UNLISTED: &[(&str, &str, &str)] = &[("SpringBoard.app", "SpringBoard", SPR
 /// system alerts all belong to this process.
 pub const SPRINGBOARD: &str = "com.apple.springboard";
 
+/// Widgets on the home screen and the lock screen are drawn by these processes
+/// (`com.apple.chrono.WidgetRenderer-Default`, `-StandBy`, ...), which the accessibility tree lists
+/// as applications of their own beside SpringBoard (PITFALLS #60).
+const WIDGET_RENDERER: &str = "com.apple.chrono.WidgetRenderer";
+
+/// A process that draws only inside SpringBoard's screens, though the tree lists it as an
+/// application.
+pub fn draws_in_springboard(bundle_id: Option<&str>) -> bool {
+    bundle_id.is_some_and(|id| id.starts_with(WIDGET_RENDERER))
+}
+
+/// SpringBoard, or a process that draws inside it: with only these on screen, a system screen
+/// shows.
+pub fn is_system_ui(bundle_id: Option<&str>) -> bool {
+    bundle_id == Some(SPRINGBOARD) || draws_in_springboard(bundle_id)
+}
+
 /// A process as `ui` names it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ProcName {
@@ -97,6 +114,16 @@ mod tests {
             ("/private/var/containers/Bundle/Application/X/Calculator.app".into(), "Calculator".into(), "com.apple.calculator".into()),
             ("/Applications/Preferences.app".into(), "Settings".into(), "com.apple.Preferences".into()),
         ])
+    }
+
+    #[test]
+    fn widget_renderers_count_as_system_ui() {
+        assert!(is_system_ui(Some(SPRINGBOARD)));
+        assert!(is_system_ui(Some("com.apple.chrono.WidgetRenderer-Default")));
+        assert!(draws_in_springboard(Some("com.apple.chrono.WidgetRenderer-StandBy")));
+        assert!(!draws_in_springboard(Some(SPRINGBOARD)));
+        assert!(!is_system_ui(Some("com.apple.Preferences")));
+        assert!(!is_system_ui(None));
     }
 
     #[test]
