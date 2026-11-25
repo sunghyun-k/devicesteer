@@ -126,6 +126,28 @@ impl Display {
 /// is `CoreDevice touchscreen(nil)`.
 pub(crate) const NO_UNIQUE_ID: &str = "nil";
 
+/// The turn from the device's orientation, `getdisplayinfo`'s top-level `orientation`: the last
+/// one held upright (`currentDeviceNonFlatOrientation`), so a phone laid flat keeps the screen as it
+/// was. Both panels of a foldable have a native orientation of `rot0`, so this is the rotation from
+/// the panel too. The device's orientation is not the interface's: an app that stays in portrait
+/// would be turned while the phone is held sideways (PITFALLS #48).
+fn device_rotation(output: &plist::Value) -> Option<Rotation> {
+    let o = output.as_dictionary()?.get("orientation")?.as_dictionary()?;
+    let name = ["currentDeviceNonFlatOrientation", "currentDeviceOrientation"]
+        .iter()
+        .filter_map(|k| o.get(k).and_then(|v| v.as_string()))
+        .find(|n| !matches!(*n, "unknown" | "faceUp" | "faceDown"))?;
+    Some(match name {
+        "portrait" => Rotation::R0,
+        "portraitUpsideDown" => Rotation::R180,
+        // Seen: in landscapeLeft the interface's top lay along the picture's right edge, which
+        // is rot270 (as on a phone with one panel, PITFALLS #27); landscapeRight the opposite.
+        "landscapeLeft" => Rotation::R270,
+        "landscapeRight" => Rotation::R90,
+        _ => return None,
+    })
+}
+
 /// The active display from a `getdisplayinfo` output.
 ///
 /// The device also lists wireless displays of no size. A foldable marks its panels with `active`
@@ -179,7 +201,13 @@ fn parse(output: &plist::Value) -> Result<Display> {
         display_id: display.get("displayId").and_then(|v| v.as_signed_integer()),
         panel: (w / scale, h / scale),
         scale,
-        rotation: Rotation::parse(text("currentOrientation")?)?,
+        rotation: {
+            let panel = Rotation::parse(text("currentOrientation")?)?;
+            // A foldable's panels keep the `currentOrientation` they had (the inner one `rot90`,
+            // the cover `rot0`) through every turn, while the interface turns inside the picture;
+            // only the device's orientation follows (PITFALLS #48).
+            if marks_active { device_rotation(output).unwrap_or(panel) } else { panel }
+        },
     })
 }
 
@@ -338,6 +366,11 @@ mod tests {
     /// A foldable's answer (shape seen on iOS 27.3): two sized panels with `active`, and a sized
     /// wireless display while a stream runs (it carries the scaled-down video, PITFALLS #47).
     fn foldable(cover_active: bool) -> plist::Value {
+        foldable_held(cover_active, None)
+    }
+
+    /// [`foldable`] with the top-level `orientation` the device reports, if any.
+    fn foldable_held(cover_active: bool, held: Option<&str>) -> plist::Value {
         let arr = |v: Vec<plist::Value>| plist::Value::Array(v);
         let real = |f: f64| plist::Value::Real(f);
         let panel = |id: &str, display_id: i64, active: bool, primary: bool, w: f64, h: f64, rot: &str| {
@@ -358,6 +391,13 @@ mod tests {
         wireless.insert("currentOrientation".into(), plist::Value::String("rot0".into()));
         wireless.insert("bounds".into(), arr(vec![arr(vec![real(0.0), real(0.0)]), arr(vec![real(1408.0), real(2048.0)])]));
         let mut out = plist::Dictionary::new();
+        if let Some(held) = held {
+            let mut o = plist::Dictionary::new();
+            o.insert("currentDeviceOrientation".into(), plist::Value::String(held.into()));
+            o.insert("currentDeviceNonFlatOrientation".into(), plist::Value::String(held.into()));
+            o.insert("currentDeviceOrientationLocked".into(), plist::Value::Boolean(false));
+            out.insert("orientation".into(), plist::Value::Dictionary(o));
+        }
         out.insert(
             "displays".into(),
             arr(vec![
@@ -377,6 +417,55 @@ mod tests {
         assert_eq!((open.unique_id.as_str(), open.display_id, open.panel), ("inner", Some(2), (669.0, 951.0)));
         assert_eq!((folded.unique_id.as_str(), folded.display_id, folded.panel), ("cover", Some(1), (466.0, 678.0)));
         assert!(!open.same_panel(&folded));
+    }
+
+    #[test]
+    fn a_foldable_turns_with_the_device_not_its_panels_stale_orientation() {
+        // Seen on iOS 27.3: the inner panel says rot90 and the cover rot0 whichever way the phone
+        // is held; the interface follows the device's orientation (PITFALLS #48).
+        for (held, rotation) in [
+            ("portrait", Rotation::R0),
+            ("landscapeLeft", Rotation::R270),
+            ("landscapeRight", Rotation::R90),
+            ("portraitUpsideDown", Rotation::R180),
+        ] {
+            assert_eq!(parse(&foldable_held(false, Some(held))).unwrap().rotation, rotation, "inner, {held}");
+            assert_eq!(parse(&foldable_held(true, Some(held))).unwrap().rotation, rotation, "cover, {held}");
+        }
+        let inner = parse(&foldable_held(false, Some("portrait"))).unwrap();
+        assert_eq!((inner.size(), inner.orientation()), ((669.0, 951.0), "portrait"));
+        // Laid flat: the last orientation held upright.
+        let mut flat = foldable_held(false, Some("landscapeLeft"));
+        let o = flat.as_dictionary_mut().unwrap().get_mut("orientation").unwrap().as_dictionary_mut().unwrap();
+        o.insert("currentDeviceOrientation".into(), plist::Value::String("faceUp".into()));
+        assert_eq!(parse(&flat).unwrap().rotation, Rotation::R270);
+        // No device orientation: the panel's own.
+        assert_eq!(parse(&foldable(false)).unwrap().rotation, Rotation::R90);
+    }
+
+    #[test]
+    fn a_phone_with_one_panel_keeps_its_panels_orientation() {
+        // There `currentOrientation` is the interface orientation, which also covers apps that
+        // stay in portrait while the phone is sideways (PITFALLS #27).
+        let mut out = parse_input_one_panel("rot0");
+        let mut o = plist::Dictionary::new();
+        o.insert("currentDeviceNonFlatOrientation".into(), plist::Value::String("landscapeLeft".into()));
+        out.as_dictionary_mut().unwrap().insert("orientation".into(), plist::Value::Dictionary(o));
+        assert_eq!(parse(&out).unwrap().rotation, Rotation::R0);
+    }
+
+    fn parse_input_one_panel(rot: &str) -> plist::Value {
+        let arr = |v: Vec<plist::Value>| plist::Value::Array(v);
+        let real = |f: f64| plist::Value::Real(f);
+        let mut d = plist::Dictionary::new();
+        d.insert("primary".into(), plist::Value::Boolean(true));
+        d.insert("displayId".into(), plist::Value::Integer(1.into()));
+        d.insert("pointScale".into(), real(3.0));
+        d.insert("currentOrientation".into(), plist::Value::String(rot.into()));
+        d.insert("bounds".into(), arr(vec![arr(vec![real(0.0), real(0.0)]), arr(vec![real(1284.0), real(2778.0)])]));
+        let mut out = plist::Dictionary::new();
+        out.insert("displays".into(), arr(vec![plist::Value::Dictionary(d)]));
+        plist::Value::Dictionary(out)
     }
 
     #[test]

@@ -881,8 +881,8 @@ polled `getdisplayinfo` every 0.1 s and `devicesteer events --frames` watched th
   into use reports `backlightState: activeOn` 0.2 to 0.7 s before `active` flips, and the one going
   out of use goes `off` about 1 to 3 s after.
 - **The panel not in use keeps an orientation of its own**: once folded, the inner panel said
-  `rot90` while the cover was `rot0`, and still `rot90` right after unfolding. Only the active
-  panel's `currentOrientation` means anything.
+  `rot90` while the cover was `rot0`, and still `rot90` right after unfolding. In fact neither
+  panel's `currentOrientation` ever moves; the device's orientation is what follows a turn (#48).
 - **The inner panel's `frame` and `nativeSize` (1878x2670) are smaller than its `bounds`
   (2007x2853)**; screenshots of it were 2007x2853, so `bounds` stays the size to use.
 - **A sized wireless display appears while a stream runs**: `wireless0` (`displayId` 4) gets
@@ -907,11 +907,12 @@ config and takes no touches until the new one. `screenshot` without `--display` 
 panel. A recording keeps only frames of its first picture size (an MP4 track has one set of
 parameter sets) and reports the rest as `frames_of_another_picture`.
 
-### 48. A foldable's inner panel arrives scaled down, with padding after it
+### 48. A foldable: the inner panel's picture is scaled down, and the panels' orientation never moves
 
-Foldable iPhone (iOS 27.3, USB), unfolded and folded by hand while `examples/turn_probe.rs`
-(daemon) polled `getdisplayinfo` every 0.1 s and saved the daemon's stream as raw HEVC, one file
-per `config`, decoded with ffmpeg afterwards.
+Foldable iPhone (iOS 27.3, USB), rotation lock off. The owner turned it by hand between portrait
+and both landscapes, unfolded on the home screen and in Safari, then folded and unfolded, while
+`examples/turn_probe.rs` (daemon) polled `getdisplayinfo` every 0.1 s and saved the daemon's
+stream as raw HEVC, one file per `config`, decoded with ffmpeg afterwards.
 
 - **The inner panel arrives scaled down, with padding after it.** Its 2007x2853 px came as a
   1408x2016 picture (the sized wireless display of #47 is 1408x2048): the screen fills columns 0 to
@@ -922,6 +923,27 @@ per `config`, decoded with ffmpeg afterwards.
   in as a black band: along the bottom of the panel, which `rot90` turned to the left edge.
   `Display::picture_px` now gives the screen's size inside the picture (the panel scaled down to
   fit it, never up), and `config` sends that as `display_px`.
+- **The video doesn't turn**, as on a phone with one panel (#27): the picture stays the panel in
+  its native orientation, and the interface, the home screen included (it turns on this phone),
+  is drawn turned inside it. In `landscapeLeft` the interface's top lies along the picture's right
+  edge (`rot270`); in `landscapeRight` along its left edge (`rot90`). The same on the cover panel.
+- **Each panel's `currentOrientation` stays put.** Through every turn, folded or unfolded, the
+  inner panel said `rot90` and the cover `rot0`, and `nativeOrientation` was `rot0` on both. The
+  daemon took the inner panel's `rot90` at face value, so the viewer turned an upright portrait
+  screen on its side and never followed a turn: the whole of what looked like "rotation isn't
+  followed".
+- **The device's orientation follows.** The answer has a top-level `orientation` with
+  `currentDeviceOrientation`, `currentDeviceNonFlatOrientation` (`portrait`, `landscapeLeft`,
+  `landscapeRight`) and `currentDeviceOrientationLocked`. It changed at about the start of the
+  interface's turn animation, which ended within 0.25 s, so the 0.5 s display poll (#27) keeps the
+  viewer at most about half a second behind. On a foldable (`active` marks on the panels) the
+  rotation now comes from `currentDeviceNonFlatOrientation`, which a phone laid flat leaves at the
+  last upright orientation; without it, the panel's own. This is the device's orientation, not the
+  interface's: an app that stays in portrait while the phone is held sideways would be shown turned,
+  and touches placed turned. Not seen yet; no app like that was tried. A phone with one panel
+  keeps using `currentOrientation`, which there is the interface orientation (#27).
+- Touches after a turn on this phone were not tried (the owner's device; no input was sent). They
+  go through the same `Display::report_point` as on a phone with one panel, which #27 checked.
 - **Recordings keep the padding.** An MP4 has the coded picture with no crop, on every device (#11):
   14 rows at the bottom of the inner panel's picture (at the left once the track matrix turns a
   landscape recording). Cropping would need a conformance window in the SPS or a `clap` box; not
