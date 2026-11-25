@@ -3,9 +3,10 @@
 // the video's own clock so it stays aligned through every loop. Without this script, or with
 // reduced motion, the poster shows with the arrow and the first label standing still.
 (() => {
-  // Where the hero's media lives: the video files and the poster. Point it at external storage
-  // when the files move there (and the poster's src in index.html with it).
-  const MEDIA_BASE = '/media/';
+  // Where the site's media lives: the Vercel Blob store of the devicesteer project (the files
+  // are not in the repository; AGENTS.md). The img srcs in index.html name the same base, so a
+  // page without this script still shows the stills: change them together.
+  const MEDIA_BASE = 'https://wieplxckcz6lqlk4.public.blob.vercel-storage.com/media/';
   // Other stills from the same storage (the safety section's screen), named in data-media.
   for (const img of document.querySelectorAll('img[data-media]')) img.src = MEDIA_BASE + img.dataset.media;
   // The session, from the recording's timeline (offsets in the cut clip, in ms; points as
