@@ -1,5 +1,5 @@
 //! DNS-SD browsing through Windows' own mDNS responder (the DNS Client service), so this program
-//! opens no socket of its own to find devices (PITFALLS #67).
+//! opens no socket of its own to find devices (PITFALLS #68).
 //!
 //! A program that binds UDP 5353 to hear mDNS answers, as `mdns-sd` does, makes Windows Defender
 //! Firewall ask the person whether to allow it on the network, at first launch and again for

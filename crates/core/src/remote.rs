@@ -78,7 +78,7 @@ impl Advert {
 
 /// Every `_remotepairing._tcp` advert heard within `wait`, one per device.
 ///
-/// Needs no Bonjour service: on Windows the system's own mDNS responder answers (PITFALLS #67),
+/// Needs no Bonjour service: on Windows the system's own mDNS responder answers (PITFALLS #68),
 /// elsewhere our own mDNS socket. A device that sleeps is answered for by a sleep proxy, which macOS's Bonjour caches but a fresh
 /// query here may not hear; such a device shows up once it wakes (PITFALLS #55).
 pub(crate) async fn browse(wait: Duration) -> Result<Vec<Advert>> {
@@ -121,7 +121,7 @@ async fn browse_until(wait: Duration, done: impl Fn(&Advert) -> bool) -> Result<
 /// `_remotepairing._tcp` instances as they are resolved: TXT record and addresses.
 ///
 /// Windows asks its own mDNS responder: an mDNS socket of ours there makes the firewall ask the
-/// person to allow the program (PITFALLS #67). Elsewhere `mdns-sd` sends the queries itself.
+/// person to allow the program (PITFALLS #68). Elsewhere `mdns-sd` sends the queries itself.
 #[cfg(windows)]
 struct Answers(crate::dnssd::Browse);
 
@@ -387,7 +387,7 @@ pub(crate) enum PairEvent {
 ///
 /// The device connects to us, so this listens on every interface: the one place DeviceSteer
 /// accepts connections from the network. On Windows that makes the firewall ask, once per
-/// executable, whether to allow it; a per-user install can't add the rule beforehand (PITFALLS #67).
+/// executable, whether to allow it; a per-user install can't add the rule beforehand (PITFALLS #68).
 pub(crate) async fn pair(wait: Duration, events: impl Fn(PairEvent) + Send) -> Result<String> {
     // One listener per family on the same port: `::` takes IPv4 too on macOS, but is IPv6-only
     // on Windows, where IPv4 connections were refused (PITFALLS #59).
@@ -463,7 +463,7 @@ pub(crate) async fn pair(wait: Duration, events: impl Fn(PairEvent) + Send) -> R
 }
 
 /// Added to the timeout when no device connected: on Windows a refused firewall prompt blocks the
-/// device's connection without a word (PITFALLS #67).
+/// device's connection without a word (PITFALLS #68).
 #[cfg(windows)]
 const FIREWALL_HINT: &str = ". If Windows asked whether to allow DeviceSteer on the network and it was not allowed, the \
     device can't connect: ask the user to allow it on private networks in Windows Security > Firewall & network \

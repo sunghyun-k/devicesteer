@@ -1383,3 +1383,35 @@ on every keydown, to choose which PC keys the viewer sends as Command and Contro
   and switches the Windows IME whatever the page does. The viewer doesn't forward it.
 - A global shortcut of another app (a password manager's Ctrl+Shift+Space) takes the keys before
   the page, which then sees only `blur`.
+
+### 68. Windows Firewall asked at first launch: our own mDNS socket
+
+Windows 11 Pro (build 26200), DeviceSteer 1.0.0-beta.2 installed per user, with an iPad already
+paired over Wi-Fi. The first launch raised two "Windows Security Alert" prompts three seconds
+apart; refusing them left Block rules for `devicesteer-app.exe` and `devicesteer.exe`.
+
+- **What asked: the Wi-Fi search.** With a Wi-Fi pairing stored, `devices` (in the viewer and the
+  CLI) and every Wi-Fi tunnel the daemon opens browse `_remotepairing._tcp`, and `mdns-sd` binds
+  UDP 5353 on the wildcard address (`:::5353` was seen) to hear the answers. A program that binds
+  or listens on a non-loopback address and has no firewall rule gets the prompt, once per
+  executable path: every build folder asks again.
+- **Nothing else listens.** The daemons and the viewer talk over named pipes; usbmuxd is an outgoing
+  connection to `127.0.0.1:27015`; the tunnel, its RSD and the media streams' UDP run in jktcp's
+  userspace stack, not on host sockets; the updater only connects out; WebView2 has its own
+  "Microsoft Edge WebView2 mDNS" rule. Only pairing (#56, #59) listens for real: the device
+  connects to us.
+- **The answer is not to listen.** Windows 10 1809 and later browse DNS-SD through the DNS Client
+  service (`DnsServiceBrowse`, `DnsServiceResolve` in dnsapi.dll), which already holds mDNS
+  (UDP-In) rules on every profile. On Windows `remote.rs` browses that way (`dnssd.rs`): the same
+  `devices` found the iPad over Wi-Fi in about 2.6 s, three times in a row, with no socket bound
+  by the process, no prompt and no firewall rule created for the new executable; a tunnel opened
+  to the resolved address and listed RSD's services. Its TXT record carries `identifier` and
+  `authTag`, so matching (#55) is unchanged.
+- **A refused prompt didn't stop the search** with our own socket either: with Block rules for the
+  program, `devices` still found the iPad (the firewall lets answers to an outgoing multicast
+  query in). The prompt was the problem, not the result.
+- **Pairing still asks.** It needs an inbound TCP port (the device connects), and keeps `mdns-sd`
+  to advertise (one prompt covers both). A per-user installer can't add a firewall rule:
+  `New-NetFirewallRule` and `netsh advfirewall` need administrator rights, so the NSIS hook would
+  need its own UAC prompt, which is no better. So it happens once, when the person pairs, and is
+  documented; when no device connects, the timeout says a refused prompt may be why.

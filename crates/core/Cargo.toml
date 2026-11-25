@@ -22,7 +22,7 @@ shiguredo_mp4 = "=2026.3.0"
 # Screenshots: the device's 16-bit PNG is saved 8-bit (PITFALLS #63).
 png = "0.18"
 # Finds devices on the local network (`_remotepairing._tcp`) on macOS, and advertises this computer
-# for pairing; Windows finds devices through its own mDNS responder instead (PITFALLS #67).
+# for pairing; Windows finds devices through its own mDNS responder instead (PITFALLS #68).
 mdns-sd = { version = "0.22", default-features = false, features = ["async"] }
 
 [dev-dependencies]

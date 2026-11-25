@@ -106,9 +106,15 @@ has one build identity per board, so a device newer than its Xcode needs a newer
 
 ## Windows
 
-Wi-Fi pairing and discovery use their own mDNS socket (`mdns-sd`), not Bonjour, so they need
-nothing installed. The first `setup wifi` makes Windows Firewall ask whether DeviceSteer may accept
-connections: allow it on private networks, or the device can't connect to pair (PITFALLS #59). A
+Wi-Fi discovery asks Windows' own mDNS responder (the DNS Client service, through
+`DnsServiceBrowse`), and pairing advertises with its own mDNS socket (`mdns-sd`); neither needs
+Bonjour or anything else installed. Finding and using devices opens no socket that accepts
+connections, so Windows Defender Firewall doesn't ask about it. Pairing does: the device connects
+to this computer, so the first `setup wifi` (or Pair over Wi-Fi in the viewer) from each copy of
+the program makes the firewall ask whether DeviceSteer may accept connections. Allow it on private
+networks, or the device can't connect to pair. A per-user install can't add that rule beforehand
+(it needs administrator rights). If it was refused, allowing DeviceSteer under Windows Security ›
+Firewall & network protection › Allow an app through firewall fixes it (PITFALLS #59, #68). A
 device paired over Wi-Fi needs no usbmuxd, so it works without Apple Devices installed.
 
 USB pairing saves the record through Apple's usbmuxd (installed with Apple Devices or iTunes), which
