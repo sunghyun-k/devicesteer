@@ -123,7 +123,9 @@ done
 [ -f "$app/Contents/Resources/skills/devicesteer/SKILL.md" ] || die "the skill is missing from the bundle"
 [ "$("$cli" --version | awk '{print $2}')" = "$version" ] || die "the bundled CLI reports another version"
 codesign --verify --deep --strict "$app" || die "the app's signature doesn't verify"
-codesign -dv "$cli" 2>&1 | grep -q 'flags=.*runtime' || die "the CLI isn't signed with the hardened runtime"
+# Captured first: with pipefail, `grep -q` quitting early would fail the pipeline on SIGPIPE.
+cli_signature=$(codesign -dv "$cli" 2>&1)
+grep -q 'flags=.*runtime' <<<"$cli_signature" || die "the CLI isn't signed with the hardened runtime"
 
 # Waits for notarization of one file and fails with Apple's log when it is rejected.
 notarize() {
