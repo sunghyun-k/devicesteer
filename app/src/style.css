@@ -644,28 +644,50 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .select select:hover { background: var(--hover); }
 .select .icon { position: absolute; right: 8px; width: 14px; height: 14px; pointer-events: none; color: var(--fg-3); stroke-width: 1.8; }
 
-/* A slider like a level picker's: a thick pill that fills with the accent up to a white knob,
-   with dots for the steps of a stepped one. 132 pixels wide so the dots land on the steps. */
+/* A slider like a macOS one: a 4-pixel track that fills with the accent up to a 16-pixel white
+   knob, the switch's knob, so it weighs no more than the switches and dropdowns around it. A
+   stepped one has short tick marks below the track, one per step. The engines don't centre a
+   restyled knob on a thinner track (WebKit on macOS, Chromium in WebView2 on Windows), hence the
+   negative margin. The ticks assume 12 steps, and the width leaves each step a whole number of
+   pixels (16 + 11 × 11 = 137): WebKit rounds a repeating background's tile size, and with a
+   fractional step the ticks drift off the knob's stops towards the right end. */
 .slider {
-  --p: 50%; --track-c: var(--track);
-  -webkit-appearance: none; appearance: none; flex: none; width: 132px; height: 20px; margin: 0; background: transparent;
+  --p: 0.5; --w: 137px; --knob: 16px;
+  -webkit-appearance: none; appearance: none; flex: none; width: var(--w); height: 30px; margin: 0;
+  --knob-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 }
 .slider::-webkit-slider-runnable-track {
-  height: 20px; border-radius: 10px;
-  background: linear-gradient(90deg, var(--accent) 0 calc(var(--p) * 0.85 + 10px), var(--track-c) 0);
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent) 0 calc(var(--knob) / 2 + (100% - var(--knob)) * var(--p)), var(--track) 0);
 }
-.slider.ticks::-webkit-slider-runnable-track {
+/* Tick marks sit on the input's own box, a pixel under the knob, at knob centres. Each slider
+   marks the device's default (`--default`, 0 to 1 along the track) with a longer tick; a stepped
+   one adds a short tick per step, on the same whole-pixel grid. */
+.slider {
+  --tick: color-mix(in srgb, var(--fg-3) 70%, transparent);
+  --default-tick: linear-gradient(var(--tick), var(--tick)) calc(var(--knob) / 2 - 0.5px + (var(--w) - var(--knob)) * var(--default)) 24px / 1px 6px no-repeat;
+  background: var(--default-tick);
+}
+.slider.ticks {
+  --step: calc((var(--w) - var(--knob)) / 11);
   background:
-    radial-gradient(circle, rgba(128, 128, 128, 0.55) 1.3px, transparent 1.8px) 4.91px 50% / 10.18px 100% repeat-x,
-    linear-gradient(90deg, var(--accent) 0 calc(var(--p) * 0.85 + 10px), var(--track-c) 0);
+    var(--default-tick),
+    linear-gradient(90deg, transparent calc(50% - 0.5px), var(--tick) 0 calc(50% + 0.5px), transparent 0)
+      calc(var(--knob) / 2 - var(--step) / 2) 24px / var(--step) 4px repeat-x;
 }
+/* Defaults read on an iOS 27.3 iPhone at its default settings: Liquid Glass 0.5 and Large (`l`,
+   step 3 of 11), the default text size. */
+#liquid-glass { --default: 0.5; }
+#text-size { --default: calc(3 / 11); }
 .slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
-  background: #fff; border: 0.5px solid rgba(0, 0, 0, 0.12); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  -webkit-appearance: none; width: var(--knob); height: var(--knob); margin-top: calc((4px - var(--knob)) / 2);
+  border: 0; border-radius: 50%; background: #fff; box-shadow: var(--knob-shadow);
 }
-.slider::-moz-range-track { height: 20px; border-radius: 10px; background: var(--track-c); }
-.slider::-moz-range-progress { height: 20px; border-radius: 10px; background: var(--accent); }
-.slider::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+.slider:focus-visible { outline: none; }
+.slider:focus-visible::-webkit-slider-thumb { box-shadow: var(--knob-shadow), 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+.slider::-moz-range-track { height: 4px; border-radius: 2px; background: var(--track); }
+.slider::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+.slider::-moz-range-thumb { width: var(--knob); height: var(--knob); border: 0; border-radius: 50%; background: #fff; box-shadow: var(--knob-shadow); }
 .slider:disabled { cursor: default; }
 
 /* A switch: 32 by 20, the accent when on. */
