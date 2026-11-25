@@ -2,14 +2,10 @@
 
 See and control your connected iPhone or iPad. DeviceSteer operates a **real iPhone or iPad**
 connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
-[devicesteer.sunghyunkim.com](https://devicesteer.sunghyunkim.com)
 
-<a href="https://devicesteer.sunghyunkim.com">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/viewer-dark.webp">
-    <img src="docs/images/viewer-light.webp" width="1100" alt="The DeviceSteer viewer: a list of devices with their agent sessions, the live screen of an iPhone where an agent's cursor taps an icon labelled &quot;Open Wi-Fi settings&quot;, the device's display and accessibility settings, and a bar saying the agent is in control with Stop and Take over">
-  </picture>
-</a>
+https://github.com/user-attachments/assets/87d2fa16-3cd8-4961-99bb-e5d61fb6d757
+
+See it on the homepage: [devicesteer.sunghyunkim.com](https://devicesteer.sunghyunkim.com)
 
 An agent reads the screen's accessibility tree, taps, swipes, types, presses buttons, launches
 apps, records the screen and changes the device's settings (appearance, text size, Liquid Glass,
