@@ -825,3 +825,27 @@ Observed on an iPhone (iOS 27, USB):
 - Password managers mark copies with `org.nspasteboard.ConcealedType` (and
   `org.nspasteboard.TransientType` for one-off items); those are never sent. A marked dummy stayed
   on the Mac.
+
+### 45. One Caps Lock press can reach the page as two
+
+The viewer forwards the Mac keyboard from the page's key events (WKWebView). Caps Lock has no
+ordinary press and release there: WebKit reports changes of the Caps Lock state. On a Mac whose
+Caps Lock switches the input source to and from ABC (ABC and Korean 2-Set; macOS 26), one quick
+press arrived as:
+
+- `keydown CapsLock` at the press,
+- `keydown` with code and key `Unidentified` (keyCode 0) about 10 ms later, never followed by a
+  keyup: the Mac switching its input source,
+- `keyup CapsLock` at the release, about 100 ms after the keydown.
+
+The viewer used to send each Caps Lock event as a whole press, as fits a Mac where Caps Lock only
+locks (a keydown when it locks, a keyup when it unlocks, each a separate press). Here that made
+two presses for one: the device (a Korean layout, where Caps Lock switches to and from Latin)
+showed the switch and went straight back. So a keyup within a second of a keydown counts as that
+press's release and sends nothing; the keydown already sent a tap (down, 30 ms, up), so Caps
+Lock is never left held on the device. The cost: on a Mac where Caps Lock only locks, unlocking
+within a second of locking reaches the device as one press, not two. The `Unidentified` keydown
+is dropped: the device has no usage for it.
+
+Control-Space on such a Mac is also the Mac's own "Select the previous input source" shortcut
+(on by default), so the Mac switches along with the device.

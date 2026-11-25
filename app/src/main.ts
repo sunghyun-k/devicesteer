@@ -1255,6 +1255,20 @@ function keyStep(code: string, down: boolean): void {
     });
 }
 
+/** A whole press of `code`: down, a short hold, up. A down and up sent back to back reach the
+ * device within a millisecond, shorter than any real press. */
+function keyTap(code: string): void {
+  keyStep(code, true);
+  keyChain = keyChain.then(() => new Promise((r) => setTimeout(r, KEY_TAP_HOLD_MS)));
+  keyStep(code, false);
+}
+const KEY_TAP_HOLD_MS = 30;
+
+/** When the last Caps Lock keydown was sent as a tap (see the keydown listener). */
+let capsTappedAt = -Infinity;
+/** A Caps Lock keyup this soon after a keydown is that press's release, not another press. */
+const CAPS_RELEASE_MS = 1000;
+
 function releaseKeys(): void {
   for (const code of keysDown) keyStep(code, false);
   keysDown.clear();
@@ -1420,13 +1434,21 @@ window.addEventListener("keydown", (e) => {
   if (!keysGo() || viewerShortcut(e)) return;
   e.preventDefault();
   e.stopPropagation();
-  // Caps Lock reports its state, not the key: a keydown when it locks, a keyup when it unlocks.
-  // Either is one press on the device (on a Korean layout it switches the input source).
+  // Caps Lock is never held on the device: each press goes over as a tap, which on a Korean
+  // layout switches the input source. What WebKit reports for one press depends on the Mac
+  // (PITFALLS #45): a keydown when it locks and a keyup when it unlocks, or, where Caps Lock
+  // switches the Mac's input source, a keydown on press and a keyup on release. The keyup
+  // listener tells them apart by time.
   if (e.code === "CapsLock") {
-    keyStep(e.code, true);
-    keyStep(e.code, false);
+    if (!e.repeat) {
+      capsTappedAt = e.timeStamp;
+      keyTap(e.code);
+    }
     return;
   }
+  // The Mac switching its input source with Caps Lock adds a keydown with no code and no keyup
+  // (PITFALLS #45): nothing for the device.
+  if (e.code === "Unidentified" || e.code === "") return;
   keysDown.add(e.code);
   keyStep(e.code, true);
   // With ⌘ held, macOS sends no keyup for the other keys: let go of this one at once.
@@ -1439,8 +1461,11 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keyup", (e) => {
   if (e.code === "CapsLock" && keysGo()) {
     e.preventDefault();
-    keyStep(e.code, true);
-    keyStep(e.code, false);
+    // The release of the press the keydown already sent: a second tap would switch the input
+    // source back (PITFALLS #45).
+    const release = e.timeStamp - capsTappedAt < CAPS_RELEASE_MS;
+    capsTappedAt = -Infinity;
+    if (!release) keyTap(e.code);
     return;
   }
   if (!keysDown.has(e.code)) return;
