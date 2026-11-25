@@ -72,6 +72,8 @@ const DEVICES: MockDevice[] = [
 const SETUP_ORDER: SetupStep[] = ["trust", "developer_mode", "disk_image"];
 
 const state = {
+  /** The app menu's labels the page last sent (`set_menu_labels`). */
+  menuLabels: {} as Record<string, string>,
   /** Our hardware keyboard, and what the viewer sent: key steps, for scripts. */
   hardwareKeyboard: false,
   /** The viewer asked for it `while_connected`: it goes when the viewer detaches or the agent gets the device. */
@@ -486,6 +488,7 @@ function agentStatus(): unknown {
       : agentsMode === "dev"
         ? "Agent setup works in the installed app, not in a development build."
         : null,
+    unavailable_code: moveMode ? "move_to_applications" : agentsMode === "dev" ? "dev_build" : null,
     cli: { id: "cli", name: "devicesteer command", path: "~/.local/bin/devicesteer", detected: true, ...agentLinks.cli },
     on_path: false,
     agents: AGENT_ITEMS.map(([id, name, path, detected]) => ({ id, name, path, detected, ...agentLinks[id] })),
@@ -505,10 +508,15 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
         throw `~/${id} already exists and isn't DeviceSteer's; confirm to replace it`;
       }
       agentLinks[id] = args.install ? { state: "installed" } : { state: "missing" };
-      return { note: was.state === "not_a_link" ? "Moved what was there to ~/.agents/skills/devicesteer.backup-1764000000." : null };
+      const aside = "~/.agents/skills/devicesteer.backup-1764000000";
+      return { note: was.state === "not_a_link" ? { code: "moved_aside", path: aside, message: `Moved what was there to ${aside}.` } : null };
     }
     case "app_version":
       return "0.1.0";
+    case "set_menu_labels":
+      // No menu bar in a browser; kept for `mock.menuLabels()`.
+      state.menuLabels = args.labels as Record<string, string>;
+      return null;
     case "app_location":
       return appLocation;
     case "app_move_to_applications": {
@@ -612,6 +620,8 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       return null;
     case "clipboard_to_device":
       await sleep(200);
+      // As the shell reports it (lib.rs `ViewerError`): the page translates it by its code.
+      if (!state.macClipboard) throw { code: "mac_clipboard_empty", message: "The Mac clipboard holds no text." };
       state.deviceClipboard = state.macClipboard;
       return { clipboard: "set", chars: state.macClipboard.length };
     case "clipboard_from_device":
@@ -793,6 +803,7 @@ const mock = {
     state.attach = kind;
   },
   report: () => state.lastReport,
+  menuLabels: () => state.menuLabels,
   /** Puts a device at a setup step (or ready with null), as if the person did steps elsewhere. */
   setup(udidSuffix: string, step: SetupStep | null) {
     const d = DEVICES.find((x) => x.udid.endsWith(udidSuffix));

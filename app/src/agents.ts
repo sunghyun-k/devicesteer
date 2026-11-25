@@ -8,14 +8,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { $, el, pref, conflict, conflictText, CLI_NEEDED, type AppLocation, type Status } from "./agent-common";
+import { $, el, pref, conflict, conflictText, downloadingText, itemName, type AppLocation, type Status } from "./agent-common";
+import { errorText, onLanguageChange, t } from "./i18n";
 
 let appLocation: AppLocation | undefined;
 let appVersion = "";
 
 /** Opens the Settings window at `tab` (settings_window.rs). */
 export function openSettings(tab?: "agents" | "updates"): void {
-  void invoke("open_settings", { tab: tab ?? null }).catch(() => {});
+  // Logged: a failure dropped silently left a blank window with no clue why (PITFALLS #64).
+  void invoke("open_settings", { tab: tab ?? null }).catch((e) => console.error("could not open the Settings window:", e));
 }
 
 // ---------- first launch ----------
@@ -23,12 +25,15 @@ export function openSettings(tab?: "agents" | "updates"): void {
 const sheet = $<HTMLDialogElement>("#agent-sheet");
 
 /** The sheet's list: what it would install, checked; conflicts are left to the pane. */
+let lastSheet: Status | undefined;
+
 function renderSheet(s: Status): void {
+  lastSheet = s;
   const rows: HTMLElement[] = [];
   for (const i of [s.cli, ...s.agents.filter((a) => a.detected)]) {
     const row = el("label", "row agent-row");
     const text = el("div", "text");
-    text.append(el("div", "name", i.id === "cli" ? "Command-line tool" : `Skill for ${i.name}`), el("div", "path mono", i.path));
+    text.append(el("div", "name", i.id === "cli" ? t("agents.cliTool") : t("agents.skillFor", { name: itemName(i) })), el("div", "path mono", i.path));
     const box = el("input", "");
     box.type = "checkbox";
     box.setAttribute("role", "switch");
@@ -36,14 +41,14 @@ function renderSheet(s: Status): void {
     if (i.state === "installed") {
       box.checked = true;
       box.disabled = true;
-      text.append(el("div", "note", "Already set up"));
+      text.append(el("div", "note", t("agents.alreadySetUp")));
     } else if (conflict(i)) {
       box.disabled = true;
-      text.append(el("div", "note warn", `${conflictText(i)} Replace it in Settings › Agents if you want.`));
+      text.append(el("div", "note warn", `${conflictText(i)} ${t("agents.replaceInSettings")}`));
     } else {
       box.checked = true;
       if (i.id === "cli") {
-        const note = el("div", "note warn", CLI_NEEDED);
+        const note = el("div", "note warn", t("agents.cliNeeded"));
         note.hidden = true;
         text.append(note);
         box.addEventListener("change", () => (note.hidden = box.checked));
@@ -85,7 +90,7 @@ $<HTMLFormElement>("#agent-sheet-form").addEventListener("submit", async (e) => 
     try {
       await invoke("agent_setup_change", { id, install: true, replace: false });
     } catch (x) {
-      failed.push(String(x));
+      failed.push(errorText(x));
     }
   }
   ok.disabled = false;
@@ -112,25 +117,30 @@ let moveReplacing = false;
 type MoveError = { kind: "exists"; version: string | null } | { kind: "no_permission"; message: string } | { kind: "failed"; message: string };
 
 function moveIntro(): string {
-  const where =
-    appLocation?.reason === "translocated"
-      ? "DeviceSteer is running from a temporary copy macOS made of the download."
-      : "DeviceSteer is running from its disk image.";
-  return `${where} Move it to the Applications folder so coding agents can use it and it can update itself. It reopens from there.`;
+  const where = t(appLocation?.reason === "translocated" ? "move.fromTranslocated" : "move.fromDiskImage");
+  return `${where} ${t("move.why")}`;
+}
+
+/** The version in Applications that the sheet offers to replace, while it does. */
+let replacing: { version: string | null } | undefined;
+
+function replaceText(version: string | null): string {
+  if (!version) return appVersion ? t("move.replaceOtherWithThis", { version: appVersion }) : t("move.replaceOther");
+  return appVersion ? t("move.replaceVersionWithThis", { old: version, version: appVersion }) : t("move.replaceVersion", { old: version });
 }
 
 function showReplace(version: string | null): void {
   moveReplacing = true;
-  const old = version ? `DeviceSteer ${version}` : "another copy of DeviceSteer";
-  const ours = appVersion ? ` with this one (${appVersion})` : "";
-  moveLead.textContent = `The Applications folder already has ${old}. Replace it${ours}? The old one goes to the Trash.`;
-  moveOk.textContent = "Replace";
+  replacing = { version };
+  moveLead.textContent = replaceText(version);
+  moveOk.textContent = t("move.replace");
 }
 
 function openMoveSheet(): void {
   moveReplacing = false;
+  replacing = undefined;
   moveLead.textContent = moveIntro();
-  moveOk.textContent = "Move to Applications";
+  moveOk.textContent = t("move.ok");
   moveOk.disabled = false;
   moveError.textContent = "";
   moveSheet.showModal();
@@ -154,7 +164,7 @@ $<HTMLFormElement>("#move-sheet-form").addEventListener("submit", async (e) => {
   }
   const label = moveOk.textContent;
   moveOk.disabled = true;
-  moveOk.textContent = "Moving…";
+  moveOk.textContent = t("move.moving");
   moveError.textContent = "";
   try {
     // On success the app quits and the copy in Applications opens, so this doesn't come back.
@@ -165,8 +175,8 @@ $<HTMLFormElement>("#move-sheet-form").addEventListener("submit", async (e) => {
     const err = x as MoveError | string;
     if (typeof err === "object" && err.kind === "exists") showReplace(err.version);
     else if (typeof err === "object" && err.kind === "no_permission") {
-      moveError.textContent = "DeviceSteer can’t write to the Applications folder. In Finder, drag DeviceSteer into Applications, then open it from there.";
-    } else moveError.textContent = `The move failed: ${typeof err === "object" ? err.message : err}`;
+      moveError.textContent = t("move.noPermission");
+    } else moveError.textContent = t("move.failed", { error: typeof err === "object" ? err.message : err });
   }
 });
 
@@ -193,7 +203,7 @@ async function checkForUpdate(): Promise<void> {
     const u = await check();
     pendingUpdate = u ?? undefined;
     if (u) {
-      $<HTMLParagraphElement>("#update-banner-text").textContent = `DeviceSteer ${u.version} is available.`;
+      $<HTMLParagraphElement>("#update-banner-text").textContent = t("update.available", { version: u.version });
       banner.hidden = false;
     }
   } catch {
@@ -213,19 +223,30 @@ async function installUpdate(): Promise<void> {
     await u.downloadAndInstall((ev) => {
       if (ev.event === "Started") total = ev.data.contentLength ?? 0;
       if (ev.event === "Progress") got += ev.data.chunkLength;
-      text.textContent = total ? `Downloading DeviceSteer ${u.version}… ${Math.round((got / total) * 100)}%` : `Downloading DeviceSteer ${u.version}…`;
+      text.textContent = downloadingText(u.version, total ? got / total : undefined);
     });
     // The device daemons are separate processes and keep running; the links to the CLI and the
     // skill follow the app, so they point at the new version once it starts.
     await relaunch();
   } catch (e) {
-    text.textContent = `The update failed: ${e}`;
+    text.textContent = t("update.failed", { error: String(e) });
     b.disabled = false;
   }
 }
 
 $<HTMLButtonElement>("#update-install").addEventListener("click", () => void installUpdate());
 $<HTMLButtonElement>("#update-dismiss").addEventListener("click", () => (banner.hidden = true));
+
+// Another language: the sheets and the banner say again what they say.
+onLanguageChange(() => {
+  if (moveSheet.open && !moveOk.disabled) {
+    moveLead.textContent = replacing ? replaceText(replacing.version) : moveIntro();
+    moveOk.textContent = t(replacing ? "move.replace" : "move.ok");
+  }
+  if (pendingUpdate && !$<HTMLButtonElement>("#update-install").disabled)
+    $<HTMLParagraphElement>("#update-banner-text").textContent = t("update.available", { version: pendingUpdate.version });
+  if (sheet.open && lastSheet) renderSheet(lastSheet);
+});
 
 export function initAgents(): void {
   void (async () => {

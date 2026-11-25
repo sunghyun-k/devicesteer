@@ -72,7 +72,10 @@ Output is JSON. Device commands go through a per-device daemon that the first co
 (`daemon status`, `daemon stop`). `screenshot` saves an 8-bit PNG; `--raw` keeps the device's
 16-bit one. The viewer app (`app/`) shows the live screen; while an agent
 session runs it glows around the screen and shows the session at the bottom, with Take over / Hand
-back (Done after a handoff) and Stop:
+back (Done after a handoff) and Stop. Its interface is in English, Korean, Japanese, Simplified and
+Traditional Chinese, Spanish, French, German, Brazilian Portuguese and Italian: it follows the
+system's language, and Settings › General picks another (`app/src/locales/`; the CLI stays in
+English):
 
 ```sh
 cd app && npm install && npx tauri dev

@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "tauri": "tauri",
     "build:cli": "sh ../scripts/build-cli.sh",
-    "bundle": "tauri build --config src-tauri/tauri.bundle.conf.json"
+    "bundle": "tauri build --config src-tauri/tauri.bundle.conf.json",
+    "test": "node --test src/"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",

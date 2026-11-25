@@ -32,6 +32,7 @@ devicesteer session finish                        # at the end of your reply
 
 - A new device needs three steps: trust this computer, Developer Mode, and the developer disk image. `devicesteer setup --udid <UDID>` runs them; the first two need the person holding the device.
 - Wi-Fi pairing without a cable (iOS 27 and later): `devicesteer setup wifi`. On the device: Settings > Privacy & Security > Developer Mode > Pair with "DeviceSteer", then the device's own passcode, then the 6-digit code shown on the computer.
+- The viewer app's interface is in English, Korean, Japanese, Simplified and Traditional Chinese, Spanish, French, German, Brazilian Portuguese and Italian, following the system's language (Settings › General overrides it). The CLI, its JSON output and the skill stay in English.
 - The macOS app installs the `devicesteer` command (`~/.local/bin/devicesteer`) and links the skill into agents' skill folders (Settings › Agents).
 
 ## Links

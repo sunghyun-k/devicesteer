@@ -60,37 +60,37 @@
       <!-- The panel toggles sit over the headers at fixed places in the window, not inside them,
            so each stays under the pointer whether its panel is open or closed and can be clicked
            again without moving the mouse. The headers keep room for them (style.css). -->
-      <button id="sidebar-toggle" class="icon-btn pin" type="button" aria-label="Sidebar" title="Show or hide the sidebar" aria-pressed="true" aria-controls="sidebar">
+      <button id="sidebar-toggle" class="icon-btn pin" type="button" aria-label="Sidebar" title="Show or hide the sidebar" data-i18n-aria-label="sidebar.toggle" data-i18n-title="sidebar.toggleHelp" aria-pressed="true" aria-controls="sidebar">
         <svg class="icon"><use href="#i-sidebar" /></svg>
       </button>
-      <button id="inspector-toggle" class="icon-btn pin" type="button" aria-label="Inspector" title="Show or hide the inspector" aria-pressed="true" aria-controls="inspector">
+      <button id="inspector-toggle" class="icon-btn pin" type="button" aria-label="Inspector" title="Show or hide the inspector" data-i18n-aria-label="inspector.toggle" data-i18n-title="inspector.toggleHelp" aria-pressed="true" aria-controls="inspector">
         <svg class="icon"><use href="#i-inspector" /></svg>
       </button>
       <!-- ---------- devices ---------- -->
-      <aside id="sidebar" aria-label="Devices">
+      <aside id="sidebar" aria-label="Devices" data-i18n-aria-label="sidebar.devices">
         <header class="side-head" data-tauri-drag-region>
           <span class="lights" aria-hidden="true"></span>
           <span class="grow" data-tauri-drag-region></span>
         </header>
         <div class="side-title">
-          <h2 id="devices-title">Devices</h2>
+          <h2 id="devices-title" data-i18n="sidebar.devices">Devices</h2>
           <span class="grow"></span>
-          <button id="refresh" class="icon-btn" type="button" aria-label="Refresh devices" title="Refresh devices">
+          <button id="refresh" class="icon-btn" type="button" aria-label="Refresh devices" title="Refresh devices" data-i18n-aria-label="sidebar.refresh" data-i18n-title="sidebar.refresh">
             <svg class="icon"><use href="#i-refresh" /></svg>
           </button>
         </div>
         <label class="search">
           <svg class="icon"><use href="#i-search" /></svg>
-          <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search devices" />
+          <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search devices" data-i18n-placeholder="sidebar.search" data-i18n-aria-label="sidebar.searchDevices" />
         </label>
         <nav id="device-list">
           <section id="sec-available">
-            <h3>Available</h3>
-            <ul id="available" role="listbox" aria-label="Available devices"></ul>
+            <h3 data-i18n="sidebar.available">Available</h3>
+            <ul id="available" role="listbox" aria-label="Available devices" data-i18n-aria-label="sidebar.availableDevices"></ul>
           </section>
           <section id="sec-unavailable">
-            <h3>Unavailable</h3>
-            <ul id="unavailable" role="listbox" aria-label="Unavailable devices"></ul>
+            <h3 data-i18n="sidebar.unavailable">Unavailable</h3>
+            <ul id="unavailable" role="listbox" aria-label="Unavailable devices" data-i18n-aria-label="sidebar.unavailableDevices"></ul>
           </section>
           <div id="list-message" class="list-message" hidden>
             <span class="spinner" aria-hidden="true"></span>
@@ -101,8 +101,8 @@
         <!-- Wi-Fi pairing needs no cable, so a device that isn't listed yet can start here
              (main.ts `openPairing`). -->
         <footer class="side-foot">
-          <button id="pair-wifi" class="btn ghost small" type="button" title="Pair an iPhone or iPad (iOS 27 or later) over the local network, without a cable">
-            <svg class="icon"><use href="#i-wifi" /></svg>Pair over Wi-Fi…
+          <button id="pair-wifi" class="btn ghost small" type="button" title="Pair an iPhone or iPad (iOS 27 or later) over the local network, without a cable" data-i18n-title="sidebar.pairWifiHelp">
+            <svg class="icon"><use href="#i-wifi" /></svg><span data-i18n="sidebar.pairWifi">Pair over Wi-Fi…</span>
           </button>
         </footer>
       </aside>
@@ -117,11 +117,11 @@
             <span id="device-meta" data-tauri-drag-region></span>
           </div>
           <div class="toolbar">
-            <div class="tool-group" id="zoom-group" role="group" aria-label="Zoom">
-              <button id="zoom-out" class="icon-btn" type="button" aria-label="Zoom out" title="Zoom out (⌘−)"><svg class="icon"><use href="#i-zoom-out" /></svg></button>
-              <button id="zoom-fit" class="icon-btn" type="button" aria-label="Fit to window" title="Fit to window (⌘9)"><svg class="icon"><use href="#i-fit" /></svg></button>
-              <button id="zoom-actual" class="icon-btn" type="button" aria-label="Actual size" title="Actual size: one point per pixel (⌘0)"><svg class="icon"><use href="#i-zoom-actual" /></svg></button>
-              <button id="zoom-in" class="icon-btn" type="button" aria-label="Zoom in" title="Zoom in (⌘+)"><svg class="icon"><use href="#i-zoom-in" /></svg></button>
+            <div class="tool-group" id="zoom-group" role="group" aria-label="Zoom" data-i18n-aria-label="zoom.group">
+              <button id="zoom-out" class="icon-btn" type="button" aria-label="Zoom out" title="Zoom out (⌘−)" data-i18n-aria-label="zoom.out" data-i18n-title="zoom.outHelp"><svg class="icon"><use href="#i-zoom-out" /></svg></button>
+              <button id="zoom-fit" class="icon-btn" type="button" aria-label="Fit to window" title="Fit to window (⌘9)" data-i18n-aria-label="zoom.fit" data-i18n-title="zoom.fitHelp"><svg class="icon"><use href="#i-fit" /></svg></button>
+              <button id="zoom-actual" class="icon-btn" type="button" aria-label="Actual size" title="Actual size: one point per pixel (⌘0)" data-i18n-aria-label="zoom.actual" data-i18n-title="zoom.actualHelp"><svg class="icon"><use href="#i-zoom-actual" /></svg></button>
+              <button id="zoom-in" class="icon-btn" type="button" aria-label="Zoom in" title="Zoom in (⌘+)" data-i18n-aria-label="zoom.in" data-i18n-title="zoom.inHelp"><svg class="icon"><use href="#i-zoom-in" /></svg></button>
             </div>
             <!-- The Mac keyboard: a button whose state is whether keys go to the device, with a
                  menu like Xcode's Device Hub's (main.ts "keyboard"). -->
@@ -131,26 +131,26 @@
                   <svg class="icon"><use href="#i-keyboard" /></svg>
                 </button>
                 <div id="keyboard-menu" class="menu" role="menu" hidden>
-                  <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. The device's input source decides what they type (Control-Space switches it)"><svg class="icon check"><use href="#i-check" /></svg><span>Type from Mac Keyboard</span><kbd>⌘K</kbd></button>
-                  <button id="kb-software" role="menuitem" type="button" title="Show or hide the on-screen keyboard while a hardware keyboard is connected"><svg class="icon"><use href="#i-keyboard-down" /></svg><span>Toggle Software Keyboard</span><kbd>⌥⌘K</kbd></button>
+                  <button id="kb-forward" role="menuitemcheckbox" aria-checked="false" type="button" title="Connects a hardware keyboard to the device, and keys go to it while the pointer is over the screen. The device's input source decides what they type (Control-Space switches it)" data-i18n-title="keyboard.forwardHelp"><svg class="icon check"><use href="#i-check" /></svg><span data-i18n="keyboard.forward">Type from Mac Keyboard</span><kbd>⌘K</kbd></button>
+                  <button id="kb-software" role="menuitem" type="button" title="Show or hide the on-screen keyboard while a hardware keyboard is connected" data-i18n-title="keyboard.softwareHelp"><svg class="icon"><use href="#i-keyboard-down" /></svg><span data-i18n="keyboard.software">Toggle Software Keyboard</span><kbd>⌥⌘K</kbd></button>
                   <div class="menu-sep" role="separator"></div>
-                  <button id="kb-clip-shared" role="menuitemcheckbox" aria-checked="true" type="button" title="Keep the Mac and device clipboards in step while the screen is live, text only. Paused while the agent is in control; never sends what a password manager marks private"><svg class="icon"><use href="#i-clip-sync" /></svg><span>Use Shared Clipboard</span><svg class="icon check"><use href="#i-check" /></svg></button>
-                  <button id="kb-clip-get" role="menuitem" type="button" title="Put the device clipboard's text on the Mac clipboard"><svg class="icon"><use href="#i-clip-get" /></svg><span>Get Clipboard</span><kbd>⇧⌘C</kbd></button>
-                  <button id="kb-clip-send" role="menuitem" type="button" title="Put the Mac clipboard's text on the device clipboard, without pasting it: paste it on the device yourself"><svg class="icon"><use href="#i-clip-send" /></svg><span>Send Clipboard</span><kbd>⇧⌘V</kbd></button>
+                  <button id="kb-clip-shared" role="menuitemcheckbox" aria-checked="true" type="button" title="Keep the Mac and device clipboards in step while the screen is live, text only. Paused while the agent is in control; never sends what a password manager marks private" data-i18n-title="keyboard.sharedHelp"><svg class="icon"><use href="#i-clip-sync" /></svg><span data-i18n="keyboard.shared">Use Shared Clipboard</span><svg class="icon check"><use href="#i-check" /></svg></button>
+                  <button id="kb-clip-get" role="menuitem" type="button" title="Put the device clipboard's text on the Mac clipboard" data-i18n-title="keyboard.getHelp"><svg class="icon"><use href="#i-clip-get" /></svg><span data-i18n="keyboard.get">Get Clipboard</span><kbd>⇧⌘C</kbd></button>
+                  <button id="kb-clip-send" role="menuitem" type="button" title="Put the Mac clipboard's text on the device clipboard, without pasting it: paste it on the device yourself" data-i18n-title="keyboard.sendHelp"><svg class="icon"><use href="#i-clip-send" /></svg><span data-i18n="keyboard.send">Send Clipboard</span><kbd>⇧⌘V</kbd></button>
                 </div>
               </div>
             </div>
             <div class="tool-group">
               <div class="menu-anchor">
-                <button id="more" class="icon-btn" type="button" aria-label="More" title="More" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">
+                <button id="more" class="icon-btn" type="button" aria-label="More" title="More" data-i18n-aria-label="more.button" data-i18n-title="more.button" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">
                   <svg class="icon"><use href="#i-more" /></svg>
                 </button>
                 <div id="more-menu" class="menu" role="menu" hidden>
-                  <button id="menu-stop-view" role="menuitem" type="button"><svg class="icon"><use href="#i-eye-off" /></svg>Stop Viewing Screen</button>
-                  <button id="menu-reveal" role="menuitem" type="button"><svg class="icon"><use href="#i-folder" /></svg><span>Show Last Recording</span></button>
+                  <button id="menu-stop-view" role="menuitem" type="button"><svg class="icon"><use href="#i-eye-off" /></svg><span data-i18n="more.stopViewing">Stop Viewing Screen</span></button>
+                  <button id="menu-reveal" role="menuitem" type="button"><svg class="icon"><use href="#i-folder" /></svg><span data-i18n="more.showLastRecording">Show Last Recording</span></button>
                   <!-- Only where there is no app menu with Settings… (main.ts). -->
                   <div class="menu-sep" role="separator" data-no-app-menu></div>
-                  <button id="menu-settings" role="menuitem" type="button" data-no-app-menu><svg class="icon"><use href="#i-sliders" /></svg><span>Settings…</span><kbd>Ctrl+,</kbd></button>
+                  <button id="menu-settings" role="menuitem" type="button" data-no-app-menu><svg class="icon"><use href="#i-sliders" /></svg><span data-i18n="more.settings">Settings…</span><kbd>Ctrl+,</kbd></button>
                 </div>
               </div>
             </div>
@@ -160,13 +160,13 @@
         <div id="banners">
           <div id="vo-warning" class="banner danger" role="alert" hidden>
             <svg class="icon"><use href="#i-alert" /></svg>
-            <p><strong>VoiceOver is on.</strong> Taps select instead of activating, so agent input won't do what it expects.</p>
-            <button id="vo-off" class="btn small" type="button">Turn Off</button>
+            <p><strong data-i18n="voiceover.on">VoiceOver is on.</strong> <span data-i18n="voiceover.warning">Taps select instead of activating, so agent input won't do what it expects.</span></p>
+            <button id="vo-off" class="btn small" type="button" data-i18n="voiceover.turnOff">Turn Off</button>
           </div>
           <div id="update-banner" class="banner" role="status" hidden>
             <svg class="icon"><use href="#i-download" /></svg>
             <p id="update-banner-text"></p>
-            <button id="update-install" class="btn small" type="button">Restart to Update</button>
+            <button id="update-install" class="btn small" type="button" data-i18n="update.restart">Restart to Update</button>
             <button id="update-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss">
               <svg class="icon"><use href="#i-close" /></svg>
             </button>
@@ -187,11 +187,11 @@
             <div id="intro-art" aria-hidden="true"><div class="art-screen"></div></div>
             <h2 id="intro-name"></h2>
             <p id="intro-meta"></p>
-            <button id="view-screen" class="btn primary large" type="button"><svg class="icon"><use href="#i-screen" /></svg>View Screen</button>
+            <button id="view-screen" class="btn primary large" type="button"><svg class="icon"><use href="#i-screen" /></svg><span data-i18n="stage.viewScreen">View Screen</span></button>
             <div id="intro-busy"><span class="spinner" aria-hidden="true"></span><span id="intro-busy-text">Connecting…</span></div>
             <p id="intro-reason"></p>
             <div id="intro-buttons">
-              <button id="intro-retry" class="btn primary" type="button">Try Again</button>
+              <button id="intro-retry" class="btn primary" type="button" data-i18n="common.tryAgain">Try Again</button>
             </div>
             <!-- More about the selected device: the setup steps while it isn't ready (main.ts
                  `renderSetup`). A bordered card under the buttons, shown only when filled. -->
@@ -213,32 +213,32 @@
         <div id="bottom">
           <!-- Always takes the same room under the screen, with or without a session. -->
           <div id="session-dock">
-            <p id="session-idle"><span class="dot-idle" aria-hidden="true"></span>No agent session</p>
+            <p id="session-idle"><span class="dot-idle" aria-hidden="true"></span><span data-i18n="session.none">No agent session</span></p>
             <!-- Who controls the device, like a screen-sharing indicator: a tinted strip with a
                  live dot, the state, the agent's goal and the actions. -->
-            <div id="session-panel" role="region" aria-label="Agent session" hidden>
+            <div id="session-panel" role="region" aria-label="Agent session" data-i18n-aria-label="session.region" hidden>
               <span id="session-dot" aria-hidden="true"></span>
               <div id="session-text">
                 <span id="session-state" role="status"></span>
                 <span id="session-name"></span>
               </div>
-              <button id="session-stop" class="btn small ghost" type="button">Stop</button>
+              <button id="session-stop" class="btn small ghost" type="button" data-i18n="session.stop">Stop</button>
               <button id="session-primary" class="btn small" type="button">Take over</button>
             </div>
           </div>
           <div id="controls">
             <!-- A toolbar, not a field: the hardware buttons, a separator, then screenshot and
                  record, all as the same plain buttons. -->
-            <div id="device-bar" role="toolbar" aria-label="Device">
-              <div class="tool-row" role="group" aria-label="Hardware buttons">
-                <button class="tool" type="button" data-button="home" title="Press the Home button"><svg class="icon"><use href="#i-home" /></svg><span>Home</span></button>
-                <button class="tool" type="button" data-button="lock" title="Press the side button (lock)"><svg class="icon"><use href="#i-power" /></svg><span>Lock</span></button>
-                <button class="tool" type="button" data-button="volume_down" title="Press Volume Down"><svg class="icon"><use href="#i-vol-down" /></svg><span>Volume −</span></button>
-                <button class="tool" type="button" data-button="volume_up" title="Press Volume Up"><svg class="icon"><use href="#i-vol-up" /></svg><span>Volume +</span></button>
+            <div id="device-bar" role="toolbar" aria-label="Device" data-i18n-aria-label="deviceBar.label">
+              <div class="tool-row" role="group" aria-label="Hardware buttons" data-i18n-aria-label="deviceBar.hardware">
+                <button class="tool" type="button" data-button="home" title="Press the Home button" data-i18n-title="deviceBar.homeHelp"><svg class="icon"><use href="#i-home" /></svg><span data-i18n="deviceBar.home">Home</span></button>
+                <button class="tool" type="button" data-button="lock" title="Press the side button (lock)" data-i18n-title="deviceBar.lockHelp"><svg class="icon"><use href="#i-power" /></svg><span data-i18n="deviceBar.lock">Lock</span></button>
+                <button class="tool" type="button" data-button="volume_down" title="Press Volume Down" data-i18n-title="deviceBar.volumeDownHelp"><svg class="icon"><use href="#i-vol-down" /></svg><span data-i18n="deviceBar.volumeDown">Volume −</span></button>
+                <button class="tool" type="button" data-button="volume_up" title="Press Volume Up" data-i18n-title="deviceBar.volumeUpHelp"><svg class="icon"><use href="#i-vol-up" /></svg><span data-i18n="deviceBar.volumeUp">Volume +</span></button>
               </div>
               <span class="tool-sep" aria-hidden="true"></span>
-              <div class="tool-row" role="group" aria-label="Capture">
-                <button id="shot" class="tool" type="button" title="Save a screenshot"><svg class="icon"><use href="#i-camera" /></svg><span>Screenshot</span></button>
+              <div class="tool-row" role="group" aria-label="Capture" data-i18n-aria-label="deviceBar.capture">
+                <button id="shot" class="tool" type="button" title="Save a screenshot" data-i18n-title="deviceBar.screenshotHelp"><svg class="icon"><use href="#i-camera" /></svg><span data-i18n="deviceBar.screenshot">Screenshot</span></button>
                 <button id="record" class="tool" type="button" aria-pressed="false" aria-label="Record" title="Record the screen">
                   <svg class="icon"><use href="#i-record" /></svg><span id="record-label">Record</span>
                 </button>
@@ -249,54 +249,54 @@
       </main>
 
       <!-- ---------- inspector ---------- -->
-      <aside id="inspector" aria-label="Inspector">
+      <aside id="inspector" aria-label="Inspector" data-i18n-aria-label="inspector.toggle">
         <header class="insp-head" data-tauri-drag-region>
           <span class="grow" data-tauri-drag-region></span>
           <!-- An icon-only segmented picker for the two panes, left of the inspector toggle. The
                app's own settings are in the Settings window (settings.html). -->
-          <div class="tabs segmented" role="tablist" aria-label="Inspector">
-            <button id="tab-settings" role="tab" type="button" aria-selected="true" aria-controls="pane-settings" aria-label="Settings" title="Settings"><svg class="icon"><use href="#i-sliders" /></svg></button>
-            <button id="tab-info" role="tab" type="button" aria-selected="false" aria-controls="pane-info" aria-label="Info" title="Info"><svg class="icon"><use href="#i-info" /></svg></button>
+          <div class="tabs segmented" role="tablist" aria-label="Inspector" data-i18n-aria-label="inspector.toggle">
+            <button id="tab-settings" role="tab" type="button" aria-selected="true" aria-controls="pane-settings" aria-label="Settings" title="Settings" data-i18n-aria-label="inspector.settings" data-i18n-title="inspector.settings"><svg class="icon"><use href="#i-sliders" /></svg></button>
+            <button id="tab-info" role="tab" type="button" aria-selected="false" aria-controls="pane-info" aria-label="Info" title="Info" data-i18n-aria-label="inspector.info" data-i18n-title="inspector.info"><svg class="icon"><use href="#i-info" /></svg></button>
           </div>
         </header>
 
         <!-- Laid out like a settings page: section titles over rows split by hairlines. -->
         <div id="pane-settings" class="pane" role="tabpanel" aria-labelledby="tab-settings">
           <section class="group">
-            <h4>Display</h4>
+            <h4 data-i18n="settings.display">Display</h4>
             <div class="row" data-item="appearance">
-              <label for="appearance">Appearance</label>
-              <span class="select"><select id="appearance"><option value="" disabled hidden>–</option><option value="light">Light</option><option value="dark">Dark</option></select><svg class="icon"><use href="#i-chevron" /></svg></span>
+              <label for="appearance" data-i18n="settings.appearance">Appearance</label>
+              <span class="select"><select id="appearance"><option value="" disabled hidden>–</option><option value="light" data-i18n="settings.light">Light</option><option value="dark" data-i18n="settings.dark">Dark</option></select><svg class="icon"><use href="#i-chevron" /></svg></span>
             </div>
             <div class="row" data-item="liquid_glass">
-              <label for="liquid-glass">Liquid Glass</label>
-              <input id="liquid-glass" class="slider" type="range" min="0" max="1" step="0.05" title="Clear to tinted" />
+              <label for="liquid-glass" data-i18n="settings.liquidGlass">Liquid Glass</label>
+              <input id="liquid-glass" class="slider" type="range" min="0" max="1" step="0.05" title="Clear to tinted" data-i18n-title="settings.clearToTinted" />
             </div>
             <div class="row" data-item="text_size">
-              <label for="text-size">Text Size</label>
+              <label for="text-size" data-i18n="settings.textSize">Text Size</label>
               <input id="text-size" class="slider ticks" type="range" min="0" max="11" step="1" />
             </div>
           </section>
           <section class="group">
-            <h4>Accessibility</h4>
-            <label class="row" data-item="reduce_motion"><span>Reduce Motion</span><input type="checkbox" role="switch" /></label>
-            <label class="row" data-item="increase_contrast"><span>Increase Contrast</span><input type="checkbox" role="switch" /></label>
-            <label class="row" data-item="show_borders"><span>Button Shapes</span><input type="checkbox" role="switch" /></label>
-            <label class="row" data-item="reduce_transparency"><span>Reduce Transparency</span><input type="checkbox" role="switch" /></label>
-            <label class="row" data-item="voiceover"><span>VoiceOver</span><input type="checkbox" role="switch" /></label>
+            <h4 data-i18n="settings.accessibility">Accessibility</h4>
+            <label class="row" data-item="reduce_motion"><span data-i18n="settings.reduceMotion">Reduce Motion</span><input type="checkbox" role="switch" /></label>
+            <label class="row" data-item="increase_contrast"><span data-i18n="settings.increaseContrast">Increase Contrast</span><input type="checkbox" role="switch" /></label>
+            <label class="row" data-item="show_borders"><span data-i18n="settings.buttonShapes">Button Shapes</span><input type="checkbox" role="switch" /></label>
+            <label class="row" data-item="reduce_transparency"><span data-i18n="settings.reduceTransparency">Reduce Transparency</span><input type="checkbox" role="switch" /></label>
+            <label class="row" data-item="voiceover"><span data-i18n="settings.voiceover">VoiceOver</span><input type="checkbox" role="switch" /></label>
           </section>
           <section class="group" data-item="location">
-            <h4>Location</h4>
+            <h4 data-i18n="settings.location">Location</h4>
             <div class="row">
-              <label for="location-mode">Simulated Location</label>
-              <span class="select"><select id="location-mode"><option value="none">None</option><option value="custom">Custom</option></select><svg class="icon"><use href="#i-chevron" /></svg></span>
+              <label for="location-mode" data-i18n="settings.simulatedLocation">Simulated Location</label>
+              <span class="select"><select id="location-mode"><option value="none" data-i18n="settings.locationNone">None</option><option value="custom" data-i18n="settings.locationCustom">Custom</option></select><svg class="icon"><use href="#i-chevron" /></svg></span>
             </div>
             <div id="location-edit" class="sub" hidden>
               <div class="coords">
-                <input id="latitude" type="text" inputmode="decimal" placeholder="Latitude" aria-label="Latitude" />
-                <input id="longitude" type="text" inputmode="decimal" placeholder="Longitude" aria-label="Longitude" />
+                <input id="latitude" type="text" inputmode="decimal" placeholder="Latitude" aria-label="Latitude" data-i18n-placeholder="settings.latitude" data-i18n-aria-label="settings.latitude" />
+                <input id="longitude" type="text" inputmode="decimal" placeholder="Longitude" aria-label="Longitude" data-i18n-placeholder="settings.longitude" data-i18n-aria-label="settings.longitude" />
               </div>
-              <button id="location-set" class="btn small" type="button">Simulate</button>
+              <button id="location-set" class="btn small" type="button" data-i18n="settings.simulate">Simulate</button>
             </div>
           </section>
           <p id="settings-status" role="status"></p>
@@ -304,22 +304,22 @@
 
         <div id="pane-info" class="pane" role="tabpanel" aria-labelledby="tab-info" hidden>
           <section class="group info">
-            <h4>Device</h4>
-            <div class="row"><span>Name</span><output id="info-name"></output></div>
-            <div class="row"><span>Model</span><output id="info-model"></output></div>
-            <div class="row"><span>OS</span><output id="info-os"></output></div>
-            <div class="row"><span>Connection</span><output id="info-connection"></output></div>
+            <h4 data-i18n="info.device">Device</h4>
+            <div class="row"><span data-i18n="info.name">Name</span><output id="info-name"></output></div>
+            <div class="row"><span data-i18n="info.model">Model</span><output id="info-model"></output></div>
+            <div class="row"><span data-i18n="info.os">OS</span><output id="info-os"></output></div>
+            <div class="row"><span data-i18n="info.connection">Connection</span><output id="info-connection"></output></div>
             <div class="row stack"><span>UDID</span><output id="info-udid" class="mono"></output></div>
           </section>
           <section class="group info">
-            <h4>Screen Stream</h4>
-            <div class="row"><span>Status</span><output id="info-stream"></output></div>
-            <div class="row"><span>Video</span><output id="info-video"></output></div>
-            <div class="row"><span>Screen</span><output id="info-screen"></output></div>
-            <div class="row"><span>Frame rate</span><output id="info-fps"></output></div>
-            <div class="row"><span>Decoded</span><output id="info-decoded"></output></div>
-            <div class="row"><span>Decode time</span><output id="info-decode"></output></div>
-            <div class="row"><span>Touch round trip</span><output id="info-touch"></output></div>
+            <h4 data-i18n="info.screenStream">Screen Stream</h4>
+            <div class="row"><span data-i18n="info.status">Status</span><output id="info-stream"></output></div>
+            <div class="row"><span data-i18n="info.video">Video</span><output id="info-video"></output></div>
+            <div class="row"><span data-i18n="info.screen">Screen</span><output id="info-screen"></output></div>
+            <div class="row"><span data-i18n="info.frameRate">Frame rate</span><output id="info-fps"></output></div>
+            <div class="row"><span data-i18n="info.decoded">Decoded</span><output id="info-decoded"></output></div>
+            <div class="row"><span data-i18n="info.decodeTime">Decode time</span><output id="info-decode"></output></div>
+            <div class="row"><span data-i18n="info.touchRoundTrip">Touch round trip</span><output id="info-touch"></output></div>
           </section>
           <p id="info-error" class="error-text"></p>
         </div>
@@ -328,11 +328,11 @@
     <!-- Offered at launch when the app runs from its disk image or a Gatekeeper copy (agents.ts). -->
     <dialog id="move-sheet" class="sheet" aria-labelledby="move-sheet-title">
       <form id="move-sheet-form" method="dialog">
-        <h3 id="move-sheet-title">Move DeviceSteer to Applications?</h3>
+        <h3 id="move-sheet-title" data-i18n="move.title">Move DeviceSteer to Applications?</h3>
         <p id="move-sheet-lead" class="lead"></p>
         <p id="move-sheet-error" class="error-text"></p>
         <div class="actions">
-          <button id="move-sheet-later" class="btn ghost" type="button">Not Now</button>
+          <button id="move-sheet-later" class="btn ghost" type="button" data-i18n="common.notNow">Not Now</button>
           <button id="move-sheet-ok" class="btn primary" type="submit">Move to Applications</button>
         </div>
       </form>
@@ -340,13 +340,13 @@
     <!-- Offered once, on the first launch of an installed app (agents.ts). -->
     <dialog id="agent-sheet" class="sheet" aria-labelledby="agent-sheet-title">
       <form id="agent-sheet-form" method="dialog">
-        <h3 id="agent-sheet-title">Set Up Agents</h3>
-        <p class="lead">Let coding agents on this Mac use your iPhone or iPad: DeviceSteer adds its command-line tool and its skill, linked to this app so they update with it. Change this later in Settings › Agents.</p>
+        <h3 id="agent-sheet-title" data-i18n="agentSheet.title">Set Up Agents</h3>
+        <p class="lead" data-i18n="agentSheet.lead">Let coding agents on this Mac use your iPhone or iPad: DeviceSteer adds its command-line tool and its skill, linked to this app so they update with it. Change this later in Settings › Agents.</p>
         <div id="agent-sheet-list" class="group agents"></div>
         <p id="agent-sheet-error" class="error-text"></p>
         <div class="actions">
-          <button id="agent-sheet-later" class="btn ghost" type="button">Not Now</button>
-          <button id="agent-sheet-ok" class="btn primary" type="submit">Set Up</button>
+          <button id="agent-sheet-later" class="btn ghost" type="button" data-i18n="common.notNow">Not Now</button>
+          <button id="agent-sheet-ok" class="btn primary" type="submit" data-i18n="agentSheet.setUp">Set Up</button>
         </div>
       </form>
     </dialog>

@@ -103,6 +103,9 @@ pub struct Status {
     /// Why setup can't run from this copy of the app (a development build, a translocated or
     /// disk-image copy, Windows), or `None` when it can.
     pub unavailable: Option<String>,
+    /// Names `unavailable` for the page's translations (`agents.unavailable.<code>` in
+    /// app/src/locales/*.json); `None` for a reason with an OS error in it, shown in English.
+    pub unavailable_code: Option<&'static str>,
     pub cli: Item,
     /// Whether `~/.local/bin` is on the PATH of the person's login shell. `None` until checked
     /// (it starts a shell) or when the check failed.
@@ -174,6 +177,7 @@ impl Layout {
     pub fn status(&self, on_path: Option<bool>) -> Status {
         Status {
             unavailable: self.contents.as_ref().err().cloned(),
+            unavailable_code: self.contents.as_ref().err().and_then(|m| UNAVAILABLE.iter().find(|(_, t)| t == m)).map(|(c, _)| *c),
             cli: self.item("cli", "devicesteer command", true),
             on_path,
             agents: AGENTS
@@ -199,7 +203,7 @@ impl Layout {
     /// Creates the link `id`. A conflict is an error unless `replace`: then a link elsewhere is
     /// removed and a file or folder is moved aside to `<name>.backup-<seconds>`. Returns a note
     /// for the person when something was moved.
-    pub fn install(&self, id: &str, replace: bool) -> Result<Option<String>, String> {
+    pub fn install(&self, id: &str, replace: bool) -> Result<Option<Note>, String> {
         let contents = self.contents.as_ref().map_err(Clone::clone)?;
         let (path, target) = self.link(id).ok_or_else(|| format!("unknown item `{id}`"))?;
         let mut note = None;
@@ -208,7 +212,7 @@ impl Layout {
             LinkState::Missing => {}
             LinkState::OtherLink { points_to } if replace => {
                 remove_link(&path).map_err(|e| format!("could not remove {}: {e}", self.tilde(&path)))?;
-                note = Some(format!("Replaced the link to {points_to}."));
+                note = Some(Note { code: "replaced_link", message: format!("Replaced the link to {points_to}."), path: points_to });
             }
             LinkState::NotALink { .. } if replace => {
                 let stamp = std::time::SystemTime::now()
@@ -219,7 +223,8 @@ impl Layout {
                 aside.push(format!(".backup-{stamp}"));
                 let aside = PathBuf::from(aside);
                 std::fs::rename(&path, &aside).map_err(|e| format!("could not move {} aside: {e}", self.tilde(&path)))?;
-                note = Some(format!("Moved what was there to {}.", self.tilde(&aside)));
+                let path = self.tilde(&aside);
+                note = Some(Note { code: "moved_aside", message: format!("Moved what was there to {path}."), path });
             }
             LinkState::OtherLink { .. } | LinkState::NotALink { .. } => {
                 return Err(format!("{} already exists and isn't DeviceSteer's; confirm to replace it", self.tilde(&path)));
@@ -402,7 +407,7 @@ fn bundle_contents(exe: &Path) -> Result<PathBuf, String> {
     // Gatekeeper runs a quarantined app from a random read-only copy (App Translocation), and a
     // disk image goes away when ejected: a link to either breaks soon. The page offers the move.
     if crate::app_location::temporary(contents).is_some() {
-        return Err("Move DeviceSteer to the Applications folder and open it from there to set up agents.".into());
+        return Err(MOVE_FIRST.into());
     }
     carries_cli_and_skill(contents)?;
     Ok(contents.to_path_buf())
@@ -422,10 +427,16 @@ fn bundle_contents(exe: &Path) -> Result<PathBuf, String> {
 }
 
 const DEV_BUILD: &str = "Agent setup works in the installed app, not in a development build.";
+const MOVE_FIRST: &str = "Move DeviceSteer to the Applications folder and open it from there to set up agents.";
+const INCOMPLETE_BUILD: &str = "This build of the app doesn't include the command-line tool and the skill.";
+
+/// The reasons setup can't run that the page translates, by code (`Status::unavailable_code`).
+const UNAVAILABLE: [(&str, &str); 3] =
+    [("dev_build", DEV_BUILD), ("move_to_applications", MOVE_FIRST), ("incomplete_build", INCOMPLETE_BUILD)];
 
 fn carries_cli_and_skill(contents: &Path) -> Result<(), String> {
     if !contents.join(CLI_IN_APP).is_file() || !contents.join(SKILLS_IN_APP).join(SKILL_NAME).join("SKILL.md").is_file() {
-        return Err("This build of the app doesn't include the command-line tool and the skill.".into());
+        return Err(INCOMPLETE_BUILD.into());
     }
     Ok(())
 }
@@ -516,9 +527,18 @@ pub async fn agent_setup_status() -> Result<Status, String> {
     Ok(layout.status(on_path))
 }
 
+/// What `install` did besides making the link, for the person: `code` names the message in the
+/// page's catalogs (`agents.note.<code>`), `path` fills it; `message` is the English text.
+#[derive(Debug, Serialize)]
+pub struct Note {
+    pub code: &'static str,
+    pub path: String,
+    pub message: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct Change {
-    pub note: Option<String>,
+    pub note: Option<Note>,
 }
 
 /// Installs (`install`) or removes the link `id` (`cli` or an agent id). `replace` is the person's
@@ -654,7 +674,8 @@ mod tests {
         // Replacing the link removed the link, not the folder it pointed to.
         assert!(elsewhere.is_dir());
         let note = l.install("agents", true).unwrap().unwrap();
-        assert!(note.contains(".backup-"), "{note}");
+        assert!(note.path.contains(".backup-"), "{}", note.message);
+        assert_eq!(note.code, "moved_aside");
         let st = l.status(None);
         assert_eq!(item(&st, other_id), LinkState::Installed);
         assert_eq!(item(&st, "agents"), LinkState::Installed);
@@ -707,6 +728,17 @@ mod tests {
         assert!(l.install("cli", false).is_err());
         l.refresh().unwrap();
         assert!(std::fs::symlink_metadata(f.home().join(".local")).is_err());
+    }
+
+    /// The page translates the reasons it knows by code; others it shows as they are.
+    #[test]
+    fn unavailable_reasons_have_codes() {
+        let f = Fixture::new("codes");
+        let status = |reason: &str| Layout::new(&f.home(), Err(reason.into())).status(None);
+        assert_eq!(status(DEV_BUILD).unavailable_code, Some("dev_build"));
+        assert_eq!(status(MOVE_FIRST).unavailable_code, Some("move_to_applications"));
+        assert_eq!(status(INCOMPLETE_BUILD).unavailable_code, Some("incomplete_build"));
+        assert_eq!(status("could not find the app: gone").unavailable_code, None);
     }
 
     #[test]

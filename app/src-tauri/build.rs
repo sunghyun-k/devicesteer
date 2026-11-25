@@ -29,6 +29,7 @@ const COMMANDS: &[&str] = &[
     "set_show_touches",
     "open_settings",
     "show_move_sheet",
+    "set_menu_labels",
 ];
 
 fn main() {
