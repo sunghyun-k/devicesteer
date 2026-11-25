@@ -199,7 +199,7 @@ socket to the device's RTP port 50001 and to 50002, produced no keyframe within 
 daemon then restarts the media session, which brings a keyframe with the first frame
 (~1.1 s for a viewer joining a running stream). Restarting also re-opens HID, so an input that
 races the restart waits for it. Untested: an RTCP receiver report stream (`build_liveness`) or
-Device Hub's per-frame ACK / RCTL feedback (`build_frame_ack`, `build_rctl`) first; idevice notes
+Xcode's Device Hub's per-frame ACK / RCTL feedback (`build_frame_ack`, `build_rctl`) first; idevice notes
 the encoder relies on RCTL for reference management during heavy motion.
 
 ### 14. The daemon runs on one thread
@@ -682,7 +682,7 @@ keyboard's language. Measured on the test iPhone (iOS 27.2.1):
   the surface typed Dubeolsik jamo in every app, until a hardware keyboard selected Latin again.
 
 So the surface uses the input source the **last hardware keyboard** left behind, device-wide, and
-it survives detaching, the end of the connection and other clients. Device Hub's keys with
+it survives detaching, the end of the connection and other clients. Xcode's Device Hub's keys with
 "Simulate Hardware Keyboard" off go the same way: they follow that stuck source, not the Mac's
 layout.
 
@@ -759,10 +759,10 @@ with a third input source installed, ctrl+space order is unverified.
 
 ### 39. The Eject key shows and hides the on-screen keyboard
 
-With a hardware keyboard attached, consumer usage 0x0C/0xB8 (Eject, as Device Hub's "Toggle
+With a hardware keyboard attached, consumer usage 0x0C/0xB8 (Eject, as Xcode's Device Hub's "Toggle
 Software Keyboard" sends) brings the on-screen keyboard back, and again hides it. It shows the
 current hardware source's language; switching it there with the globe key changes that source
-too (the way to change the stuck source from Device Hub). Without a hardware keyboard it was
+too (the way to change the stuck source from Xcode's Device Hub). Without a hardware keyboard it was
 not tried. `button eject` and the viewer's menu send it.
 
 ### 40. A clipboard paste asks every time
@@ -785,7 +785,7 @@ Looked for a way to put text into a field without keys:
   Stopped there: the shapes are unknown and a wrong one disturbs the owner's other AX clients.
 - **UniversalHID**: the event type enum has a unicode case, but no service wraps it; the device's
   HID features are button, digitizer, keyboard and vendor-defined only.
-- **Device Hub** has no text path of its own: its keys are HID (#35).
+- **Xcode's Device Hub** has no text path of its own: its keys are HID (#35).
 
 ### 42. An empty field reads as its placeholder
 

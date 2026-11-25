@@ -234,7 +234,7 @@ enum Command {
         #[arg(long)]
         seconds: Option<f64>,
     },
-    /// Device Hub's settings: appearance, text size, Liquid Glass, accessibility switches,
+    /// The device's settings: appearance, text size, Liquid Glass, accessibility switches,
     /// VoiceOver and the simulated location. Without an action, prints the current values; items
     /// the device can't read are null and listed in `unsupported`.
     Settings {

@@ -198,6 +198,10 @@ const refreshBtn = $<HTMLButtonElement>("#refresh");
 let devices: DeviceInfo[] = [];
 let selected: DeviceInfo | undefined;
 let listError: string | undefined;
+/** Set while the selected device has left the device list (unplugged, or restarting, which
+ * turning on Developer Mode does): what to go back to when the same UDID comes back. The
+ * selection stays, so it picks up again by itself. */
+let gone: { view: boolean } | undefined;
 
 /** "iOS 26.1", "iPadOS 26.0", when the device said. */
 function osLabel(d: DeviceInfo): string | undefined {
@@ -214,14 +218,16 @@ const modelName = (d: DeviceInfo) => d.model_name ?? d.product_type;
 
 const isTablet = (d: DeviceInfo | undefined) => d?.device_class === "iPad" || !!d?.product_type?.startsWith("iPad");
 
-function row(d: DeviceInfo): HTMLLIElement {
+function row(d: DeviceInfo, disconnected = false): HTMLLIElement {
   const li = el("li", "dev");
   li.dataset.udid = d.udid;
   li.setAttribute("role", "option");
   li.tabIndex = 0;
   // One line: the name, then its status in gray: the OS version and how it is connected, or why
   // it can't be used. Other states (setting a device up, say) belong in the status too.
-  const status = d.error
+  const status = disconnected
+    ? "Disconnected"
+    : d.error
     ? "Unavailable"
     : d.setup
       ? `Needs setup: ${SETUP_SHORT[d.setup]}`
@@ -229,8 +235,10 @@ function row(d: DeviceInfo): HTMLLIElement {
   const text = el("div", "text");
   text.append(el("span", "name", deviceName(d)), el("span", "status", status));
   li.append(icon(isTablet(d) ? "i-tablet" : "i-phone", "icon glyph"), text);
-  li.title = d.error ?? (d.setup ? `Needs setup: ${SETUP_TITLE[d.setup]}` : [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · "));
-  if (d.error) li.classList.add("unavailable");
+  li.title = disconnected
+    ? "Disconnected. Connect the cable again and unlock the device."
+    : d.error ?? (d.setup ? `Needs setup: ${SETUP_TITLE[d.setup]}` : [deviceName(d), modelName(d), osLabel(d)].filter(Boolean).join(" · "));
+  if (d.error || disconnected) li.classList.add("unavailable");
   li.addEventListener("click", () => void select(d));
   li.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -251,20 +259,24 @@ function renderList(): void {
   const match = (d: DeviceInfo) =>
     !q || [d.name, d.model_name, d.product_type, d.os_version, d.udid].some((s) => s?.toLowerCase().includes(q));
   const shown = devices.filter(match);
-  // The selected device stays listed while it is unplugged, so its view doesn't lose its row.
-  if (selected && !devices.some((d) => d.udid === selected!.udid) && match(selected)) shown.unshift(selected);
+  // The selected device stays listed while it is unplugged, so its view doesn't lose its row;
+  // under Unavailable once it has left the list.
+  const extra = selected && !devices.some((d) => d.udid === selected!.udid) && match(selected) ? selected : undefined;
   const ok = shown.filter((d) => !d.error);
   const bad = shown.filter((d) => d.error);
-  availableList.replaceChildren(...ok.map(row));
-  unavailableList.replaceChildren(...bad.map(row));
+  if (extra && !gone && !extra.error) ok.unshift(extra);
+  else if (extra) bad.unshift(extra);
+  availableList.replaceChildren(...ok.map((d) => row(d)));
+  unavailableList.replaceChildren(...bad.map((d) => row(d, d === extra && !!gone)));
   $<HTMLElement>("#sec-available").hidden = !ok.length;
   $<HTMLElement>("#sec-unavailable").hidden = !bad.length;
   markSelection();
   let m: { title: string; detail: string; cls?: string } | null = null;
   if (listError) m = { title: "Couldn't list devices", detail: listError, cls: "error" };
   else if (!listed) m = { title: "Looking for devices…", detail: "", cls: "loading" };
-  else if (!devices.length) m = { title: "No devices", detail: "Connect an iPhone or iPad with a cable, unlock it and trust this computer." };
-  else if (!shown.length) m = { title: "No matches", detail: `Nothing matches “${search.value.trim()}”.` };
+  // A row of the selected device that left the list is enough to drop the empty state.
+  else if (!devices.length && !extra) m = { title: "No devices", detail: "Connect an iPhone or iPad with a cable, unlock it and trust this computer." };
+  else if (!ok.length && !bad.length) m = { title: "No matches", detail: `Nothing matches “${search.value.trim()}”.` };
   listMessage.hidden = !m;
   if (m) {
     listMessage.className = `list-message ${m.cls ?? ""}`;
@@ -296,6 +308,7 @@ async function loadDevices(): Promise<void> {
   if (loading) return;
   loading = true;
   refreshBtn.disabled = true;
+  const before = devices;
   try {
     devices = await invoke<DeviceInfo[]>("list_devices");
     listError = undefined;
@@ -309,7 +322,12 @@ async function loadDevices(): Promise<void> {
   }
   // The selected device's details can change (unlocked, trusted, a transport came or went).
   const now = selected && devices.find((d) => d.udid === selected!.udid);
-  if (now && selected) {
+  if (selected && !now && !listError && before.some((d) => d.udid === selected!.udid)) {
+    // Only a device the list had: one opened by UDID before the list showed it isn't "gone".
+    onSelectedGone();
+  } else if (now && gone) {
+    onSelectedBack(now);
+  } else if (now && selected) {
     const wasError = !!selected.error;
     const wasSetup = !!selected.setup;
     selected = now;
@@ -323,6 +341,38 @@ async function loadDevices(): Promise<void> {
     }
   }
   renderList();
+}
+
+/** The selected device left the list: let go of it (the stream and the daemon's attachment end
+ * with the device anyway) but keep it selected, and say what to do. A setup step that is running
+ * keeps running: Developer Mode's waits through the restart. */
+function onSelectedGone(): void {
+  if (gone || !selected) return;
+  gone = { view: wantView };
+  if (!setupRun) void detach();
+  settingsPane.classList.add("disabled");
+  settingsMessage("Settings show once the device is connected again.");
+  stageState("disconnected", "Connect the cable again and unlock the device. If it is restarting, wait: it continues here once it is back.");
+  showDeviceText();
+  if (setupFor) renderSetup();
+}
+
+/** The same UDID is back: go on where it left off, at its setup step or with its screen. */
+function onSelectedBack(now: DeviceInfo): void {
+  const was = gone!;
+  gone = undefined;
+  if (setupRun && setupFor?.udid === now.udid) {
+    // The running step brings the card up to date when it ends.
+    selected = now;
+    setupFor = now;
+    settingsMessage("Settings show once the device is set up.");
+    stageState("setup");
+    showDeviceText();
+    renderSetup();
+    return;
+  }
+  selected = undefined;
+  void select(now, { view: was.view });
 }
 
 search.addEventListener("input", renderList);
@@ -353,15 +403,16 @@ const ctx = canvas.getContext("2d")!;
 const introArt = $<HTMLDivElement>("#intro-art");
 const viewBtn = $<HTMLButtonElement>("#view-screen");
 
-/** What the stage shows: nothing selected; the selected device with View Screen; one that can't
- * be used; connecting; an error; or the live screen once a frame drew. */
-type StageState = "none" | "intro" | "setup" | "unavailable" | "connecting" | "error" | "live";
+/** What the stage shows: nothing selected; the selected device with View Screen; its setup; one
+ * that can't be used; one that left the list (`gone`); connecting; an error; or the live screen
+ * once a frame drew. */
+type StageState = "none" | "intro" | "setup" | "unavailable" | "disconnected" | "connecting" | "error" | "live";
 
 function stageState(state: StageState, text = ""): void {
   stage.dataset.state = state;
   center.classList.toggle("live", state === "live");
   $<HTMLSpanElement>("#intro-busy-text").textContent = state === "connecting" ? text || "Connecting…" : "";
-  $<HTMLParagraphElement>("#intro-reason").textContent = state === "error" || state === "unavailable" ? text : "";
+  $<HTMLParagraphElement>("#intro-reason").textContent = state === "error" || state === "unavailable" || state === "disconnected" ? text : "";
   updateMenu();
   if (state === "live") layout();
   syncKeyboard();
@@ -372,12 +423,12 @@ function showDeviceText(): void {
   const name = d ? deviceName(d) : "";
   const meta = d ? [d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ") : "";
   $<HTMLSpanElement>("#device-name").textContent = d ? name : "No device";
-  $<HTMLSpanElement>("#device-meta").textContent = d ? meta : listed && !devices.length ? "Connect a device to begin" : "Choose a device";
+  $<HTMLSpanElement>("#device-meta").textContent = d ? (gone ? "Disconnected" : meta) : listed && !devices.length ? "Connect a device to begin" : "Choose a device";
   $<HTMLHeadingElement>("#intro-name").textContent = name;
   $<HTMLParagraphElement>("#intro-meta").textContent = d ? ([d.name ? modelName(d) : undefined, osLabel(d)].filter(Boolean).join(" · ")) : "";
   introArt.classList.toggle("tablet", isTablet(d));
   $("#device-glyph use").setAttribute("href", isTablet(d) ? "#i-tablet" : "#i-phone");
-  introArt.classList.toggle("unavailable", !!d?.error);
+  introArt.classList.toggle("unavailable", !!d?.error || !!gone);
   showInfo();
 }
 
@@ -1324,7 +1375,7 @@ const humanHasDevice = (): boolean => activeSession()?.owner !== "agent";
 // "Use Shared Clipboard": the Tauri shell keeps the Mac and device clipboards in step (see
 // app/src-tauri/src/shared_clip.rs) while it is on, the screen is live and no agent holds the
 // device; the page only tells it when that changes. The text and what was synced last stay in
-// the shell. On by default, like Device Hub's.
+// the shell. On by default, like Xcode's Device Hub's.
 const clipShared = $<HTMLButtonElement>("#kb-clip-shared");
 let sharedClipboard = prefs.get("shared-clipboard") !== "0";
 /** What the shell was last told: syncing or not (null: nothing yet). */
@@ -1965,6 +2016,7 @@ function showInfo(): void {
     intro: "Not shown",
     setup: "Needs setup",
     unavailable: "Unavailable",
+    disconnected: "Disconnected",
     connecting: "Connecting…",
     error: "Error",
     live: stats.supported === false ? "Decoder unsupported" : "Live",
@@ -2192,6 +2244,8 @@ function renderSetup(): void {
       } else if (!running && t.button) {
         const b = el("button", "btn small", setupError?.step === step ? "Try Again" : t.button);
         b.type = "button";
+        // Nothing to reach while the device is away; Cancel above stays.
+        b.disabled = !!gone;
         b.addEventListener("click", () => void runSetup(step));
         actions.append(b);
       }
@@ -2279,7 +2333,10 @@ async function select(d: DeviceInfo, opts: { view?: boolean } = {}): Promise<voi
     if (opts.view) void view();
     return;
   }
+  // Its row while it is away: it is still selected and picks up by itself when it is back.
+  if (gone && selected?.udid === d.udid) return;
   await detach();
+  gone = undefined;
   selected = d;
   prefs.set("device", d.udid);
   showDeviceText();
@@ -2333,7 +2390,7 @@ async function attach(d: DeviceInfo): Promise<void> {
 }
 
 async function view(): Promise<void> {
-  if (!selected || selected.error || selected.setup) return;
+  if (!selected || selected.error || selected.setup || gone) return;
   wantView = true;
   if (stage.dataset.state !== "live") stageState("connecting", "Starting the screen…");
   if (!attachedUdid) {

@@ -14,6 +14,10 @@
 // `lights=0` (no stand-in for the macOS traffic lights), `setup=ok|deny|fail` (how the setup
 // steps end: done, the user taps Don't Trust, or an error), `select=<udid suffix>` (pick that
 // device first, such as `select=6` for the one that needs Trust).
+//
+// Unplugging: `x` (or `mock.unplug()`) takes the device last attached or set up off the list,
+// and again puts it back; Developer Mode's setup step leaves the list while the device restarts,
+// as a real one does.
 
 import { emit as emitEvent } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
@@ -69,6 +73,10 @@ const state = {
   /** The check of View > Show Touches in the shell's menu. */
   menuShowTouches: true,
   devices: params.get("devices") ?? "normal",
+  /** UDIDs taken off the list: unplugged, or restarting. */
+  unplugged: new Set<string>(),
+  /** The device the viewer last attached to or read the setup of, for `unplug`. */
+  current: undefined as string | undefined,
   attach: params.get("attach") ?? "ok",
   watch: params.get("watch") ?? "ok",
   streaming: false,
@@ -285,6 +293,16 @@ function input(source: "agent" | "human", kind: string, points: Point[], extra: 
 
 const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
+/** Takes a device off the list or puts it back, then presses Refresh so the viewer sees it now
+ * rather than at its next poll. Unplugging ends the stream, as the device going away does. */
+function unplug(udid: string, off: boolean): void {
+  if (off) {
+    state.unplugged.add(udid);
+    if (udid === state.current) stopStream();
+  } else state.unplugged.delete(udid);
+  document.querySelector<HTMLButtonElement>("#refresh")?.click();
+}
+
 // ---------- setup ----------
 
 function setupStatus(d: MockDevice) {
@@ -332,7 +350,13 @@ async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number })
     await wait(2500);
     fail("revealing the Developer Mode switch failed (connection error: no such service)");
     say("The device is restarting", true);
-    await wait(2500);
+    // It leaves usbmuxd while it restarts.
+    unplug(d.udid, true);
+    try {
+      await wait(4000);
+    } finally {
+      unplug(d.udid, false);
+    }
     say("Unlock the device, tap Turn On and enter the passcode", true);
     await wait(2000);
   } else {
@@ -441,8 +465,13 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       if (state.devices === "slow") await sleep(2500);
       else await sleep(250);
       if (state.devices === "error") throw "usbmuxd is not running. Install iTunes or Apple Devices, or start usbmuxd, then refresh.";
-      return state.devices === "empty" ? [] : DEVICES;
+      return state.devices === "empty" ? [] : DEVICES.filter((d) => !state.unplugged.has(d.udid));
     case "attach":
+      state.current = args.udid as string;
+      if (state.unplugged.has(state.current)) {
+        await sleep(600);
+        throw "connection to the device failed: the device is not connected (no usbmuxd connection)";
+      }
       if (state.attach === "hang") return new Promise(() => {});
       await sleep(600);
       if (state.attach === "error") throw "connection to the device failed: the tunnel did not come up. Unlock the device and try again.";
@@ -463,7 +492,8 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       return {};
     case "setup_status": {
       await sleep(150);
-      const d = DEVICES.find((x) => x.udid === args.udid);
+      state.current = args.udid as string;
+      const d = DEVICES.find((x) => x.udid === args.udid && !state.unplugged.has(x.udid));
       if (!d) throw `device ${args.udid} is not connected (no usbmuxd connection). Run \`devices\` to see what is`;
       return setupStatus(d);
     }
@@ -670,6 +700,15 @@ const mock = {
   setupEnd(end: "ok" | "deny" | "fail") {
     state.setupEnd = end;
   },
+  /** Unplugs a device (by UDID suffix; the current one when omitted), or plugs it back in with
+   * `off` false. With neither, toggles the current one. Returns whether it is now unplugged. */
+  unplug(udidSuffix?: string, off?: boolean) {
+    const udid = udidSuffix ? DEVICES.find((x) => x.udid.endsWith(udidSuffix))?.udid : state.current;
+    if (!udid) return false;
+    const now = off ?? !state.unplugged.has(udid);
+    unplug(udid, now);
+    return now;
+  },
 };
 
 declare global {
@@ -695,6 +734,7 @@ const KEYS: [string, string, () => void][] = [
   ["f", "Settings fail", () => mock.settingsFail(!state.settingsFail)],
   ["r", "Turn the screen", () => mock.rotate()],
   ["c", "CLI record start/stop", () => (state.recording ? mock.recordStop() : mock.recordStart())],
+  ["x", "Unplug/plug the device", () => mock.unplug()],
   ["e", "Setup steps end: ok/deny/fail", () => mock.setupEnd(state.setupEnd === "ok" ? "deny" : state.setupEnd === "deny" ? "fail" : "ok")],
 ];
 

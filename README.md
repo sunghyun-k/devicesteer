@@ -7,7 +7,7 @@ connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
 > rebuilds it as a Rust core with a CLI and a Tauri viewer, talking to the device through
 > [idevice](https://github.com/jkcoxson/idevice) instead of Xcode's CoreDevice. Today it can read
 > the screen's accessibility tree, tap, swipe and press buttons, launch apps, record the screen,
-> change Device Hub's settings (appearance, text size, accessibility switches, VoiceOver, simulated
+> change the device's settings (appearance, text size, accessibility switches, VoiceOver, simulated
 > location), and show the live screen in a viewer where a human can watch or take over from an agent.
 
 ## Install

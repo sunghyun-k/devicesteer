@@ -342,9 +342,11 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 #intro-reason { color: var(--fg-2); max-width: 360px; font-size: var(--fs-md); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 #intro-buttons { display: flex; gap: 8px; }
 #intro-busy, #intro-reason, #intro-buttons { display: none; }
-#stage[data-state="connecting"] #view-screen, #stage[data-state="error"] #view-screen, #stage[data-state="unavailable"] #view-screen { display: none; }
+#stage[data-state="connecting"] #view-screen, #stage[data-state="error"] #view-screen, #stage[data-state="unavailable"] #view-screen,
+#stage[data-state="disconnected"] #view-screen { display: none; }
 #stage[data-state="connecting"] #intro-busy { display: flex; }
-#stage[data-state="error"] #intro-reason, #stage[data-state="unavailable"] #intro-reason { display: block; }
+#stage[data-state="error"] #intro-reason, #stage[data-state="unavailable"] #intro-reason,
+#stage[data-state="disconnected"] #intro-reason { display: block; }
 #stage[data-state="error"] #intro-reason { color: var(--danger); }
 #stage[data-state="error"] #intro-buttons { display: flex; }
 

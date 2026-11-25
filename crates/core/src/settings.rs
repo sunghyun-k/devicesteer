@@ -1,5 +1,5 @@
-//! Device Hub's settings panel: appearance, text size, Liquid Glass, accessibility switches,
-//! VoiceOver, and the simulated location.
+//! The device's settings (the ones Xcode's Device Hub offers): appearance, text size, Liquid
+//! Glass, accessibility switches, VoiceOver, and the simulated location.
 //!
 //! All but the location are actions of `com.apple.coredevice.configuration`, a get and a set per
 //! item, with the same input and output shape (`{"reduceMotion": {"enabled": true}}`). idevice's
