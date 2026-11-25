@@ -74,9 +74,11 @@ connection code, run an Xcode build to the device while a session is open. (Chec
 ### 5. Screenshots
 
 - Old #13: captures arrive as 16-bit PNG (about 10 MB for a 1290×2796 screen). Re-encoding to 8-bit
-  makes them ~30× smaller. `screenshot` does not re-encode yet.
+  makes them ~30× smaller.
   Still true on the idevice path: an iPhone on iOS 27.2.1 over USB returned a 16-bit RGBA PNG of
-  8.6 MB for 1284×2778 (about 2.9 s for the whole command in a debug build).
+  8.6 MB for 1284×2778 (about 2.9 s for the whole command in a debug build). `screenshot` saves
+  8-bit now (`--raw` keeps the device's PNG); what that saves on a busy screen, and where a Wi-Fi
+  capture's seconds went, is #63.
 - Old #25: a capture succeeds with a black image while the screen is off.
 - Old #51: a foldable iPhone has two panels. Without `displayUniqueID` the device captures the
   first one (the cover panel), which is black while unfolded. Pick the `active` panel from
@@ -1217,3 +1219,64 @@ Same iPad and screen as #61, with a stocks widget and a clock widget on the page
   offers `_accessibilityToggleJigglyMode` (after the other SpringBoard screens are ruled out) or
   when the Search pill is there. Not checked on an iPhone: it was locked, so whether its icons carry
   the same actions is unknown; its Search pill still counts.
+
+### 63. Screenshots over Wi-Fi: where the seconds and the megabytes went
+
+Measured on a foldable iPhone (iOS 27.3, inner panel 2007×2853) and an iPad Pro 13 (iPadOS 27.2.1,
+2752×2064), both over our own Wi-Fi pairing (#55), release builds; the iPad from Windows.
+
+**Before** (each `screenshot` opened its own tunnel): iPhone 4.3–5.6 s (6.3–7.3 s in a debug build),
+iPad 4.0–4.6 s. Per stage, on the iPhone:
+
+| stage | time |
+|---|---|
+| mDNS browse for the device's advert | 2.5 s, always: `browse` listened its whole wait |
+| pair-verify, TLS-PSK tunnel, RSD handshake | 0.3 s |
+| request sent → first image byte | 1.4 s (iPad 1.25 s): the device captures and encodes |
+| 12 MB of PNG through the tunnel | 0.45 s, ≈27 MB/s |
+
+- **The tunnel is not the bottleneck.** idevice's RemoteXPC asks for a 1 MiB HTTP/2 window and
+  returns every DATA frame's bytes at once; jktcp advertises ~16 MB (window scale 8); the tunnel
+  rides on TCP (TLS-PSK over the Wi-Fi TCP connection, or usbmuxd), so nothing inside it is lost
+  or reordered. In a debug build the tunnel's AES-CBC and HMAC-SHA384 (pure Rust) were the
+  slow part: the same transfer took 3.4–3.9 s, hence the dev-profile `opt-level` for them.
+- **The device decides the format.** `dtscreencaptured` (Developer Disk Image, CoreDevice-651.32)
+  snapshots the panel through CARenderServer into an IOSurface of the panel's own format and
+  encodes PNG: with a `displayUniqueID`, 16 bits per channel tagged Display P3 (iCCP
+  `kCGColorSpaceDisplayP3`, cICP 12/13/0/1). The iPhone sent RGB whose low bytes are real
+  (0.4 % of samples were an 8-bit value ×257), 11.9 MB; the iPad RGBA with an opaque alpha, 71 %
+  of samples 8-bit ×257, 5.8 MB. Without `displayUniqueID` the device takes a legacy path; on the
+  foldable that was the black cover panel (#5), 8-bit, 37 KB.
+- **Only PNG.** `requestedFormat` takes `png` alone: `jpeg`, `jpg`, `heic`, `heif`, `tiff`,
+  `public.jpeg`, `PNG` and `JPEG` were refused (`Cannot initialize ScreenshotImageFormat from
+  invalid String value jpeg`, NSCocoaErrorDomain 4864), although idevice offers `Jpeg`.
+- **One capture at a time per device.** A second client's request while one runs is refused with
+  CoreDevice error 25003, "A screenshot capture is already in progress". That is the device's
+  answer on a healthy tunnel: `capture` words it without "connection", or the daemon would drop
+  its session.
+- **The size the user saw over USB (0.96 MB) wasn't reproduced**: no device here was on USB. #5
+  records 16-bit over USB too, so the transport doesn't choose the depth; the screen's content
+  changes the size a lot (the iPhone's screen above had 107,000 distinct 8-bit colours).
+
+What `screenshot` does now:
+
+- **Through the daemon**, which captures on its open tunnel. It holds the device lock only to look
+  up the panel and the tunnel, so the viewer's touches go on during the capture. The daemon writes
+  the file; the CLI sends an absolute path. A daemon of an older version answers "unknown command"
+  and the CLI captures on its own tunnel instead.
+- **Opening a Wi-Fi tunnel stops browsing** at the first advert of the device with an IPv4
+  address: 0.3–1.3 s instead of 2.5 s (mDNS answers vary). Listing every device (`devices`, a
+  command without `--udid`) still waits the whole 2.5 s.
+- **8-bit, opaque alpha dropped, profile chunks kept** (an untagged P3 image looks dull), zlib
+  level 3 with adaptive filtering: decode, convert and encode took ~0.2 s. Levels on the iPhone's
+  screen: fdeflate 4.7 MB in 25 ms, level 3 3.3 MB in 0.13 s, level 6 3.1 MB in 0.6 s, level 9
+  3.0 MB in 2.3 s.
+- The capture's timeout is 30 s, not the 12 s of other steps: 1.5 s of encoding and 12 MB over a
+  busy network came close to 12 s once.
+
+**After**: iPhone through the daemon 1.85–2.1 s (3.5 s for the first one, which opens the tunnel),
+`--no-daemon` 2.5–3.7 s; iPad from Windows, `--no-daemon`, 2.4–2.85 s (measured with fdeflate; the
+iPad had gone to sleep before level 3 could be measured there, and the viewer's daemon on that PC
+was left alone). Files: iPhone 11.9 MB → 3.3 MB; iPad 5.8 MB → 4.5 MB with fdeflate, 2.5 MB at
+level 6 on a saved capture. What is left is the device's own capture and encoding (1.3–1.8 s), which no
+request option changes.

@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, bail};
 use idevice::{
     IdeviceService, RsdService,
-    core_device::{AppServiceClient, GENERAL_PASTEBOARD, ImageFormat, PasteboardServiceClient, ScreenCaptureServiceClient},
+    core_device::{AppServiceClient, GENERAL_PASTEBOARD, PasteboardServiceClient},
     core_device_proxy::CoreDeviceProxy,
     installation_proxy::InstallationProxyClient,
     heartbeat::HeartbeatClient,
@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::{
     devices::{Transport, mux_addr, mux_devices, transport_of},
-    display::{Display, DisplayPoller, NO_UNIQUE_ID},
+    display::{Display, DisplayPoller},
     step,
 };
 
@@ -260,19 +260,19 @@ impl Session {
             .collect())
     }
 
-    /// Captures the active display as PNG.
+    /// Captures the active display. 8-bit unless `raw` (PITFALLS #63).
     ///
     /// `display` is a panel's `uniqueId`. Without one, the panel in use now is captured: a
     /// foldable has two panels, and the device on its own captures its first (the cover panel),
     /// which is black while unfolded (PITFALLS #5, #47). A phone with one panel has no id to pass.
-    pub async fn screenshot(&mut self, display: Option<&str>) -> Result<Vec<u8>> {
+    pub async fn screenshot(&mut self, display: Option<&str>, raw: bool) -> Result<crate::Screenshot> {
         let active = match display {
             Some(_) => None,
-            None => Some(self.display().await?.unique_id).filter(|id| id != NO_UNIQUE_ID),
+            None => self.display().await?.capture_id().map(str::to_owned),
         };
         let display = display.or(active.as_deref());
-        let mut client: ScreenCaptureServiceClient<_> = self.connect().await?;
-        step("screenshot", client.take_screenshot(display, ImageFormat::Png)).await
+        let png = crate::screenshot::capture(&mut self.adapter, &mut self.rsd, display).await?;
+        crate::screenshot::finish(png, raw)
     }
 
     /// What the device's clipboard holds, as far as it can be put back: text or one image.

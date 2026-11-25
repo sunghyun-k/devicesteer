@@ -52,3 +52,19 @@ tracing = "0.1"
 opt-level = 3
 [profile.dev.package.num-bigint-dig]
 opt-level = 3
+# A screenshot is a 12 MB PNG to decode and re-encode, and over Wi-Fi it comes through the tunnel's
+# AES-CBC and HMAC: unoptimized, both cost seconds in debug builds (PITFALLS #63).
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3
+[profile.dev.package.aes]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.hmac]
+opt-level = 3

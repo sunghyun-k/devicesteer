@@ -37,7 +37,9 @@ const SERVICE: &str = "_remotepairing._tcp.local.";
 /// computers.
 const HOST_NAME: &str = "DeviceSteer";
 
-/// How long [`browse`] listens. Devices that are awake answer the first query within a second.
+/// How long [`browse`] listens for every device. Devices that are awake answer the first query
+/// within a second; [`find`], which wants one, stops as soon as it answers (0.3 to 1.3 s were
+/// seen, PITFALLS #63).
 pub(crate) const BROWSE_WAIT: Duration = Duration::from_millis(2500);
 
 /// One device's `_remotepairing._tcp` advert.
@@ -80,6 +82,19 @@ impl Advert {
 /// device that sleeps is answered for by a sleep proxy, which macOS's Bonjour caches but a fresh
 /// query here may not hear; such a device shows up once it wakes (PITFALLS #55).
 pub(crate) async fn browse(wait: Duration) -> Result<Vec<Advert>> {
+    browse_until(wait, |_| false).await
+}
+
+/// The advert of the device `pairing` was made with, as soon as it is heard with an IPv4 address
+/// (within `wait`; then with whatever addresses came).
+async fn find(wait: Duration, pairing: &Pairing) -> Result<Option<Advert>> {
+    // IPv4 because an IPv6 link-local address alone can fail to connect (see `Advert::from_txt`).
+    let adverts = browse_until(wait, |a| a.matches(pairing) && a.addrs.iter().any(SocketAddr::is_ipv4)).await?;
+    Ok(adverts.into_iter().find(|a| a.matches(pairing)))
+}
+
+/// [`browse`], stopping early at the first advert `done` accepts.
+async fn browse_until(wait: Duration, done: impl Fn(&Advert) -> bool) -> Result<Vec<Advert>> {
     let mdns = mdns_sd::ServiceDaemon::new().context("could not start mDNS discovery")?;
     let rx = mdns.browse(SERVICE).context("could not start mDNS discovery")?;
     let mut out: Vec<Advert> = Vec::new();
@@ -99,6 +114,9 @@ pub(crate) async fn browse(wait: Duration) -> Result<Vec<Advert>> {
                     o.addrs.dedup();
                 }
                 None => out.push(a),
+            }
+            if out.iter().any(&done) {
+                break;
             }
         }
     }
@@ -260,8 +278,7 @@ pub(crate) async fn open(udid: &str) -> Result<RemoteTunnel> {
     let mut pairing = pairing(udid).with_context(|| {
         format!("device {udid} is not connected (no usbmuxd connection and no Wi-Fi pairing). Run `devices` to see what is")
     })?;
-    let adverts = browse(BROWSE_WAIT).await?;
-    let Some(advert) = adverts.into_iter().find(|a| a.matches(&pairing)) else {
+    let Some(advert) = find(BROWSE_WAIT, &pairing).await? else {
         bail!(
             "device {udid} is not on the network (no USB connection, and no Wi-Fi answer from it). Ask the user to \
              wake and unlock it on the same network as this computer, then retry"
