@@ -69,6 +69,18 @@ function renderLanguages(): void {
 }
 languagePicker.addEventListener("change", () => setLanguageSetting(languagePicker.value as Language | "system"));
 
+// Kept in the state directory, not web storage: the daemon reads it when an agent starts a
+// session and no viewer runs (devicesteer_daemon::viewer).
+const openOnSession = $<HTMLInputElement>("#open-on-session");
+void invoke<boolean>("open_on_session")
+  .then((on) => (openOnSession.checked = on))
+  .catch(() => {});
+openOnSession.addEventListener("change", () => {
+  const on = openOnSession.checked;
+  // The file couldn't be written: the switch shows what still holds.
+  invoke("set_open_on_session", { on }).catch(() => (openOnSession.checked = !on));
+});
+
 // ---------- agents ----------
 
 let status: Status | undefined;

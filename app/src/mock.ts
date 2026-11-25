@@ -19,7 +19,13 @@
 // (pick that device first, such as `select=6` for the one that needs Trust, `select=7` for
 // Developer Mode, `select=9` for one too old for DeviceSteer), `update=1` (a newer version is out),
 // `pair=ok|hold|nodevice|nocode|fail` (how Pair over Wi-Fi… ends: a new Wi-Fi device, the code
-// stays up forever (for screenshots), no device asks, nobody types the code, or an error).
+// stays up forever (for screenshots), no device asks, nobody types the code, or an error),
+// `others=1` (sessions already run on other devices: the iPad's agent works, the QA iPhone waits for
+// the person, the person has the Old iPhone), `notice=1` (an agent starts on the iPad 1.5 s in:
+// with `open=1`, the screen on show stays and a notice offers the iPad).
+//
+// Sessions on other devices: `n` (or `mock.agentStarts()`) starts one on a device not attached,
+// as a daemon's message does; `m` ends them all. `mock.session()` changes the attached device's.
 //
 // The Settings window: http://localhost:1420/settings.html?mock (also `theme`, `agents`,
 // `location`, `update`, `tab=agents|updates`). In the main window, the More menu's Settings… opens
@@ -35,6 +41,7 @@ import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 type Point = [number, number];
 type Owner = "agent" | "delegated_to_user" | "user" | "finished";
 type Rotation = "rot0" | "rot90" | "rot180" | "rot270";
+type MockSession = { id: string; name: string; owner: Owner; reason: string | null };
 
 const params = new URLSearchParams(location.search);
 const SCREEN: Point = [428, 926];
@@ -105,9 +112,23 @@ const state = {
   index: 0,
   frameTimer: undefined as number | undefined,
   pts: 0,
-  session: (params.get("session")
+  /** The attached device's session. */
+  session: null as null | MockSession,
+  /** `session=` in the URL: given to the first device attached. */
+  firstSession: (params.get("session")
     ? { id: "s0", name: "Check the Wi-Fi settings", owner: params.get("session") as Owner, reason: params.get("session") === "delegated_to_user" ? "Enter the passcode on the device" : null }
-    : null) as null | { id: string; name: string; owner: Owner; reason: string | null },
+    : null) as null | MockSession,
+  /** Every device's session, as the daemons would tell the shell. */
+  sessions: new Map<string, MockSession>(
+    params.get("others")
+      ? [
+          ["00000000-0000000000000002", { id: "s2", name: "Turn on Dark Mode", owner: "agent", reason: null }],
+          ["00000000-0000000000000004", { id: "s4", name: "Sign in to the test account", owner: "delegated_to_user", reason: "Enter the password" }],
+          ["00000000-0000000000000005", { id: "s5", name: "Clear the notifications", owner: "user", reason: null }],
+        ]
+      : [],
+  ),
+  openOnSession: true,
   settings: {
     appearance: "dark" as "light" | "dark" | null,
     text_size: "l" as string | null,
@@ -555,6 +576,15 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     }
     case "show_move_sheet":
       return null;
+    case "known_sessions":
+      return Object.fromEntries(state.sessions);
+    case "probe_sessions":
+      return {};
+    case "open_on_session":
+      return state.openOnSession;
+    case "set_open_on_session":
+      state.openOnSession = Boolean(args.on);
+      return null;
     case "initial_udid":
       if (params.get("select")) return DEVICES.find((d) => d.udid.endsWith(params.get("select")!))?.udid ?? null;
       return params.get("open") ? DEVICES[0].udid : null;
@@ -593,6 +623,11 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       if (state.attach === "error") throw "connection to the device failed: the tunnel did not come up. Unlock the device and try again.";
       state.channel = args.channel as { id: number };
       state.index = 0;
+      if (state.firstSession) {
+        state.sessions.set(state.current, state.firstSession);
+        state.firstSession = null;
+      }
+      state.session = state.sessions.get(state.current) ?? null;
       window.setTimeout(() => {
         control();
         if (args.frames) startStream();
@@ -713,6 +748,7 @@ async function send(cmd: string, a: Record<string, unknown>): Promise<unknown> {
       else if (action === "hand_back" || action === "done") s.owner = "agent";
       else if (action === "stop") s.owner = "finished";
       s.reason = s.owner === "delegated_to_user" ? s.reason : null;
+      if (state.current) tellViewer(state.current, s.owner === "finished" ? null : s, false);
       control();
       if (s.owner === "finished") window.setTimeout(() => ((state.session = null), control()), 300);
       return {};
@@ -752,12 +788,29 @@ const mock = {
   },
   /** `owner` null ends the session. */
   session(owner: Owner | null = "agent", name = "Check the Wi-Fi settings", reason: string | null = null) {
+    const started = !state.session && !!owner;
     if (!owner) state.session = null;
     else {
       state.session = { id: state.session?.id ?? `s${Date.now()}`, name, owner, reason };
       if (owner === "delegated_to_user" && !reason) state.session.reason = "Enter the passcode on the device";
     }
+    if (state.current) tellViewer(state.current, state.session, started);
     control();
+  },
+  /** An agent starts a session on another device (by UDID suffix; the next one not attached when
+   * left out), as its daemon would tell the viewer. */
+  agentStarts(suffix?: string, name = "Turn on Dark Mode", owner: Owner = "agent") {
+    const d = suffix
+      ? DEVICES.find((x) => x.udid.endsWith(suffix))
+      : DEVICES.find((x) => x.udid !== state.current && !x.error && !x.unsupported && !x.setup && !state.sessions.has(x.udid));
+    if (!d) return;
+    const s: MockSession = { id: `s${Date.now()}`, name, owner, reason: owner === "delegated_to_user" ? "Enter the password" : null };
+    if (d.udid === state.current) return mock.session(owner, name);
+    tellViewer(d.udid, s, true);
+  },
+  /** Ends the sessions on the devices not attached. */
+  endOthers() {
+    for (const u of [...state.sessions.keys()]) if (u !== state.current) tellViewer(u, null, false);
   },
   tap(x = 120 + Math.random() * 200, y = 200 + Math.random() * 500, label: string | null = LABELS[labelIndex++ % LABELS.length]) {
     input("agent", "tap", [[x, y]], { label, duration_ms: 50 });
@@ -850,6 +903,13 @@ declare global {
   }
 }
 
+/** What a daemon sends the shell (session_watch.rs) when its session starts, changes or ends. */
+function tellViewer(udid: string, session: MockSession | null, started: boolean): void {
+  if (session) state.sessions.set(udid, session);
+  else state.sessions.delete(udid);
+  void emitEvent("agent-session", { udid, session, started });
+}
+
 // ---------- floating panel ----------
 
 const KEYS: [string, string, () => void][] = [
@@ -867,6 +927,8 @@ const KEYS: [string, string, () => void][] = [
   ["r", "Turn the screen", () => mock.rotate()],
   ["c", "CLI record start/stop", () => (state.recording ? mock.recordStop() : mock.recordStart())],
   ["x", "Unplug/plug the device", () => mock.unplug()],
+  ["n", "Agent starts on another device", () => mock.agentStarts()],
+  ["m", "End other devices' sessions", () => mock.endOthers()],
   ["e", "Setup steps end: ok/deny/fail/hold/timeout", () => {
     const ends = ["ok", "deny", "fail", "hold", "timeout"] as const;
     mock.setupEnd(ends[(ends.indexOf(state.setupEnd) + 1) % ends.length]);
@@ -915,4 +977,5 @@ export function installMock(window_: "main" | "settings" = "main"): void {
   window.mock = mock;
   // Module scripts run after the document is parsed, so the body is there.
   if (params.get("panel") !== "0") panel();
+  if (params.get("notice")) window.setTimeout(() => mock.agentStarts("2"), 1500);
 }

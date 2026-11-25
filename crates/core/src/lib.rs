@@ -26,6 +26,7 @@ mod media;
 mod models;
 mod mp4;
 pub mod paths;
+pub mod preferences;
 mod record;
 mod remote;
 mod resample;

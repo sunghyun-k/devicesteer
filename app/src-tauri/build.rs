@@ -31,6 +31,10 @@ const COMMANDS: &[&str] = &[
     "open_settings",
     "show_move_sheet",
     "set_menu_labels",
+    "known_sessions",
+    "probe_sessions",
+    "open_on_session",
+    "set_open_on_session",
 ];
 
 fn main() {

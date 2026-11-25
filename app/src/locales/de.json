@@ -5,6 +5,7 @@
   "common.listSeparator": ", ",
   "common.notNow": "Später",
   "common.tryAgain": "Erneut versuchen",
+  "common.dismiss": "Schließen",
 
   "menu.about": "Über {app}",
   "menu.services": "Dienste",
@@ -50,7 +51,8 @@
   "list.emptyDetail": "Verbinde ein iPhone oder iPad per Kabel, entsperre es und vertraue diesem Computer. Oder kopple eines über WLAN, ohne Kabel.",
   "list.noMatches": "Keine Treffer",
   "list.noMatchesDetail": "Keine Treffer für „{query}“.",
-  "list.sessionRuns": "Auf diesem Gerät läuft eine Agent-Sitzung",
+  "list.sessionWaiting": "Wartet auf dich",
+  "list.sessionGoal": "{state}: {goal}",
   "list.noUsbmuxd.title": "Apple Geräte installieren",
   "list.noUsbmuxd.detail": "Für eine Verbindung per Kabel braucht Windows Apple Geräte (oder iTunes). Installiere es, öffne es einmal und akzeptiere die Lizenz. Schließe das Gerät danach erneut an.",
   "list.noUsbmuxd.store": "Microsoft Store öffnen",
@@ -122,12 +124,15 @@
 
   "note.showInFinder": "Im Finder anzeigen",
   "note.showInExplorer": "Im Datei-Explorer anzeigen",
+  "notice.agentStarted": "Agent auf {device} gestartet:",
+  "notice.view": "Anzeigen",
 
   "stage.viewScreen": "Bildschirm anzeigen",
   "stage.starting": "Bildschirm wird gestartet …",
   "stage.disconnected": "Schließe das Kabel wieder an und entsperre das Gerät. Startet es neu, warte: Es geht hier weiter, sobald es wieder da ist.",
   "stage.connectFailed": "Verbindung mit {device} fehlgeschlagen: {error}",
   "stage.startFailed": "Bildschirm konnte nicht gestartet werden: {error}",
+  "stage.daemonClosed": "Die Verbindung zum Gerät wurde erneut getrennt. Versuche es noch einmal, um sie wiederherzustellen.",
 
   "session.none": "Keine Agent-Sitzung",
   "session.region": "Agent-Sitzung",
@@ -313,6 +318,9 @@
   "prefs.language": "App-Sprache",
   "prefs.languageSystem": "Systemstandard",
   "prefs.languageNote": "Einige Meldungen der Geräteverbindung und des Befehlszeilentools bleiben auf Englisch.",
+  "prefs.sessionsSection": "Agent-Sitzungen",
+  "prefs.openOnSession": "Viewer öffnen, wenn ein Agent eine Sitzung startet",
+  "prefs.openOnSessionNote": "Der Viewer öffnet sich mit diesem Gerät oder kommt nach vorne, wenn er offen ist, ohne der App, in der du tippst, die Tastatur wegzunehmen.",
   "prefs.agentsLead": "Coding-Agents auf diesem Mac bedienen deine Geräte über das Befehlszeilentool und den Skill von DeviceSteer. Beide sind Links in diese App und werden mit ihr aktualisiert.",
   "prefs.moveToApplications": "In „Programme“ bewegen …",
   "prefs.commandLineTool": "Befehlszeilentool",

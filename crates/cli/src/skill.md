@@ -88,6 +88,11 @@ devicesteer session finish                         # at the end of your reply
 ```
 
 - **Name the session after the goal**, in a few words the user would recognize.
+- **`session start` shows the device to the user.** A running viewer selects the device and shows
+  its screen (or, if the user is watching another device, a notice); if the viewer isn't running,
+  it is opened for that device unless the user turned that off. The result's `viewer` says which:
+  `notified`, `launched`, `off` or `not_installed` (with a `note`). Neither fails the session, and
+  the viewer never takes the keyboard from the user's terminal.
 - **One goal keeps one session** across your replies while it is unfinished. A new goal gets a new
   session.
 - **Finish the session at the end of your reply**, once your output shows the goal is done (or you

@@ -147,6 +147,12 @@ mod imp {
         }
     }
 
+    // SAFETY: the descriptor is built once and only read afterwards (each new pipe instance copies
+    // it), and freed in Drop: nothing mutates it while it is shared. The daemon listens on one
+    // thread, but the viewer's listener (`viewer::Listener`) runs on Tauri's multi-threaded runtime.
+    unsafe impl Send for OwnerOnly {}
+    unsafe impl Sync for OwnerOnly {}
+
     impl Drop for OwnerOnly {
         fn drop(&mut self) {
             // SAFETY: allocated by ConvertStringSecurityDescriptorToSecurityDescriptorW.

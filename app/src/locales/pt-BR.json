@@ -5,6 +5,7 @@
   "common.listSeparator": ", ",
   "common.notNow": "Agora Não",
   "common.tryAgain": "Tentar Novamente",
+  "common.dismiss": "Fechar",
 
   "menu.about": "Sobre o {app}",
   "menu.services": "Serviços",
@@ -50,7 +51,8 @@
   "list.emptyDetail": "Conecte um iPhone ou iPad com um cabo, desbloqueie-o e confie neste computador. Ou emparelhe um via Wi-Fi, sem cabo.",
   "list.noMatches": "Nenhum resultado",
   "list.noMatchesDetail": "Nada corresponde a “{query}”.",
-  "list.sessionRuns": "Há uma sessão de agente em andamento neste dispositivo",
+  "list.sessionWaiting": "Aguardando você",
+  "list.sessionGoal": "{state}: {goal}",
   "list.noUsbmuxd.title": "Instale o Dispositivos Apple",
   "list.noUsbmuxd.detail": "Para conectar com um cabo, o Windows precisa do Dispositivos Apple (ou do iTunes). Instale-o, abra-o uma vez e aceite a licença; depois, conecte o dispositivo novamente.",
   "list.noUsbmuxd.store": "Abrir a Microsoft Store",
@@ -122,12 +124,15 @@
 
   "note.showInFinder": "Mostrar no Finder",
   "note.showInExplorer": "Mostrar no Explorador de Arquivos",
+  "notice.agentStarted": "Um agente começou em {device}:",
+  "notice.view": "Ver",
 
   "stage.viewScreen": "Ver Tela",
   "stage.starting": "Iniciando a tela…",
   "stage.disconnected": "Conecte o cabo novamente e desbloqueie o dispositivo. Se ele estiver reiniciando, aguarde: tudo continua aqui quando ele voltar.",
   "stage.connectFailed": "Não foi possível conectar a {device}: {error}",
   "stage.startFailed": "Não foi possível iniciar a tela: {error}",
+  "stage.daemonClosed": "A conexão com o dispositivo foi encerrada de novo. Tente novamente para reconectar.",
 
   "session.none": "Nenhuma sessão de agente",
   "session.region": "Sessão de agente",
@@ -313,6 +318,9 @@
   "prefs.language": "Idioma do app",
   "prefs.languageSystem": "Padrão do sistema",
   "prefs.languageNote": "Algumas mensagens da conexão com o dispositivo e da ferramenta de linha de comando continuam em inglês.",
+  "prefs.sessionsSection": "Sessões de agentes",
+  "prefs.openOnSession": "Abrir o visualizador quando um agente iniciar uma sessão",
+  "prefs.openOnSessionNote": "O visualizador abre nesse dispositivo, ou vem para a frente se já estiver aberto, sem tirar o teclado do app em que você está digitando.",
   "prefs.agentsLead": "Os agentes de programação deste Mac operam seus dispositivos pela ferramenta de linha de comando e pela skill do DeviceSteer. Ambas são links para este app, então são atualizadas com ele.",
   "prefs.moveToApplications": "Mover para Aplicativos…",
   "prefs.commandLineTool": "Ferramenta de Linha de Comando",
