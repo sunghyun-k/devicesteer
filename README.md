@@ -36,6 +36,11 @@ The app updates itself from GitHub Releases. To build from source instead, see b
   [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) and checked by SHA-256).
   This repository contains no Apple files. See [docs/SETUP.md](docs/SETUP.md).
 - macOS: nothing extra (usbmuxd ships with the OS). Windows: Apple Devices or iTunes, for usbmuxd.
+
+  On Windows, USB needs [Apple Devices](https://apps.microsoft.com/detail/9NP83LWLPZ9K) from the
+  Microsoft Store (or iTunes): install it, open it once and accept its license, then plug the
+  device in again. Without it, devices paired over Wi-Fi still work, and DeviceSteer says what to
+  install. See [docs/SETUP.md](docs/SETUP.md#windows).
 - To build from source: Rust 1.88+; Node.js 20+ for the viewer app.
 
 ## Use

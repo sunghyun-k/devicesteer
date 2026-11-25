@@ -31,7 +31,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    devices::{Transport, mux_addr, mux_devices, transport_of, unsupported_in},
+    devices::{Transport, mux_addr, mux_connect, mux_devices, transport_of, unsupported_in},
     step,
 };
 
@@ -201,7 +201,7 @@ fn is_trust_error(e: &IdeviceError) -> bool {
 /// rejected pair record is a result.
 pub(crate) async fn probe(provider: &UsbmuxdProvider) -> Result<Probe> {
     let mut p = Probe::default();
-    let mut mux = step("usbmuxd connection", mux_addr().connect(0)).await?;
+    let mut mux = mux_connect().await?;
     // usbmuxd answers without PairRecordData when it has no record for the device.
     let pairing = match step("pair record lookup", mux.get_pair_record(&provider.udid)).await {
         Ok(r) => r,
@@ -410,7 +410,7 @@ pub async fn trust(udid: Option<&str>, wait: Duration, progress: ProgressFn) -> 
         );
     }
     let s = SetupStep::Trust;
-    let mut mux = step("usbmuxd connection", mux_addr().connect(0)).await?;
+    let mut mux = mux_connect().await?;
     let buid = step("usbmuxd system BUID", mux.get_buid()).await?;
     let host_id = uuid::Uuid::new_v4().to_string().to_uppercase();
     let deadline = Instant::now() + wait;

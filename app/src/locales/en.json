@@ -51,6 +51,10 @@
   "list.noMatches": "No matches",
   "list.noMatchesDetail": "Nothing matches “{query}”.",
   "list.sessionRuns": "An agent session runs on this device",
+  "list.noUsbmuxd.title": "Install Apple Devices",
+  "list.noUsbmuxd.detail": "To connect with a cable, Windows needs Apple Devices (or iTunes). Install it, open it once and accept its license, then plug the device in again.",
+  "list.noUsbmuxd.store": "Open Microsoft Store",
+  "list.noUsbmuxd.waiting": "This list updates by itself once Apple Devices runs. Devices paired over Wi-Fi work without it.",
 
   "device.unknown": "Unknown device",
   "device.new": "New Device",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "The Mac clipboard holds no text.",
   "error.mac_clipboard_read": "Couldn’t read the Mac clipboard: {detail}",
-  "error.mac_clipboard_write": "Couldn’t write the Mac clipboard: {detail}"
+  "error.mac_clipboard_write": "Couldn’t write the Mac clipboard: {detail}",
+  "error.open_store": "Couldn’t open the Microsoft Store: {detail}"
 }

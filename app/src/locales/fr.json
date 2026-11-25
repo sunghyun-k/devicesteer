@@ -51,6 +51,10 @@
   "list.noMatches": "Aucun résultat",
   "list.noMatchesDetail": "Aucun résultat pour « {query} ».",
   "list.sessionRuns": "Une session d’agent est en cours sur cet appareil",
+  "list.noUsbmuxd.title": "Installez Appareils Apple",
+  "list.noUsbmuxd.detail": "Pour une connexion par câble, Windows a besoin d’Appareils Apple (ou d’iTunes). Installez-le, ouvrez-le une fois et acceptez sa licence, puis rebranchez l’appareil.",
+  "list.noUsbmuxd.store": "Ouvrir le Microsoft Store",
+  "list.noUsbmuxd.waiting": "Cette liste se met à jour d’elle-même dès qu’Appareils Apple est en marche. Les appareils jumelés en Wi-Fi fonctionnent sans lui.",
 
   "device.unknown": "Appareil inconnu",
   "device.new": "Nouvel appareil",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "Le presse-papiers du Mac ne contient pas de texte.",
   "error.mac_clipboard_read": "Impossible de lire le presse-papiers du Mac : {detail}",
-  "error.mac_clipboard_write": "Impossible d’écrire dans le presse-papiers du Mac : {detail}"
+  "error.mac_clipboard_write": "Impossible d’écrire dans le presse-papiers du Mac : {detail}",
+  "error.open_store": "Impossible d’ouvrir le Microsoft Store : {detail}"
 }

@@ -109,6 +109,10 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* Korean puts spaces between words, so lines break there as in Korean text elsewhere, not inside a
+   word (the default breaks between any two syllables). A token too long for its line still breaks:
+   break-word, not anywhere, so it doesn't let flex items shrink below their words. */
+:lang(ko) { word-break: keep-all; overflow-wrap: break-word; }
 body { margin: 0; background: var(--bg); color: var(--fg); overflow: hidden; user-select: none; -webkit-user-select: none; cursor: default; }
 button, input, select { font: inherit; color: inherit; }
 p, h2, h3, h4 { margin: 0; }
@@ -247,6 +251,12 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .list-message .detail { color: var(--fg-3); font-size: 13px; overflow-wrap: anywhere; }
 .list-message:not(.loading) .spinner { display: none; }
 .list-message.error .title { color: var(--danger); }
+.mux-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 8px 2px 6px; padding: 12px 14px; border-radius: var(--r-lg); }
+.mux-card[hidden] { display: none; }
+.mux-card .title { font-weight: 600; }
+.mux-card .detail { color: var(--fg-2); font-size: 13px; }
+.mux-card .note { display: flex; gap: 8px; align-items: flex-start; color: var(--fg-3); font-size: 12px; }
+.mux-card .note .spinner { flex: none; width: 12px; height: 12px; margin-top: 2px; }
 /* Under the list: starting a device that isn't listed yet. */
 .side-foot { flex: none; padding: 8px 12px 12px; border-top: 1px solid var(--hairline); }
 .side-foot .btn { width: 100%; justify-content: flex-start; color: var(--fg-2); }

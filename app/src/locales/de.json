@@ -51,6 +51,10 @@
   "list.noMatches": "Keine Treffer",
   "list.noMatchesDetail": "Keine Treffer für „{query}“.",
   "list.sessionRuns": "Auf diesem Gerät läuft eine Agent-Sitzung",
+  "list.noUsbmuxd.title": "Apple Geräte installieren",
+  "list.noUsbmuxd.detail": "Für eine Verbindung per Kabel braucht Windows Apple Geräte (oder iTunes). Installiere es, öffne es einmal und akzeptiere die Lizenz. Schließe das Gerät danach erneut an.",
+  "list.noUsbmuxd.store": "Microsoft Store öffnen",
+  "list.noUsbmuxd.waiting": "Diese Liste aktualisiert sich von selbst, sobald Apple Geräte läuft. Über WLAN gekoppelte Geräte funktionieren auch ohne.",
 
   "device.unknown": "Unbekanntes Gerät",
   "device.new": "Neues Gerät",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "Die Zwischenablage des Mac enthält keinen Text.",
   "error.mac_clipboard_read": "Zwischenablage des Mac konnte nicht gelesen werden: {detail}",
-  "error.mac_clipboard_write": "Zwischenablage des Mac konnte nicht geschrieben werden: {detail}"
+  "error.mac_clipboard_write": "Zwischenablage des Mac konnte nicht geschrieben werden: {detail}",
+  "error.open_store": "Microsoft Store konnte nicht geöffnet werden: {detail}"
 }

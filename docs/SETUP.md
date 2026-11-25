@@ -117,3 +117,10 @@ the download.
 
 If `devices` lists nothing while the device is plugged in, unplug it and plug it back in: Apple
 Devices' usbmuxd can miss a device that was connected before its service started (PITFALLS #53).
+
+For USB, install Apple Devices from the Microsoft Store
+(`ms-windows-store://pdp/?ProductId=9NP83LWLPZ9K`), or iTunes, then open it once and accept its
+license: its usbmuxd starts only after that (PITFALLS #53). Then plug the device in again. Until
+then nothing answers on `127.0.0.1:27015`: `devices` lists only the Wi-Fi-paired devices, with a
+`note` saying what to install, and other commands fail with the same advice. The viewer shows it as
+a card with a button to the Store page, and lists USB devices by itself once usbmuxd answers.

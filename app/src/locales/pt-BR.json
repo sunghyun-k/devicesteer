@@ -51,6 +51,10 @@
   "list.noMatches": "Nenhum resultado",
   "list.noMatchesDetail": "Nada corresponde a “{query}”.",
   "list.sessionRuns": "Há uma sessão de agente em andamento neste dispositivo",
+  "list.noUsbmuxd.title": "Instale o Dispositivos Apple",
+  "list.noUsbmuxd.detail": "Para conectar com um cabo, o Windows precisa do Dispositivos Apple (ou do iTunes). Instale-o, abra-o uma vez e aceite a licença; depois, conecte o dispositivo novamente.",
+  "list.noUsbmuxd.store": "Abrir a Microsoft Store",
+  "list.noUsbmuxd.waiting": "Esta lista se atualiza sozinha quando o Dispositivos Apple estiver em execução. Dispositivos emparelhados por Wi-Fi funcionam sem ele.",
 
   "device.unknown": "Dispositivo desconhecido",
   "device.new": "Novo Dispositivo",
@@ -334,5 +338,6 @@
 
   "error.mac_clipboard_empty": "A área de transferência do Mac não contém texto.",
   "error.mac_clipboard_read": "Não foi possível ler a área de transferência do Mac: {detail}",
-  "error.mac_clipboard_write": "Não foi possível gravar na área de transferência do Mac: {detail}"
+  "error.mac_clipboard_write": "Não foi possível gravar na área de transferência do Mac: {detail}",
+  "error.open_store": "Não foi possível abrir a Microsoft Store: {detail}"
 }
