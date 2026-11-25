@@ -2402,7 +2402,15 @@ async function view(): Promise<void> {
   try {
     await invoke("watch", { frames: true });
   } catch (e) {
-    if (gen === viewerGen) stageState("error", `Couldn't start the screen: ${e}`);
+    if (gen !== viewerGen) return;
+    // The daemon went away while attached (it exited idle or was stopped to load a new build):
+    // attach again, which starts a new one.
+    if (String(e).includes("daemon connection closed") && selected) {
+      attachedUdid = undefined;
+      await attach(selected);
+      return;
+    }
+    stageState("error", `Couldn't start the screen: ${e}`);
   }
 }
 

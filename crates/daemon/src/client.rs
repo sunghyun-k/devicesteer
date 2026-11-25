@@ -20,7 +20,9 @@ use crate::{
     wire::{self, Message},
 };
 
-type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
+/// Requests waiting for their answer by id; `None` once the connection is gone, so a request made
+/// after that fails at once instead of waiting for an answer that can't come.
+type Pending = Arc<Mutex<Option<HashMap<u64, oneshot::Sender<Value>>>>>;
 
 pub struct Client {
     pub udid: String,
@@ -92,7 +94,7 @@ impl Client {
             }
         };
         let (mut rd, mut wr) = tokio::io::split(stream);
-        let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
+        let pending: Pending = Arc::new(Mutex::new(Some(HashMap::new())));
         let (ev_tx, ev_rx) = mpsc::channel::<Message>(1024);
         let p = pending.clone();
         let reader = tokio::spawn(async move {
@@ -101,7 +103,7 @@ impl Client {
                     Message::Json(v) if v.get("event").is_none() => v.get("id").and_then(Value::as_u64),
                     _ => None,
                 };
-                match id.and_then(|id| p.lock().unwrap().remove(&id)) {
+                match id.and_then(|id| p.lock().unwrap().as_mut().and_then(|w| w.remove(&id))) {
                     Some(tx) => {
                         if let Message::Json(v) = m {
                             let _ = tx.send(v);
@@ -113,8 +115,9 @@ impl Client {
                     }
                 }
             }
-            // Wake every waiter: the connection is gone.
-            p.lock().unwrap().clear();
+            // Wake every waiter, and refuse later requests: the connection is gone (the daemon
+            // exited or was stopped). A viewer kept its client and its next request waited forever.
+            p.lock().unwrap().take();
         });
         let (out_tx, mut out_rx) = mpsc::channel::<Message>(64);
         let writer = tokio::spawn(async move {
@@ -141,7 +144,12 @@ impl Client {
     pub async fn request(&self, cmd: &str, args: Value) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().unwrap().insert(id, tx);
+        self.pending
+            .lock()
+            .unwrap()
+            .as_mut()
+            .ok_or_else(|| anyhow!("the daemon connection closed"))?
+            .insert(id, tx);
         let msg = json!({ "id": id, "cmd": cmd, "args": args, "source": self.source, "session": self.session });
         self.out
             .send(Message::Json(msg))
