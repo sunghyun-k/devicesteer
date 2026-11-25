@@ -411,7 +411,6 @@ impl Daemon {
         let stream = FrameStream::start(media);
         let mut rx = stream.subscribe();
         let me = self.clone();
-        let display_px = ((display.panel.0 * display.scale).round(), (display.panel.1 * display.scale).round());
         let forwarder = tokio::spawn(async move {
             let mut last_params = None;
             let mut seq = 0u64;
@@ -428,13 +427,15 @@ impl Daemon {
                     && last_params.as_ref() != Some(p)
                 {
                     last_params = Some(p.clone());
+                    let display_px = display.picture_px((p.width, p.height));
                     let mut ev = json!({
                         "event": "config",
                         "codec": p.codec(),
                         "description": base64::engine::general_purpose::STANDARD.encode(p.hvcc()),
                         "coded": [p.width, p.height],
-                        // The panel is the top-left part of the coded picture (PITFALLS #11), in
-                        // its native orientation whichever way the interface is turned (#27).
+                        // The screen is the top-left part of the coded picture (PITFALLS #11), in
+                        // the panel's native orientation whichever way the interface is turned
+                        // (#27), scaled down when the panel is larger than the picture (#48).
                         "display_px": [display_px.0, display_px.1],
                     });
                     // How to turn the picture, and the screen it then shows (`screen`, points).

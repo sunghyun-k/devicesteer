@@ -886,8 +886,8 @@ polled `getdisplayinfo` every 0.1 s and `devicesteer events --frames` watched th
 - **The inner panel's `frame` and `nativeSize` (1878x2670) are smaller than its `bounds`
   (2007x2853)**; screenshots of it were 2007x2853, so `bounds` stays the size to use.
 - **A sized wireless display appears while a stream runs**: `wireless0` (`displayId` 4) gets
-  `bounds` 1408x2048 at scale 1, and the inner panel's video arrived scaled to 1408x2016 coded. It is
-  never `active`, so picking by `active` (#9) still finds the panel.
+  `bounds` 1408x2048 at scale 1, and the inner panel's video arrived scaled to 1408x2016 coded (#48).
+  It is never `active`, so picking by `active` (#9) still finds the panel.
 - **Nothing is pushed.** Idle connections to `deviceinfo` and `displayservice` received nothing
   through four folds and unfolds, so the daemon learns of a switch from its display poll (#27), up to
   0.5 s late.
@@ -906,3 +906,23 @@ a `config` with the new picture, and sends a `panel` event first, on which the v
 config and takes no touches until the new one. `screenshot` without `--display` captures the active
 panel. A recording keeps only frames of its first picture size (an MP4 track has one set of
 parameter sets) and reports the rest as `frames_of_another_picture`.
+
+### 48. A foldable's inner panel arrives scaled down, with padding after it
+
+Foldable iPhone (iOS 27.3, USB), unfolded and folded by hand while `examples/turn_probe.rs`
+(daemon) polled `getdisplayinfo` every 0.1 s and saved the daemon's stream as raw HEVC, one file
+per `config`, decoded with ffmpeg afterwards.
+
+- **The inner panel arrives scaled down, with padding after it.** Its 2007x2853 px came as a
+  1408x2016 picture (the sized wireless display of #47 is 1408x2048): the screen fills columns 0 to
+  1407 and rows 0 to 2001, the panel scaled by 1408/2007 to fit the picture's width, and rows 2002
+  to 2015 are the encoder's padding. The cover panel (1398x2034 in 1408x2048) and a phone with one
+  panel (#11) aren't scaled. The daemon used to send the panel's own size as `display_px`; the
+  viewer, sizing its canvas to that and scaling the picture to fill it (#26), stretched the padding
+  in as a black band: along the bottom of the panel, which `rot90` turned to the left edge.
+  `Display::picture_px` now gives the screen's size inside the picture (the panel scaled down to
+  fit it, never up), and `config` sends that as `display_px`.
+- **Recordings keep the padding.** An MP4 has the coded picture with no crop, on every device (#11):
+  14 rows at the bottom of the inner panel's picture (at the left once the track matrix turns a
+  landscape recording). Cropping would need a conformance window in the SPS or a `clap` box; not
+  done.

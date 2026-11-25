@@ -60,7 +60,9 @@ interface Config extends Orientation {
   codec: string;
   description: string;
   coded: [number, number];
-  /** The panel's pixel size, native orientation: the top-left part of the coded picture. */
+  /** The screen's pixel size in the picture, native orientation: the top-left part of the coded
+   * picture. Smaller than the panel when the device scaled it down to fit the stream (a foldable's
+   * inner panel, PITFALLS #48); the rest of the picture is padding. */
   display_px: [number, number];
 }
 

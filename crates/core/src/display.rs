@@ -86,6 +86,26 @@ impl Display {
         }
     }
 
+    /// The screen's size in pixels, native orientation, as screenshots have it.
+    pub fn panel_px(&self) -> (f64, f64) {
+        ((self.panel.0 * self.scale).round(), (self.panel.1 * self.scale).round())
+    }
+
+    /// The screen's size in a video picture of `coded` pixels: the top-left part of it, in the
+    /// panel's native orientation (PITFALLS #11, #27). A panel larger than the stream's picture
+    /// arrives scaled down to fit it, with the encoder's padding after it: a foldable's inner
+    /// panel, 2007x2853, in a 1408x2016 picture (PITFALLS #48). Drawing the whole panel size
+    /// from such a picture took in the padding, a black band at an edge.
+    pub fn picture_px(&self, coded: (u32, u32)) -> (f64, f64) {
+        let (pw, ph) = self.panel_px();
+        let (cw, ch) = (f64::from(coded.0), f64::from(coded.1));
+        if pw <= 0.0 || ph <= 0.0 || cw <= 0.0 || ch <= 0.0 {
+            return (pw, ph);
+        }
+        let k = (cw / pw).min(ch / ph).min(1.0);
+        ((pw * k).round().min(cw), (ph * k).round().min(ch))
+    }
+
     /// Whether `other` is the same panel: a foldable switches panels when it is folded or
     /// unfolded (PITFALLS #47), and the video and the touchscreen are bound to one.
     pub fn same_panel(&self, other: &Display) -> bool {
@@ -357,6 +377,22 @@ mod tests {
         assert_eq!((open.unique_id.as_str(), open.display_id, open.panel), ("inner", Some(2), (669.0, 951.0)));
         assert_eq!((folded.unique_id.as_str(), folded.display_id, folded.panel), ("cover", Some(1), (466.0, 678.0)));
         assert!(!open.same_panel(&folded));
+    }
+
+    #[test]
+    fn the_screen_fills_a_picture_it_fits_in_and_is_scaled_into_a_smaller_one() {
+        let px = |w: f64, h: f64| Display { panel: (w / 3.0, h / 3.0), ..display(Rotation::R0) };
+        // A phone: the picture is the panel plus padding (PITFALLS #11).
+        assert_eq!(px(1284.0, 2778.0).picture_px((1296, 2816)), (1284.0, 2778.0));
+        // A foldable's cover panel: the same.
+        assert_eq!(px(1398.0, 2034.0).picture_px((1408, 2048)), (1398.0, 2034.0));
+        // Its inner panel arrives scaled to the picture's width, padding below (PITFALLS #48).
+        assert_eq!(px(2007.0, 2853.0).picture_px((1408, 2016)), (1408.0, 2002.0));
+        // The turn doesn't matter: the picture is always the panel in its native orientation.
+        let turned = Display { rotation: Rotation::R90, ..px(2007.0, 2853.0) };
+        assert_eq!(turned.picture_px((1408, 2016)), (1408.0, 2002.0));
+        // No picture size yet: the panel's.
+        assert_eq!(px(2007.0, 2853.0).picture_px((0, 0)), (2007.0, 2853.0));
     }
 
     #[test]
