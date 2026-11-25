@@ -16,8 +16,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 devicesteer-core.workspace = true
 devicesteer-daemon.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["process"] }
 tauri = { version = "2", features = [] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde.workspace = true
 serde_json.workspace = true
 arboard = { version = "3.7.0", default-features = false }

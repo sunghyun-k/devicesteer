@@ -7,3 +7,4 @@ app/src-tauri/gen/
 # Captures from a device are personal data: never commit them.
 *.png
 !app/src-tauri/icons/*.png
+app/src-tauri/binaries/

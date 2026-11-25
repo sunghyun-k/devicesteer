@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "npm run build && npm run build:cli"
+  },
+  "bundle": {
+    "externalBin": ["binaries/devicesteer"],
+    "resources": {
+      "../../skills/devicesteer/": "skills/devicesteer/"
+    }
+  }
+}

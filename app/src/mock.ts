@@ -353,8 +353,58 @@ async function setupRun(d: MockDevice, step: SetupStep, channel: { id: number })
 
 // ---------- commands ----------
 
+// ---------- agent setup ----------
+//
+// `agents=fresh|conflict|dev` (default fresh): nothing installed yet; a file and a foreign link in
+// the way; or a development build that can't set anything up. `sheet=1` forgets that the
+// first-launch sheet was offered, so it shows again.
+
+type MockLink = { state: "installed" } | { state: "missing" } | { state: "other_link"; points_to: string } | { state: "not_a_link"; is_dir: boolean };
+const agentsMode = params.get("agents") ?? "fresh";
+if (params.get("sheet") === "1") localStorage.removeItem("devicesteer.agent-setup-offered");
+const agentLinks: Record<string, MockLink> = {
+  cli: agentsMode === "conflict" ? { state: "other_link", points_to: "/opt/homebrew/bin/devicesteer" } : { state: "missing" },
+  claude: { state: "missing" },
+  agents: agentsMode === "conflict" ? { state: "not_a_link", is_dir: true } : { state: "missing" },
+  cursor: { state: "missing" },
+  copilot: { state: "missing" },
+};
+const AGENT_ITEMS: [string, string, string, boolean][] = [
+  ["claude", "Claude Code", "~/.claude/skills/devicesteer", true],
+  ["agents", "Codex, Gemini CLI, OpenCode and others", "~/.agents/skills/devicesteer", true],
+  ["cursor", "Cursor", "~/.cursor/skills/devicesteer", false],
+  ["copilot", "GitHub Copilot CLI", "~/.copilot/skills/devicesteer", false],
+];
+
+function agentStatus(): unknown {
+  return {
+    unavailable: agentsMode === "dev" ? "Agent setup works in the installed app, not in a development build." : null,
+    cli: { id: "cli", name: "devicesteer command", path: "~/.local/bin/devicesteer", detected: true, ...agentLinks.cli },
+    on_path: false,
+    agents: AGENT_ITEMS.map(([id, name, path, detected]) => ({ id, name, path, detected, ...agentLinks[id] })),
+  };
+}
+
 async function handle(cmd: string, args: Record<string, unknown>): Promise<unknown> {
   switch (cmd) {
+    case "agent_setup_status":
+      await sleep(200);
+      return agentStatus();
+    case "agent_setup_change": {
+      await sleep(300);
+      const id = args.id as string;
+      const was = agentLinks[id];
+      if (args.install && was.state !== "missing" && was.state !== "installed" && !args.replace) {
+        throw `~/${id} already exists and isn't DeviceSteer's; confirm to replace it`;
+      }
+      agentLinks[id] = args.install ? { state: "installed" } : { state: "missing" };
+      return { note: was.state === "not_a_link" ? "Moved what was there to ~/.agents/skills/devicesteer.backup-1764000000." : null };
+    }
+    case "app_version":
+      return "0.1.0";
+    case "plugin:updater|check":
+      await sleep(400);
+      return null;
     case "initial_udid":
       if (params.get("select")) return DEVICES.find((d) => d.udid.endsWith(params.get("select")!))?.udid ?? null;
       return params.get("open") ? DEVICES[0].udid : null;

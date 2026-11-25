@@ -630,6 +630,34 @@ input[type="text"], input[type="search"], textarea { cursor: text; }
 .group.info .row.stack { flex-direction: column; align-items: stretch; gap: 2px; padding: 10px 0; }
 .group.info .row.stack output { text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: var(--fs-sm); }
+
+/* The Agents pane and sheet: a switch row per link, with the name over its path and, when
+   something needs the person, a line saying what. */
+.agent-row .text { flex: 1; min-width: 0; padding: 4px 0; }
+.agent-row .name { font-size: 13.5px; font-weight: 500; }
+.agent-row .path { color: var(--fg-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-row .note { margin-top: 3px; color: var(--fg-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.agent-row .note.warn { color: var(--warning); }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.pane-note { margin-top: 12px; padding: 10px 12px; border-radius: var(--r-md); background: var(--tile); color: var(--fg-2); font-size: var(--fs-sm); }
+#agent-status { color: var(--fg-3); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+#agent-status:empty { display: none; }
+#agent-status.error { color: var(--danger); padding: 10px 12px; border-radius: var(--r-md); background: var(--danger-tint); }
+.group.info .row > #update-text { flex: 1; white-space: normal; font-size: var(--fs-sm); }
+
+/* The first-launch sheet: a surface over a dimmed window, like the app's menus and cards. */
+#agent-sheet {
+  width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 22px 24px 20px; margin: auto;
+  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); color: var(--fg);
+  box-shadow: var(--shadow-md); overflow-y: auto;
+}
+#agent-sheet::backdrop { background: rgba(0, 0, 0, 0.25); }
+#agent-sheet h3 { font-size: 16px; font-weight: 600; }
+#agent-sheet .lead { margin-top: 6px; color: var(--fg-2); font-size: var(--fs-sm); }
+#agent-sheet .group { margin-top: 12px; border-top: 1px solid var(--hairline); }
+#agent-sheet .error-text:empty { display: none; }
+#agent-sheet .error-text { margin-top: 8px; }
+#agent-sheet .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .error-text { color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 
 /* ---------- narrow windows ----------

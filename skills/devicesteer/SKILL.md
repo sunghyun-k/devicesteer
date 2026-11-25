@@ -26,5 +26,7 @@ shows, portrait or landscape; the guide explains it.
 A device that isn't ready yet (`devices` lists it with `setup`) is set up with `devicesteer setup`;
 the guide says which steps need the person holding the device.
 
-If `devicesteer` is not found, build it from this repository (`cargo build`, then use
-`target/debug/devicesteer`) or ask the user how it is installed.
+If `devicesteer` is not found, ask the user to install the DeviceSteer app and turn on the
+command-line tool in its Agents pane (it links `~/.local/bin/devicesteer`; that folder must be on
+PATH), or, in a checkout of the DeviceSteer repository, build it (`cargo build`, then use
+`target/debug/devicesteer`).

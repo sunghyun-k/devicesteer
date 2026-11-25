@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { initAgents, showAgentsPane } from "./agents";
 import { listen } from "@tauri-apps/api/event";
 
 // Dev only: `?mock` runs the viewer against a fake backend in a plain browser (see src/mock.ts).
@@ -1900,17 +1901,21 @@ $<HTMLButtonElement>("#vo-off").addEventListener("click", () => void setSetting(
 
 // ---------- inspector: tabs and info ----------
 
-for (const tab of ["settings", "info"]) {
+const TABS = ["settings", "info", "app"];
+for (const tab of TABS) {
   $<HTMLButtonElement>(`#tab-${tab}`).addEventListener("click", () => {
-    for (const t of ["settings", "info"]) {
+    for (const t of TABS) {
       $<HTMLButtonElement>(`#tab-${t}`).setAttribute("aria-selected", String(t === tab));
       $<HTMLElement>(`#pane-${t}`).hidden = t !== tab;
     }
     prefs.set("tab", tab);
     showInfo();
+    if (tab === "app") showAgentsPane();
   });
 }
-if (prefs.get("tab") === "info") $<HTMLButtonElement>("#tab-info").click();
+const savedTab = prefs.get("tab");
+if (savedTab && savedTab !== "settings" && TABS.includes(savedTab)) $<HTMLButtonElement>(`#tab-${savedTab}`).click();
+initAgents();
 
 function out(id: string, text: string): void {
   const o = $<HTMLOutputElement>(`#info-${id}`);

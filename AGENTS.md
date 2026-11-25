@@ -61,12 +61,18 @@ crates/daemon/      devicesteer-daemon: the per-device daemon (Unix socket; Wind
 crates/cli/         binary `devicesteer`: JSON CLI. Device commands go through the daemon, which
                     it starts on demand (`--no-daemon` for the direct path). `src/skill.md` is the
                     agent guide `devicesteer skill` prints: keep it in step with the commands
-skills/devicesteer/  SKILL.md: a bootstrap that tells agents to run `devicesteer skill`
-app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC decoding)
-app/src-tauri/      Tauri shell (workspace member), a daemon client
+skills/devicesteer/  SKILL.md: a bootstrap that tells agents to run `devicesteer skill`; bundled
+                    into the app, which links agents' skill folders to it
+app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC decoding);
+                    src/agents.ts is the Agents pane (agent setup, updates)
+app/src-tauri/      Tauri shell (workspace member), a daemon client. agent_setup.rs installs the
+                    CLI and skill links; tauri.bundle.conf.json adds the CLI and the skill to
+                    bundles
+scripts/            build-cli.sh (the CLI for the bundle), release.sh (release Mac only)
 THIRD_PARTY_NOTICES.md  Code adapted from other projects, with their licenses
 docs/PITFALLS.md    Numbered observations, cited from code as PITFALLS #N
 docs/SETUP.md       Device setup without Xcode: steps, detection, where the disk image comes from
+docs/RELEASING.md   Signing, notarizing and publishing a release; the updater key
 ```
 
 ### The idevice pin
@@ -92,8 +98,19 @@ cargo build                                    # core + CLI + Tauri shell
 
 cd app && npm install
 npx tauri dev                                  # viewer, hot reload
-npx tauri build --bundles app                  # macOS .app (use nsis on Windows)
+npm run bundle -- --bundles app                # macOS .app with the CLI and skill inside
+                                               # (add --debug for a quick unsigned check)
 ```
+
+Bundles go through `npm run bundle`, which adds `app/src-tauri/tauri.bundle.conf.json`: it builds
+the CLI for the target (`scripts/build-cli.sh`) and bundles it with the skill. A plain `tauri
+build` makes an app without them, whose Agents pane says so. Releases are made only on the release
+Mac with `scripts/release.sh`; see `docs/RELEASING.md`. Never commit the updater's private key or
+anything else from that Mac's keychain.
+
+**Agent setup** (the Agents pane, `agent_setup.rs`) writes to the user's home: `~/.local/bin`,
+`~/.local/share/devicesteer` and agents' skill folders. Test it with unit tests or a temporary
+`HOME`, never against your real agent folders.
 
 A running daemon keeps the code it started with: after changing `crates/daemon` or `crates/core`,
 run `devicesteer daemon stop` (the next command starts the new build) and reopen the device in the

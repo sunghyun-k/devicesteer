@@ -1,6 +1,7 @@
 //! Tauri shell for the viewer: lists devices, attaches to a device's daemon as the human client,
 //! and passes its events and video frames to the page.
 
+mod agent_setup;
 mod input_source;
 mod shared_clip;
 
@@ -257,12 +258,21 @@ fn reveal(path: String) -> Result<(), String> {
     spawned.map(|_| ()).map_err(|e| format!("could not show {path}: {e}"))
 }
 
+/// The app's version, for the App pane.
+#[tauri::command]
+fn app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(Viewer::default())
         .setup(|app| {
             input_source::watch(app.handle().clone());
+            agent_setup::refresh_on_launch();
             Ok(())
         })
         // Coming back to the window is when someone wants to paste what they copied on the
@@ -273,7 +283,7 @@ pub fn run() {
                 window.state::<Viewer>().clip.poke();
             }
         })
-        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source])
+        .invoke_handler(tauri::generate_handler![list_devices, setup_status, setup_run, setup_cancel, attach, watch, detach, send, clipboard_to_device, clipboard_from_device, clipboard_sync, report, initial_udid, recording_path, save_screenshot, reveal, input_source::restore_input_source, agent_setup::agent_setup_status, agent_setup::agent_setup_change, app_version])
         .run(tauri::generate_context!())
         .expect("error while running the DeviceSteer app");
 }

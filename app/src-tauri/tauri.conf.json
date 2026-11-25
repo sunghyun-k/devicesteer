@@ -43,5 +43,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/sunghyun-k/iphone-use/releases/latest/download/latest.json"
+      ],
+      "pubkey": "UPDATER_PUBLIC_KEY_NOT_SET",
+      "requireSignedVersion": true
+    }
   }
 }

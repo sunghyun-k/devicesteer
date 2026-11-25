@@ -10,6 +10,20 @@ connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
 > change Device Hub's settings (appearance, text size, accessibility switches, VoiceOver, simulated
 > location), and show the live screen in a viewer where a human can watch or take over from an agent.
 
+## Install
+
+1. Download `DeviceSteer_<version>_universal.dmg` from
+   [Releases](https://github.com/sunghyun-k/iphone-use/releases/latest), open it and drag
+   DeviceSteer to Applications.
+2. Open DeviceSteer. On first launch it offers to set up agents: the `devicesteer` command
+   (`~/.local/bin/devicesteer`) and the DeviceSteer skill for the coding agents it finds (Claude
+   Code, Codex and others that read `~/.agents/skills`, Cursor, GitHub Copilot CLI). Both are links
+   into the app, so they update with it. Change this any time in the inspector's Agents pane.
+3. If the pane says `~/.local/bin` isn't on your PATH, add it to your shell profile:
+   `export PATH="$HOME/.local/bin:$PATH"`.
+
+The app updates itself from GitHub Releases. To build from source instead, see below.
+
 ## Requirements
 
 - An iPhone or iPad on iOS 17 or later. `devicesteer setup` makes a new one ready without Xcode:
@@ -18,9 +32,11 @@ connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
   [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) and checked by SHA-256).
   This repository contains no Apple files. See [docs/SETUP.md](docs/SETUP.md).
 - macOS: nothing extra (usbmuxd ships with the OS). Windows: Apple Devices or iTunes, for usbmuxd.
-- Rust 1.88+; Node.js 20+ for the viewer app.
+- To build from source: Rust 1.88+; Node.js 20+ for the viewer app.
 
 ## Use
+
+With the app installed, run `devicesteer` instead of `./target/debug/devicesteer`.
 
 ```sh
 cargo build
@@ -56,6 +72,8 @@ back (Done after a handoff) and Stop:
 ```sh
 cd app && npm install && npx tauri dev
 ```
+
+Releases: see [docs/RELEASING.md](docs/RELEASING.md).
 
 ## License
 

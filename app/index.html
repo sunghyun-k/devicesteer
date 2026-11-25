@@ -51,6 +51,8 @@
       <symbol id="i-clip-send" viewBox="0 0 20 20"><path d="M7.5 3.75h-1.5a1.75 1.75 0 0 0-1.75 1.75v10.25a1.75 1.75 0 0 0 1.75 1.75h8a1.75 1.75 0 0 0 1.75-1.75V5.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /><rect x="7.5" y="2.5" width="5" height="2.5" rx="1" /><path d="M10 14.25V8.5M7.6 10.9 10 8.5l2.4 2.4" /></symbol>
       <symbol id="i-clip-get" viewBox="0 0 20 20"><path d="M7.5 3.75h-1.5a1.75 1.75 0 0 0-1.75 1.75v10.25a1.75 1.75 0 0 0 1.75 1.75h8a1.75 1.75 0 0 0 1.75-1.75V5.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /><rect x="7.5" y="2.5" width="5" height="2.5" rx="1" /><path d="M10 8.5v5.75M7.6 11.85 10 14.25l2.4-2.4" /></symbol>
       <symbol id="i-clip-sync" viewBox="0 0 20 20"><path d="M7.5 3.75h-1.5a1.75 1.75 0 0 0-1.75 1.75v10.25a1.75 1.75 0 0 0 1.75 1.75h8a1.75 1.75 0 0 0 1.75-1.75V5.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /><rect x="7.5" y="2.5" width="5" height="2.5" rx="1" /><path d="M12.7 10.6a2.75 2.75 0 0 0-4.9-1.5M7.3 12.1a2.75 2.75 0 0 0 4.9 1.5M7.6 7.6v1.6h1.6M12.4 15.1v-1.6h-1.6" /></symbol>
+      <symbol id="i-terminal" viewBox="0 0 20 20"><rect x="2.75" y="4" width="14.5" height="12" rx="2.5" /><path d="m6.25 8.25 2 1.75-2 1.75M10.25 12h3.5" /></symbol>
+      <symbol id="i-download" viewBox="0 0 20 20"><path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 15.75h12" /></symbol>
       <symbol id="i-plug" viewBox="0 0 20 20"><rect x="5.5" y="2" width="9" height="12" rx="2.2" /><path d="M10 14v4M7.5 18h5" /></symbol>
     </svg>
 
@@ -151,6 +153,14 @@
             <p><strong>VoiceOver is on.</strong> Taps select instead of activating, so agent input won't do what it expects.</p>
             <button id="vo-off" class="btn small" type="button">Turn Off</button>
           </div>
+          <div id="update-banner" class="banner" role="status" hidden>
+            <svg class="icon"><use href="#i-download" /></svg>
+            <p id="update-banner-text"></p>
+            <button id="update-install" class="btn small" type="button">Restart to Update</button>
+            <button id="update-dismiss" class="icon-btn small" type="button" aria-label="Dismiss" title="Dismiss">
+              <svg class="icon"><use href="#i-close" /></svg>
+            </button>
+          </div>
           <div id="note" class="banner" role="status" hidden>
             <svg class="icon" id="note-icon"><use href="#i-check" /></svg>
             <p id="note-text"></p>
@@ -236,6 +246,7 @@
           <div class="tabs segmented" role="tablist" aria-label="Inspector">
             <button id="tab-settings" role="tab" type="button" aria-selected="true" aria-controls="pane-settings" aria-label="Settings" title="Settings"><svg class="icon"><use href="#i-sliders" /></svg></button>
             <button id="tab-info" role="tab" type="button" aria-selected="false" aria-controls="pane-info" aria-label="Info" title="Info"><svg class="icon"><use href="#i-info" /></svg></button>
+            <button id="tab-app" role="tab" type="button" aria-selected="false" aria-controls="pane-app" aria-label="Agents and updates" title="Agents and updates"><svg class="icon"><use href="#i-terminal" /></svg></button>
           </div>
         </header>
 
@@ -302,8 +313,40 @@
           </section>
           <p id="info-error" class="error-text"></p>
         </div>
+
+        <!-- The app, not the device: what agents get (agents.ts) and updates. -->
+        <div id="pane-app" class="pane" role="tabpanel" aria-labelledby="tab-app" hidden>
+          <p id="agent-unavailable" class="pane-note" hidden></p>
+          <section class="group agents">
+            <h4>Command-Line Tool</h4>
+            <div id="agent-cli"></div>
+          </section>
+          <section class="group agents">
+            <h4>Agent Skills</h4>
+            <div id="agent-skills"></div>
+          </section>
+          <p id="agent-status" role="status"></p>
+          <section class="group info">
+            <h4>Updates</h4>
+            <div class="row"><span>Version</span><output id="app-version"></output></div>
+            <div class="row"><span id="update-text">Updates come from GitHub Releases.</span><button id="update-check" class="btn small" type="button">Check Now</button></div>
+          </section>
+        </div>
       </aside>
     </div>
+    <!-- Offered once, on the first launch of an installed app (agents.ts). -->
+    <dialog id="agent-sheet" aria-labelledby="agent-sheet-title">
+      <form id="agent-sheet-form" method="dialog">
+        <h3 id="agent-sheet-title">Set Up Agents</h3>
+        <p class="lead">Let coding agents on this Mac use your iPhone or iPad: DeviceSteer adds its command-line tool and its skill, linked to this app so they update with it. Change this later in the inspector’s Agents pane.</p>
+        <div id="agent-sheet-list" class="group agents"></div>
+        <p id="agent-sheet-error" class="error-text"></p>
+        <div class="actions">
+          <button id="agent-sheet-later" class="btn ghost" type="button">Not Now</button>
+          <button id="agent-sheet-ok" class="btn primary" type="submit">Set Up</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
