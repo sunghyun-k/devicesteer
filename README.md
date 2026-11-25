@@ -13,7 +13,7 @@ connected over USB or Wi-Fi, from macOS or Windows, for you or for an agent.
 ## Install
 
 1. Download `DeviceSteer_<version>_universal.dmg` from
-   [Releases](https://github.com/sunghyun-k/iphone-use/releases/latest), open it and drag
+   [Releases](https://github.com/sunghyun-k/devicesteer/releases/latest), open it and drag
    DeviceSteer to Applications.
 2. Open DeviceSteer. On first launch it offers to set up agents: the `devicesteer` command
    (`~/.local/bin/devicesteer`) and the DeviceSteer skill for the coding agents it finds (Claude
