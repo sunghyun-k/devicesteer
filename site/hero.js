@@ -6,6 +6,8 @@
   // Where the hero's media lives: the video files and the poster. Point it at external storage
   // when the files move there (and the poster's src in index.html with it).
   const MEDIA_BASE = '/media/';
+  // Other stills from the same storage (the safety section's screen), named in data-media.
+  for (const img of document.querySelectorAll('img[data-media]')) img.src = MEDIA_BASE + img.dataset.media;
   // The session, from the recording's timeline (offsets in the cut clip, in ms; points as
   // fractions of the screen). tools/hero-cut.py makes the clip from the raw take and prints these
   // times (the take's own are in the comments). A tap's arrow glides in for GLIDE_MS before the
