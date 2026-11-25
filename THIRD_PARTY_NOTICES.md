@@ -36,10 +36,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Geist and Geist Mono
+## Instrument Sans and IBM Plex Mono
 
-<https://github.com/vercel/geist-font>
+<https://github.com/Instrument/instrument-sans>, <https://github.com/IBM/plex>
 
-The homepage serves the variable Geist and Geist Mono fonts (`site/fonts/`, from the `geist` npm
-package 1.3.1) under the SIL Open Font License 1.1; the full license is in `site/fonts/OFL.txt`.
-Copyright (c) 2023 Vercel, in collaboration with basement.studio.
+The homepage serves Instrument Sans (variable, Latin subset) and IBM Plex Mono (400 and 500, Latin
+subset) from `site/fonts/`, taken from the Fontsource packages `@fontsource-variable/instrument-sans`
+and `@fontsource/ibm-plex-mono` 5.3.0, under the SIL Open Font License 1.1. The licenses are in
+`site/fonts/OFL-InstrumentSans.txt` and `site/fonts/OFL-IBMPlexMono.txt`.
