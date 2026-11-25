@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use crate::apps::{ProcName, SPRINGBOARD};
+use crate::apps::{ProcName, SPRINGBOARD, draws_in_springboard};
 
 use serde::{Deserialize, Serialize};
 
@@ -118,7 +118,8 @@ pub struct AppInfo {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub system: bool,
     /// Not an app the screen shows but a process drawing inside one: the keyboard, web content,
-    /// a share sheet. Some of these report frames relative to their own view, not the screen
+    /// a share sheet, the widgets on the home and lock screens (listed as applications, PITFALLS
+    /// #60). Some of these report frames relative to their own view, not the screen
     /// (PITFALLS #21).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hosted: bool,
@@ -284,6 +285,9 @@ impl Screen {
         }
         for app in &mut self.apps {
             app.system = app.bundle_id.as_deref() == Some(SPRINGBOARD);
+            // A widget renderer is listed as an application, but it only draws widgets into
+            // SpringBoard's screens; counting it as an app hid the home screen (PITFALLS #60).
+            app.hosted |= draws_in_springboard(app.bundle_id.as_deref());
         }
         self.surface = self.system_surface().map(str::to_string);
     }
@@ -485,6 +489,66 @@ mod tests {
         s.name_processes(|_| ProcName { name: Some("Preferences".into()), bundle_id: Some("com.apple.Preferences".into()) });
         assert_eq!(s.apps[0].name.as_deref(), Some("Settings"));
         assert_eq!(s.surface, None);
+    }
+
+    /// A raw element as a dump carries it: frame, label, identifier and children.
+    fn raw(app: bool, frame: &str, label: Option<&str>, id: Option<&str>, children: &[ObjKey]) -> RawElement {
+        let mut attrs = std::collections::BTreeMap::new();
+        let obj = |class: &str, fields: Vec<(&str, Ka)>| Ka::Obj {
+            class: class.into(),
+            fields: fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+        };
+        attrs.insert(attrs::FRAME, obj("NSValue", vec![("NS.rectval", Ka::Str(frame.into()))]));
+        if let Some(l) = label {
+            attrs.insert(attrs::LABEL, Ka::Str(l.into()));
+        }
+        if let Some(i) = id {
+            attrs.insert(attrs::IDENTIFIER, Ka::Str(i.into()));
+        }
+        let kids = children
+            .iter()
+            .map(|k| obj("AXPTranslationObject", vec![("pid", Ka::Int(k.pid)), ("objectID", Ka::UInt(k.object_id))]))
+            .collect();
+        attrs.insert(attrs::VISIBLE_CHILDREN, Ka::Array(kids));
+        attrs.insert(attrs::TRAITS, Ka::UInt(if app { 0 } else { traits::BUTTON }));
+        RawElement { is_application: app, attrs, singles: Default::default() }
+    }
+
+    #[test]
+    fn home_screen_with_widgets_is_the_home_screen() {
+        // The shape `ui` reported on an iPad home screen with widgets (iPadOS 27.2.1): SpringBoard
+        // and a widget renderer both come as applications, the widget being the renderer's
+        // child. Labels and frames are made up.
+        let (sb, wr) = (40, 50);
+        let key = |pid: i64, object_id: u64| ObjKey { pid, object_id };
+        let full = "{{0, 0}, {1032, 1376}}";
+        let mut elements = std::collections::HashMap::new();
+        elements.insert(key(sb, 1), raw(true, full, Some(" "), None, &[key(sb, 2), key(sb, 3), key(sb, 4)]));
+        elements.insert(key(sb, 2), raw(false, "{{60, 420}, {76, 76}}", Some("App One"), Some("App One"), &[]));
+        elements.insert(key(sb, 3), raw(false, "{{180, 420}, {76, 76}}", Some("App Two"), Some("App Two"), &[]));
+        elements.insert(key(sb, 4), raw(false, "{{456, 1250}, {120, 36}}", Some("Search"), Some("spotlight-pill"), &[]));
+        elements.insert(key(wr, 1), raw(true, full, Some("WidgetRenderer"), None, &[key(wr, 2)]));
+        elements.insert(key(wr, 2), raw(false, "{{60, 80}, {340, 160}}", Some("Calendar widget"), None, &[]));
+        let dump = Dump {
+            kind: super::super::dump::DumpKind::Additional,
+            applications: vec![key(sb, 1), key(wr, 1)],
+            order: elements.keys().copied().collect(),
+            elements,
+        };
+        let mut s = Screen::build(&dump, BuildOptions::default());
+        s.name_processes(|pid| match pid {
+            40 => ProcName { name: Some("SpringBoard".into()), bundle_id: Some(SPRINGBOARD.into()) },
+            _ => ProcName {
+                name: Some("WidgetRenderer_Default".into()),
+                bundle_id: Some("com.apple.chrono.WidgetRenderer-Default".into()),
+            },
+        });
+        let renderer = s.apps.iter().find(|a| a.pid == wr).unwrap();
+        assert!(renderer.hosted && !renderer.system);
+        assert!(s.springboard_only());
+        assert_eq!(s.surface.as_deref(), Some("home_screen"));
+        // The widget is still listed.
+        assert!(s.elements.iter().any(|e| e.pid == wr && e.label.as_deref() == Some("Calendar widget")));
     }
 
     #[test]
