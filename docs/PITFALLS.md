@@ -25,7 +25,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Viewer | #15, #18, #23, #26, #27, #29, #33, #34 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
-| Windows host | #49, #50, #51, #52 |
+| Windows host | #51, #52, #53, #54 |
 
 ## Entries
 
@@ -986,7 +986,7 @@ pairing), or pair with `_remotepairing._tcp` ourselves (idevice `remote_pairing`
 `RemotePairingClient`, `RpPairingFile`, `connect_tls_psk_tunnel_native`; a pairing of our own, which
 the device asks the user to allow). Neither is built.
 
-### 49. Windows: the main thread's 1 MiB stack overflows on every device command
+### 51. Windows: the main thread's 1 MiB stack overflows on every device command
 
 Windows PC, debug build of the CLI. Every device command ended with exit code 0xC00000FD (stack
 overflow) before printing anything.
@@ -1000,7 +1000,7 @@ the main thread. The CLI now runs every command on a thread it starts with 8 MiB
 runtime's workers the same (`STACK_SIZE` in `crates/cli/src/main.rs`); the daemon runs on that
 thread too. The viewer only talks to the daemon, whose client futures are small.
 
-### 50. Windows: a child inherits every inheritable handle, so the daemon held the CLI's stdout
+### 52. Windows: a child inherits every inheritable handle, so the daemon held the CLI's stdout
 
 Windows PC. `devicesteer session status | Out-String` (or any reader of the CLI's output through a
 pipe: `| jq`, an agent's shell tool) printed nothing and waited until the daemon the command had
@@ -1016,7 +1016,7 @@ daemon lived. (On Unix, Rust opens everything close-on-exec, so only the named h
 daemon (`keep_std_handles_from_children` in `crates/daemon/src/client.rs`). Rust's own spawns
 don't rely on the flag: they duplicate the handles they pass.
 
-### 51. Windows: Apple Devices' usbmuxd can miss a device connected before it started
+### 53. Windows: Apple Devices' usbmuxd can miss a device connected before it started
 
 Windows PC with the Store app "Apple Devices" (its usbmuxd is `AppleMobileDeviceProcess`), seen by
 the owner. An iPad that was already plugged in when the service started was not in usbmuxd's list,
@@ -1027,7 +1027,7 @@ The errors for a missing device and an empty `devices` list on Windows say to re
 (`missing_device_hint` in `crates/core/src/session.rs`). Not yet known: whether restarting the
 Apple Mobile Device Service alone also recovers it.
 
-### 52. Windows: the check after mounting the disk image stalled
+### 54. Windows: the check after mounting the disk image stalled
 
 Windows PC, iPad on iPadOS 27.2.1 over USB, `setup disk-image --no-daemon`. The image was
 downloaded, signed and mounted in 17 s (the mounter answered the mount), then the command failed

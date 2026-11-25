@@ -83,7 +83,7 @@ fn spawn_daemon(udid: &str) -> Result<std::process::Child> {
     cmd.spawn().with_context(|| format!("could not start the daemon ({})", cli_binary().display()))
 }
 
-/// Stops children from inheriting this process's stdin, stdout and stderr (PITFALLS #50).
+/// Stops children from inheriting this process's stdin, stdout and stderr (PITFALLS #52).
 ///
 /// Windows hands a child every inheritable handle its parent has, not just the three it is given,
 /// and the standard handles a process gets are inheritable. The daemon outlives the CLI, so it held

@@ -79,4 +79,4 @@ keeps its own store. There is no Xcode copy on Windows, so the disk image comes 
 the download.
 
 If `devices` lists nothing while the device is plugged in, unplug it and plug it back in: Apple
-Devices' usbmuxd can miss a device that was connected before its service started (PITFALLS #51).
+Devices' usbmuxd can miss a device that was connected before its service started (PITFALLS #53).

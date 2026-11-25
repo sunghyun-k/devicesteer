@@ -308,7 +308,7 @@ pub async fn ensure_supported(udid: Option<&str>) -> Result<()> {
 }
 
 /// What to add when usbmuxd doesn't list a device that may well be plugged in: on Windows, Apple
-/// Devices' usbmuxd can miss a device that was connected before it started (PITFALLS #51).
+/// Devices' usbmuxd can miss a device that was connected before it started (PITFALLS #53).
 pub fn missing_device_hint() -> &'static str {
     if cfg!(windows) {
         ". If it is plugged in, unplug it and plug it back in: Apple Devices may not have seen it if it was connected before Apple Devices' service started"

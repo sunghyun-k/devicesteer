@@ -546,7 +546,7 @@ pub async fn disk_image(udid: Option<&str>, source: Option<&Path>, progress: Pro
     report(&progress, s, false, "Mounted");
     // Close the mount's connections before checking: with the mounter connection still open, the
     // check's own mounter connection stalled on Windows although the image was mounted
-    // (PITFALLS #52). And the mount did succeed, so a failing check is retried once, not trusted.
+    // (PITFALLS #54). And the mount did succeed, so a failing check is retried once, not trusted.
     drop(mounter);
     drop(lockdown);
     match status(Some(&udid)).await {
