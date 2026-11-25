@@ -1333,3 +1333,29 @@ Two messages were wrong on the way: the 9021 error printed the whole XPC error d
 byte arrays) instead of its `NSLocalizedDescription` (`coredevice.rs` now shows the sentence and
 the code), and the missing accessibility service was blamed on an unmounted disk image when the
 image was mounted (`ax/service.rs` now checks whether the image's other services are there).
+
+### 66. A closed tunnel stays closed: every call on it says "adapter closed"
+
+iPhone over USB, after it had been used over Wi-Fi. The viewer streamed the screen, but its
+settings panel said `com.apple.coredevice.configuration connection failed (connection error:
+Socket(Custom { kind: NetworkUnreachable, error: "adapter closed" }))`.
+
+- **The tunnel's userspace TCP stack (jktcp's `AdapterHandle`) runs as one task.** Once it ends
+  (the Wi-Fi tunnel dropped; closing the adapter by hand does the same), every clone of the handle
+  fails every call: `NetworkUnreachable` "adapter closed" when the request can't be queued,
+  `BrokenPipe` "adapter closed" when the task went away with it queued. Nothing brings it back; only
+  a new tunnel works.
+- **The daemon did drop it, one request too late for the viewer.** A command that failed with these
+  words dropped the cached session, so the next command opened a new tunnel. But the viewer reads
+  the settings once, when it attaches: that read met the closed tunnel and failed, the screen
+  subscription right after it opened a new one, and the panel kept the error over a working stream.
+- So (`server.rs`): a command that meets a cached tunnel's connection error drops it and, when it
+  is safe to repeat (reads, settings, the clipboard, the keyboard switch, a launch without
+  relaunch), runs once more on a new tunnel; a screenshot too. Gestures, keys and typing are not
+  repeated (part of one may have gone through): their error says the tunnel is reopened and to
+  look before retrying. The display poll, which asks every 0.5 s, is the first to see "adapter
+  closed" and has housekeeping drop the tunnel before any command meets it; video that is wanted
+  is reopened, and tried again every 5 s while the device is away.
+- A new tunnel goes over USB when usbmuxd lists the device both ways (`pick_device`), and a live
+  Wi-Fi tunnel moves to USB when the device shows up there, so a dropped Wi-Fi tunnel isn't what
+  the next command meets.

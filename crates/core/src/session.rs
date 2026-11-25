@@ -367,6 +367,14 @@ pub fn missing_device_hint() -> &'static str {
     }
 }
 
+/// Whether usbmuxd lists `udid` over USB. False when it can't be asked. The daemon moves a Wi-Fi
+/// tunnel to USB when this turns true (PITFALLS #66).
+pub async fn on_usb(udid: &str) -> bool {
+    mux_devices()
+        .await
+        .is_ok_and(|l| l.iter().any(|d| d.udid == udid && transport_of(&d.connection_type) == Some(Transport::Usb)))
+}
+
 /// The UDID `udid` names, or the only connected device's when it is `None`.
 pub async fn resolve_udid(udid: Option<&str>) -> Result<String> {
     Ok(match pick_target(udid).await? {
@@ -487,5 +495,29 @@ impl Heartbeat {
                 }
             }
         })))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use idevice::usbmuxd::Connection;
+
+    fn dev(udid: &str, connection_type: Connection) -> UsbmuxdDevice {
+        UsbmuxdDevice { connection_type, udid: udid.into(), device_id: 0 }
+    }
+
+    #[test]
+    fn a_device_on_usb_and_wifi_is_reached_over_usb() {
+        // usbmuxd lists the Wi-Fi entry first here; a tunnel reopened after Wi-Fi dropped must not
+        // go back to it (PITFALLS #66).
+        let wifi = || dev("A", Connection::Network("192.0.2.1".parse().unwrap()));
+        let picked = pick_device(vec![wifi(), dev("A", Connection::Usb)], Some("A")).unwrap();
+        assert_eq!(transport_of(&picked.connection_type), Some(Transport::Usb));
+        let picked = pick_device(vec![wifi(), dev("A", Connection::Usb)], None).unwrap();
+        assert_eq!(transport_of(&picked.connection_type), Some(Transport::Usb));
+        // Wi-Fi only: Wi-Fi.
+        let picked = pick_device(vec![wifi()], Some("A")).unwrap();
+        assert_eq!(transport_of(&picked.connection_type), Some(Transport::Wifi));
     }
 }

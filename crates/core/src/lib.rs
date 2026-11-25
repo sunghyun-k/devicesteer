@@ -49,7 +49,7 @@ pub use media::{MediaMode, MediaPacket, MediaSession, MediaStatus, StreamKind, S
 pub use record::{Frame, FrameStream, RecordSummary, Recorder};
 pub use resample::Resampler;
 pub use screenshot::Screenshot;
-pub use session::{Clipboard, ServiceInfo, Session, ensure_supported, missing_device_hint, resolve_udid};
+pub use session::{Clipboard, ServiceInfo, Session, ensure_supported, missing_device_hint, on_usb, resolve_udid};
 pub use setup::{SetupStatus, SetupStep};
 pub use settings::{DeviceSettings, Setting, TEXT_SIZES, Toggle};
 pub use video::ParameterSets;
