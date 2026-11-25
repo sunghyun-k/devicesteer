@@ -6,15 +6,21 @@
   // Where the hero's media lives: the video files and the poster. Point it at external storage
   // when the files move there (and the poster's src in index.html with it).
   const MEDIA_BASE = '/media/';
-  // The session, from the recording's timeline (video offsets in ms, points as fractions of the
-  // screen). A tap's arrow glides in for GLIDE_MS before the finger goes down at t.
+  // The session, from the recording's timeline (offsets in the cut clip, in ms; points as
+  // fractions of the screen). tools/hero-cut.py makes the clip from the raw take and prints these
+  // times (the take's own are in the comments). A tap's arrow glides in for GLIDE_MS before the
+  // finger goes down at t.
   const GOAL = 'Turn on dark mode';
   const INPUTS = [
-    { t: 4719, kind: 'tap', at: [0.3148, 0.1406], label: 'Open the Settings app' },
-    { t: 9393, kind: 'tap', at: [0.4313, 0.5137], label: 'Open Appearance settings' },
-    { t: 13072, kind: 'tap', at: [0.5815, 0.5147], label: 'Switch to Dark mode' },
-    { t: 15661, kind: 'button', label: 'Go back to Home' },
+    { t: 919, kind: 'tap', at: [0.3148, 0.1406], label: 'Open the Settings app' }, // take 4719
+    { t: 3353, kind: 'tap', at: [0.4313, 0.5137], label: 'Open Appearance settings' }, // take 9393
+    { t: 5312, kind: 'tap', at: [0.5815, 0.5147], label: 'Switch to Dark mode' }, // take 13072
+    { t: 7391, kind: 'button', label: 'Go back to Home' }, // take 15661
   ];
+  // The clip's length, and its last stretch, which fades back to the first frame for the loop:
+  // the arrow and a label still showing fade out with it rather than vanish at the wrap.
+  const CLIP_MS = 9533;
+  const LOOP_FADE_MS = 400;
   // The viewer's timings (app/src/main.ts and style.css): the finger is down 50 ms, its disc fades
   // over 350 ms, and a label shows for 2.6 s. The glide is longer than the viewer's 160 ms so the
   // move reads on a page.
@@ -50,6 +56,7 @@
   function render(ms) {
     const mode = ms >= darkAt ? 'Dark' : 'Light';
     if (appearance && appearance.textContent !== mode) appearance.textContent = mode;
+    const endFade = Math.min(1, Math.max(0, (CLIP_MS - ms) / LOOP_FADE_MS));
     const w = overlay.clientWidth;
     const h = overlay.clientHeight;
     const next = taps.find((i) => i.t > ms);
@@ -63,7 +70,7 @@
     }
     cursor.hidden = !at;
     if (at) {
-      cursor.style.opacity = opacity;
+      cursor.style.opacity = opacity * endFade;
       cursor.style.transform = `translate(${at[0] * w}px, ${at[1] * h}px)`;
     }
 
@@ -94,7 +101,7 @@
         label.textContent = shown.label;
       }
       const p = (ms - (tap ? shown.t - GLIDE_MS : shown.t)) / LABEL_MS;
-      label.style.opacity = p < 0.08 ? p / 0.08 : p < 0.75 ? 1 : 1 - (p - 0.75) / 0.25;
+      label.style.opacity = (p < 0.08 ? p / 0.08 : p < 0.75 ? 1 : 1 - (p - 0.75) / 0.25) * endFade;
       if (tap) {
         // As in the viewer: below and right of the tip. Where that would leave the window (a
         // narrow page), it slides left, staying under the arrow.
