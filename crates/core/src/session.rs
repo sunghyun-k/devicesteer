@@ -307,6 +307,16 @@ pub async fn ensure_supported(udid: Option<&str>) -> Result<()> {
     }
 }
 
+/// What to add when usbmuxd doesn't list a device that may well be plugged in: on Windows, Apple
+/// Devices' usbmuxd can miss a device that was connected before it started (PITFALLS #51).
+pub fn missing_device_hint() -> &'static str {
+    if cfg!(windows) {
+        ". If it is plugged in, unplug it and plug it back in: Apple Devices may not have seen it if it was connected before Apple Devices' service started"
+    } else {
+        ""
+    }
+}
+
 /// The UDID `udid` names, or the only connected device's when it is `None`.
 pub async fn resolve_udid(udid: Option<&str>) -> Result<String> {
     Ok(pick_device(mux_devices().await?, udid)?.udid)
@@ -325,8 +335,8 @@ fn pick_device(all: Vec<UsbmuxdDevice>, udid: Option<&str>) -> Result<UsbmuxdDev
     udids.dedup();
     match (udid, udids.len()) {
         (_, 0) => match udid {
-            Some(u) => bail!("device {u} is not connected (no usbmuxd connection). Run `devices` to see what is"),
-            None => bail!("no device is connected (usbmuxd lists none). Connect one over USB"),
+            Some(u) => bail!("device {u} is not connected (no usbmuxd connection). Run `devices` to see what is{}", missing_device_hint()),
+            None => bail!("no device is connected (usbmuxd lists none). Connect one over USB{}", missing_device_hint()),
         },
         (None, n) if n > 1 => bail!(
             "{n} devices are connected; pass --udid with one of: {}",

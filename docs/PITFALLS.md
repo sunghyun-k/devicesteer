@@ -25,6 +25,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Viewer | #15, #18, #23, #26, #27, #29, #33, #34 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
+| Windows host | #49, #50, #51 |
 
 ## Entries
 
@@ -984,3 +985,44 @@ over TCP with usbmuxd's pair record (idevice's `TcpProvider`; needs Wi-Fi sync a
 pairing), or pair with `_remotepairing._tcp` ourselves (idevice `remote_pairing`:
 `RemotePairingClient`, `RpPairingFile`, `connect_tls_psk_tunnel_native`; a pairing of our own, which
 the device asks the user to allow). Neither is built.
+
+### 49. Windows: the main thread's 1 MiB stack overflows on every device command
+
+Windows PC, debug build of the CLI. Every device command ended with exit code 0xC00000FD (stack
+overflow) before printing anything.
+The futures for the tunnel and its services (idevice's RSD and RemoteXPC state machines and the
+userspace TCP stack) are large, larger still unoptimized, and `block_on` polls the outermost one
+on the calling thread. That fits in the 8 MiB main thread of macOS and Linux; Windows gives the
+main thread 1 MiB (the linker's default), and tokio's worker threads get 2 MiB everywhere.
+
+Linking with `/STACK:8388608` fixed it, but only for the binaries that pass the flag and only on
+the main thread. The CLI now runs every command on a thread it starts with 8 MiB, and gives the
+runtime's workers the same (`STACK_SIZE` in `crates/cli/src/main.rs`); the daemon runs on that
+thread too. The viewer only talks to the daemon, whose client futures are small.
+
+### 50. Windows: a child inherits every inheritable handle, so the daemon held the CLI's stdout
+
+Windows PC. `devicesteer session status | Out-String` (or any reader of the CLI's output through a
+pipe: `| jq`, an agent's shell tool) printed nothing and waited until the daemon the command had
+started exited, ten idle minutes later. Run in a console it returned at once.
+
+`CreateProcess` with handle inheritance on passes the child every inheritable handle of the
+parent, not only the three it names as the child's stdin, stdout and stderr, and a process's own
+standard handles are inheritable. The daemon got `null` and a log file as its standard handles,
+but also a copy of the pipe the CLI's stdout wrote to; the reader saw no end of file while the
+daemon lived. (On Unix, Rust opens everything close-on-exec, so only the named handles pass.)
+
+`spawn_daemon` clears the inherit flag on the CLI's own standard handles before starting the
+daemon (`keep_std_handles_from_children` in `crates/daemon/src/client.rs`). Rust's own spawns
+don't rely on the flag: they duplicate the handles they pass.
+
+### 51. Windows: Apple Devices' usbmuxd can miss a device connected before it started
+
+Windows PC with the Store app "Apple Devices" (its usbmuxd is `AppleMobileDeviceProcess`), seen by
+the owner. An iPad that was already plugged in when the service started was not in usbmuxd's list,
+so `devices` was empty and commands said no device was connected, while Windows itself showed the
+device. Unplugging it and plugging it back in made usbmuxd list it.
+
+The errors for a missing device and an empty `devices` list on Windows say to replug it
+(`missing_device_hint` in `crates/core/src/session.rs`). Not yet known: whether restarting the
+Apple Mobile Device Service alone also recovers it.

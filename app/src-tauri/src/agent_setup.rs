@@ -17,6 +17,11 @@
 //! which keeps any link valid, but the person may move or rename the app; the app repoints
 //! `current` at every launch (`refresh`), so one link follows it instead of every agent's.
 //!
+//! On Windows the same layout sits under the user's profile folder, with the app's install folder
+//! in place of `Contents` (the CLI is `devicesteer.exe` next to the app, the skill in `skills\`).
+//! Symlinks there need Developer Mode, so folders are linked with directory junctions and the CLI,
+//! a file, with a hard link when a symlink can't be made (see [`symlink`]).
+//!
 //! Nothing that isn't ours is ever replaced silently: a file, a folder or a link pointing
 //! elsewhere at one of these paths shows as a conflict, and replacing it takes the person's
 //! confirmation (`replace`), after which a non-link is moved aside rather than deleted.
@@ -49,8 +54,22 @@ const AGENTS: &[Agent] = &[
     Agent { id: "copilot", name: "GitHub Copilot CLI", detect: &[".copilot"], skills: ".copilot/skills" },
 ];
 
-const CLI_NAME: &str = "devicesteer";
 const SKILL_NAME: &str = "devicesteer";
+
+/// The CLI's file name, and where it and the skills are in the folder `current` points to.
+#[cfg(not(windows))]
+mod app_files {
+    pub const CLI: &str = "devicesteer";
+    pub const CLI_IN_APP: &str = "MacOS/devicesteer";
+    pub const SKILLS_IN_APP: &str = "Resources/skills";
+}
+#[cfg(windows)]
+mod app_files {
+    pub const CLI: &str = "devicesteer.exe";
+    pub const CLI_IN_APP: &str = "devicesteer.exe";
+    pub const SKILLS_IN_APP: &str = "skills";
+}
+use app_files::{CLI, CLI_IN_APP, SKILLS_IN_APP};
 
 /// What is at one of our paths.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -100,9 +119,10 @@ pub struct Layout {
 }
 
 impl Layout {
-    /// For the running app and the user's real home folder.
+    /// For the running app and the user's real home folder (the profile folder on Windows, where
+    /// HOME is usually unset).
     pub fn current() -> Option<Self> {
-        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        let home = dirs::home_dir()?;
         let contents = std::env::current_exe()
             .map_err(|e| format!("could not find the app: {e}"))
             .and_then(|exe| bundle_contents(&exe));
@@ -130,19 +150,19 @@ impl Layout {
     /// Where the link `id` goes, and what it should point to.
     fn link(&self, id: &str) -> Option<(PathBuf, PathBuf)> {
         if id == "cli" {
-            return Some((self.bin_dir().join(CLI_NAME), self.current_link().join("MacOS").join(CLI_NAME)));
+            return Some((self.bin_dir().join(CLI), self.current_link().join(CLI_IN_APP)));
         }
         let agent = AGENTS.iter().find(|a| a.id == id)?;
         Some((
             self.home.join(agent.skills).join(SKILL_NAME),
-            self.current_link().join("Resources/skills").join(SKILL_NAME),
+            self.current_link().join(SKILLS_IN_APP).join(SKILL_NAME),
         ))
     }
 
     fn tilde(&self, p: &Path) -> String {
         match p.strip_prefix(&self.home) {
-            Ok(rest) => format!("~/{}", rest.display()),
-            Err(_) => p.display().to_string(),
+            Ok(rest) => display(&Path::new("~").join(rest)),
+            Err(_) => display(p),
         }
     }
 
@@ -152,11 +172,8 @@ impl Layout {
     }
 
     pub fn status(&self, on_path: Option<bool>) -> Status {
-        let unavailable = if cfg!(unix) { self.contents.as_ref().err().cloned() } else {
-            Some("Agent setup isn't available on Windows yet.".into())
-        };
         Status {
-            unavailable,
+            unavailable: self.contents.as_ref().err().cloned(),
             cli: self.item("cli", "devicesteer command", true),
             on_path,
             agents: AGENTS
@@ -172,10 +189,10 @@ impl Layout {
     pub fn refresh(&self) -> Result<(), String> {
         let Ok(contents) = &self.contents else { return Ok(()) };
         let current = self.current_link();
-        match std::fs::read_link(&current) {
-            Ok(to) if &to == contents => Ok(()),
-            Ok(_) => repoint(&current, contents),
-            Err(_) => Ok(()),
+        match link_target(&current) {
+            Some(to) if &to == contents => Ok(()),
+            Some(_) => repoint(&current, contents),
+            None => Ok(()),
         }
     }
 
@@ -190,7 +207,7 @@ impl Layout {
             LinkState::Installed => {}
             LinkState::Missing => {}
             LinkState::OtherLink { points_to } if replace => {
-                std::fs::remove_file(&path).map_err(|e| format!("could not remove {}: {e}", self.tilde(&path)))?;
+                remove_link(&path).map_err(|e| format!("could not remove {}: {e}", self.tilde(&path)))?;
                 note = Some(format!("Replaced the link to {points_to}."));
             }
             LinkState::NotALink { .. } if replace => {
@@ -210,7 +227,7 @@ impl Layout {
         }
         // `current` first: a link to it is useless until it exists.
         let current = self.current_link();
-        if std::fs::read_link(&current).ok().as_ref() != Some(contents) {
+        if link_target(&current).as_ref() != Some(contents) {
             if std::fs::symlink_metadata(&current).is_ok_and(|m| !m.file_type().is_symlink()) {
                 return Err(format!("{} isn't a link; remove it and try again", self.tilde(&current)));
             }
@@ -230,7 +247,7 @@ impl Layout {
         let (path, target) = self.link(id).ok_or_else(|| format!("unknown item `{id}`"))?;
         match link_state(&path, &target) {
             LinkState::Installed => {
-                std::fs::remove_file(&path).map_err(|e| format!("could not remove {}: {e}", self.tilde(&path)))?
+                remove_link(&path).map_err(|e| format!("could not remove {}: {e}", self.tilde(&path)))?
             }
             LinkState::Missing => {}
             _ => return Err(format!("{} isn't DeviceSteer's link; it was left as it is", self.tilde(&path))),
@@ -242,7 +259,7 @@ impl Layout {
         if !any_left {
             let current = self.current_link();
             if std::fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink()) {
-                let _ = std::fs::remove_file(&current);
+                let _ = remove_link(&current);
             }
             // Only if empty: something else may live there.
             let _ = std::fs::remove_dir(self.share());
@@ -253,24 +270,63 @@ impl Layout {
     /// Whether `~/.local/bin` is in `path` (a PATH value).
     fn bin_dir_in(&self, path: &str) -> bool {
         let bin = self.bin_dir();
-        std::env::split_paths(path).any(|p| p == bin || p == Path::new("~/.local/bin"))
+        std::env::split_paths(path).any(|p| same_dir(&p, &bin) || p == Path::new("~/.local/bin"))
     }
+}
+
+/// `p` for the page, with Windows' separators throughout there: our relative paths are written
+/// with `/`.
+fn display(p: &Path) -> String {
+    let s = p.display().to_string();
+    if cfg!(windows) { s.replace('/', "\\") } else { s }
+}
+
+/// Paths on Windows compare without case, and PATH entries often end in a separator.
+fn same_dir(a: &Path, b: &Path) -> bool {
+    if cfg!(windows) {
+        let norm = |p: &Path| p.to_string_lossy().trim_end_matches(['\\', '/']).replace('/', "\\").to_lowercase();
+        norm(a) == norm(b)
+    } else {
+        a == b
+    }
+}
+
+/// `p` without the `\\?\` prefix Windows' canonical paths carry, so it compares equal to the same
+/// path written plainly (and a junction doesn't store the prefix).
+fn plain(p: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    if let Some(rest) = p.to_str().and_then(|s| s.strip_prefix(r"\\?\"))
+        && !rest.starts_with(r"UNC\")
+    {
+        return PathBuf::from(rest);
+    }
+    p
+}
+
+/// Where the link `p` points, without the `\\?\` prefix (see [`plain`]).
+fn link_target(p: &Path) -> Option<PathBuf> {
+    std::fs::read_link(p).ok().map(plain)
 }
 
 fn link_state(path: &Path, target: &Path) -> LinkState {
     match std::fs::symlink_metadata(path) {
         Err(_) => LinkState::Missing,
-        Ok(m) if m.file_type().is_symlink() => match std::fs::read_link(path) {
-            Ok(to) if to == target => LinkState::Installed,
-            Ok(to) => LinkState::OtherLink { points_to: to.display().to_string() },
-            Err(_) => LinkState::OtherLink { points_to: String::new() },
+        // Junctions count as symlinks here too.
+        Ok(m) if m.file_type().is_symlink() => match link_target(path) {
+            Some(to) if to == target => LinkState::Installed,
+            Some(to) => LinkState::OtherLink { points_to: to.display().to_string() },
+            None => LinkState::OtherLink { points_to: String::new() },
         },
+        // The CLI's hard link (see `symlink`): ours when it is the very file.
+        #[cfg(windows)]
+        Ok(m) if m.is_file() && same_file::is_same_file(path, target).unwrap_or(false) => LinkState::Installed,
         Ok(m) => LinkState::NotALink { is_dir: m.is_dir() },
     }
 }
 
 /// Replaces the symlink `link` with one to `to`, atomically: a link made next to it is renamed
 /// over it, so an agent running `devicesteer` meanwhile never finds it missing.
+#[cfg(not(windows))]
 fn repoint(link: &Path, to: &Path) -> Result<(), String> {
     let dir = link.parent().expect("link has a parent");
     std::fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
@@ -283,18 +339,58 @@ fn repoint(link: &Path, to: &Path) -> Result<(), String> {
     })
 }
 
+/// Replaces the junction `link` with one to `to`. Not atomically: Windows renames only files over
+/// files, so the old junction goes first and `current` is missing for that moment.
+#[cfg(windows)]
+fn repoint(link: &Path, to: &Path) -> Result<(), String> {
+    let dir = link.parent().expect("link has a parent");
+    std::fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    if std::fs::symlink_metadata(link).is_ok() {
+        remove_link(link).map_err(|e| format!("could not update {}: {e}", link.display()))?;
+    }
+    symlink(to, link).map_err(|e| format!("could not update {}: {e}", link.display()))
+}
+
 #[cfg(unix)]
 fn symlink(to: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(to, link)
 }
 
-#[cfg(not(unix))]
+/// Links `link` to `to` without Developer Mode, which symlinks need on Windows. A folder gets a
+/// directory junction: it stores the path, so a link through `current` follows `current` like a
+/// symlink does. The CLI, a file, gets a symlink when allowed and a hard link otherwise. A hard
+/// link is the file itself, not a path: it stays with the file `current` pointed to when it was
+/// made, which the installer overwrites in place on update, but it won't follow the app to another
+/// folder until it is set up again.
+#[cfg(windows)]
+fn symlink(to: &Path, link: &Path) -> std::io::Result<()> {
+    if to.is_dir() {
+        junction::create(to, link)
+    } else {
+        std::os::windows::fs::symlink_file(to, link).or_else(|_| std::fs::hard_link(to, link))
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn symlink(_to: &Path, _link: &Path) -> std::io::Result<()> {
-    Err(std::io::Error::other("symlinks need Developer Mode on Windows"))
+    Err(std::io::Error::other("links aren't supported on this platform"))
+}
+
+/// Removes the link `p` itself, never what it points to. Junctions and folder symlinks are
+/// folders to Windows and go with `remove_dir` (`is_dir` is false for them, as for any link).
+fn remove_link(p: &Path) -> std::io::Result<()> {
+    std::fs::remove_file(p).or_else(|e| {
+        if cfg!(windows) && std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink()) {
+            std::fs::remove_dir(p)
+        } else {
+            Err(e)
+        }
+    })
 }
 
 /// The `Contents` folder of the app `exe` runs from, if it is an installed bundle that carries the
 /// CLI and the skill.
+#[cfg(not(windows))]
 fn bundle_contents(exe: &Path) -> Result<PathBuf, String> {
     let exe = exe.canonicalize().unwrap_or_else(|_| exe.to_path_buf());
     let contents = exe
@@ -302,21 +398,87 @@ fn bundle_contents(exe: &Path) -> Result<PathBuf, String> {
         .filter(|d| d.ends_with("Contents/MacOS"))
         .and_then(Path::parent)
         .filter(|c| c.parent().is_some_and(|a| a.extension().is_some_and(|e| e == "app")))
-        .ok_or("Agent setup works in the installed app, not in a development build.")?;
+        .ok_or(DEV_BUILD)?;
     // Gatekeeper runs a quarantined app from a random read-only copy (App Translocation), and a
     // disk image goes away when ejected: a link to either breaks soon. The page offers the move.
     if crate::app_location::temporary(contents).is_some() {
         return Err("Move DeviceSteer to the Applications folder and open it from there to set up agents.".into());
     }
-    if !contents.join("MacOS").join(CLI_NAME).is_file() || !contents.join("Resources/skills").join(SKILL_NAME).join("SKILL.md").is_file() {
+    carries_cli_and_skill(contents)?;
+    Ok(contents.to_path_buf())
+}
+
+/// The installed app's folder on Windows: the one `exe` is in, with the CLI next to it and the
+/// skill under `skills`, as the installer lays them out.
+#[cfg(windows)]
+fn bundle_contents(exe: &Path) -> Result<PathBuf, String> {
+    let exe = plain(exe.canonicalize().unwrap_or_else(|_| exe.to_path_buf()));
+    let dir = exe.parent().ok_or(DEV_BUILD)?;
+    if dir.ends_with("target/debug") || dir.ends_with("target/release") {
+        return Err(DEV_BUILD.into());
+    }
+    carries_cli_and_skill(dir)?;
+    Ok(dir.to_path_buf())
+}
+
+const DEV_BUILD: &str = "Agent setup works in the installed app, not in a development build.";
+
+fn carries_cli_and_skill(contents: &Path) -> Result<(), String> {
+    if !contents.join(CLI_IN_APP).is_file() || !contents.join(SKILLS_IN_APP).join(SKILL_NAME).join("SKILL.md").is_file() {
         return Err("This build of the app doesn't include the command-line tool and the skill.".into());
     }
-    Ok(contents.to_path_buf())
+    Ok(())
+}
+
+/// The PATH a new terminal gets on Windows: the user's and the system's, from the registry. The
+/// app's own PATH is the one Explorer had when it started, so a change the person just made would
+/// show only after relaunching.
+#[cfg(windows)]
+mod windows_path {
+    use windows_sys::Win32::{
+        Foundation::ERROR_SUCCESS,
+        System::Registry::{HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegGetValueW},
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain([0]).collect()
+    }
+
+    /// A string value, with `%VARIABLES%` expanded (RegGetValueW does that for REG_EXPAND_SZ).
+    fn value(key: HKEY, subkey: &str, name: &str) -> Option<String> {
+        let (subkey, name) = (wide(subkey), wide(name));
+        let flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ;
+        let mut len = 0u32;
+        // SAFETY: the first call only sizes the buffer; the second writes at most `len` bytes.
+        unsafe {
+            let r = RegGetValueW(key, subkey.as_ptr(), name.as_ptr(), flags, std::ptr::null_mut(), std::ptr::null_mut(), &mut len);
+            if r != ERROR_SUCCESS {
+                return None;
+            }
+            let mut buf = vec![0u16; (len as usize).div_ceil(2)];
+            let r = RegGetValueW(key, subkey.as_ptr(), name.as_ptr(), flags, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut len);
+            if r != ERROR_SUCCESS {
+                return None;
+            }
+            let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            Some(String::from_utf16_lossy(&buf[..n]))
+        }
+    }
+
+    pub fn user_and_system() -> Option<String> {
+        let system = value(HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "Path");
+        let user = value(HKEY_CURRENT_USER, "Environment", "Path");
+        match (user, system) {
+            (None, None) => None,
+            (u, s) => Some([s, u].into_iter().flatten().collect::<Vec<_>>().join(";")),
+        }
+    }
 }
 
 /// The PATH of the person's login shell, which is what their terminal and their agents get; the
 /// app's own PATH comes from launchd and leaves out what shell profiles add. Interactive too, since
 /// many people set PATH in `.zshrc`. `None` when the shell fails or takes too long.
+#[cfg(unix)]
 async fn login_shell_path() -> Option<String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     const MARK: &str = "__DEVICESTEER_PATH__";
@@ -344,8 +506,13 @@ pub fn refresh_on_launch() {
 /// What is installed, and whether `~/.local/bin` is on the login shell's PATH.
 #[tauri::command]
 pub async fn agent_setup_status() -> Result<Status, String> {
-    let layout = Layout::current().ok_or("HOME isn't set")?;
-    let on_path = if cfg!(unix) { login_shell_path().await.map(|p| layout.bin_dir_in(&p)) } else { None };
+    let layout = Layout::current().ok_or("could not find your home folder")?;
+    #[cfg(unix)]
+    let on_path = login_shell_path().await.map(|p| layout.bin_dir_in(&p));
+    #[cfg(windows)]
+    let on_path = Some(windows_path::user_and_system().is_some_and(|p| layout.bin_dir_in(&p)));
+    #[cfg(not(any(unix, windows)))]
+    let on_path = None;
     Ok(layout.status(on_path))
 }
 
@@ -358,7 +525,7 @@ pub struct Change {
 /// confirmation to replace something that isn't ours.
 #[tauri::command]
 pub async fn agent_setup_change(id: String, install: bool, replace: bool) -> Result<Change, String> {
-    let layout = Layout::current().ok_or("HOME isn't set")?;
+    let layout = Layout::current().ok_or("could not find your home folder")?;
     if install {
         Ok(Change { note: layout.install(&id, replace)? })
     } else {
@@ -367,11 +534,11 @@ pub async fn agent_setup_change(id: String, install: bool, replace: bool) -> Res
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(unix, windows)))]
 mod tests {
     use super::*;
 
-    /// A temporary home and a fake app bundle with the CLI and the skill.
+    /// A temporary home and a fake app with the CLI and the skill, laid out as on this platform.
     struct Fixture {
         root: PathBuf,
     }
@@ -381,20 +548,25 @@ mod tests {
             let root = std::env::temp_dir().join(format!("devicesteer-agent-setup-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&root);
             std::fs::create_dir_all(root.join("home")).unwrap();
+            let root = plain(root.canonicalize().unwrap());
             for app in ["A", "B"] {
-                let c = root.join(format!("{app}/DeviceSteer.app/Contents"));
-                std::fs::create_dir_all(c.join("MacOS")).unwrap();
-                std::fs::write(c.join("MacOS/devicesteer"), "#!/bin/sh\n").unwrap();
-                std::fs::create_dir_all(c.join("Resources/skills/devicesteer")).unwrap();
-                std::fs::write(c.join("Resources/skills/devicesteer/SKILL.md"), app).unwrap();
+                let c = root.join(Self::app_dir(app));
+                std::fs::create_dir_all(c.join(CLI_IN_APP).parent().unwrap()).unwrap();
+                std::fs::write(c.join(CLI_IN_APP), "#!/bin/sh\n").unwrap();
+                std::fs::create_dir_all(c.join(SKILLS_IN_APP).join("devicesteer")).unwrap();
+                std::fs::write(c.join(SKILLS_IN_APP).join("devicesteer/SKILL.md"), app).unwrap();
             }
             Self { root }
+        }
+        /// What `current` points to for app `app`: the bundle's `Contents`, or the install folder.
+        fn app_dir(app: &str) -> String {
+            if cfg!(windows) { format!("{app}/DeviceSteer") } else { format!("{app}/DeviceSteer.app/Contents") }
         }
         fn home(&self) -> PathBuf {
             self.root.join("home")
         }
         fn layout(&self, app: &str) -> Layout {
-            Layout::new(&self.home(), Ok(self.root.join(format!("{app}/DeviceSteer.app/Contents"))))
+            Layout::new(&self.home(), Ok(self.root.join(Self::app_dir(app))))
         }
     }
 
@@ -416,20 +588,25 @@ mod tests {
 
         l.install("cli", false).unwrap();
         l.install("claude", false).unwrap();
-        assert_eq!(l.status(None).cli.link, LinkState::Installed);
+        let st = l.status(None);
+        assert_eq!(st.cli.link, LinkState::Installed);
+        assert_eq!(st.agents.iter().find(|a| a.id == "claude").unwrap().link, LinkState::Installed);
         let skill = f.home().join(".claude/skills/devicesteer/SKILL.md");
         assert_eq!(std::fs::read_to_string(&skill).unwrap(), "A");
-        assert!(f.home().join(".local/bin/devicesteer").is_file());
+        assert!(f.home().join(".local/bin").join(CLI).is_file());
 
-        // The app moved: launching the copy at B repoints every link at once.
+        // The app moved: launching the copy at B repoints every skill link at once.
         f.layout("B").refresh().unwrap();
         assert_eq!(std::fs::read_to_string(&skill).unwrap(), "B");
 
         l.uninstall("cli").unwrap();
         assert!(f.home().join(".local/share/devicesteer/current").exists());
+        // Removing a link leaves what it pointed to.
+        assert!(f.root.join(Fixture::app_dir("A")).join(CLI_IN_APP).is_file());
         l.uninstall("claude").unwrap();
         assert!(std::fs::symlink_metadata(f.home().join(".local/share/devicesteer")).is_err());
         assert!(f.home().join(".claude/skills").is_dir());
+        assert!(f.root.join(Fixture::app_dir("B")).join(SKILLS_IN_APP).join("devicesteer/SKILL.md").is_file());
     }
 
     #[test]
@@ -439,6 +616,8 @@ mod tests {
         assert!(std::fs::symlink_metadata(f.home().join(".local/share/devicesteer")).is_err());
     }
 
+    /// A link to somewhere else at the CLI's path on Unix, at a skill's on Windows (where a file
+    /// symlink needs Developer Mode, and a junction is the link people make there).
     #[test]
     fn conflicts_need_confirmation() {
         let f = Fixture::new("conflict");
@@ -446,32 +625,78 @@ mod tests {
         let dir = f.home().join(".agents/skills/devicesteer");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("SKILL.md"), "mine").unwrap();
-        let other = f.home().join(".local/bin/devicesteer");
+        let elsewhere = f.root.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let (other_id, other) = if cfg!(windows) {
+            ("claude", f.home().join(".claude/skills/devicesteer"))
+        } else {
+            ("cli", f.home().join(".local/bin/devicesteer"))
+        };
         std::fs::create_dir_all(other.parent().unwrap()).unwrap();
-        std::os::unix::fs::symlink("/somewhere/else", &other).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&elsewhere, &other).unwrap();
+        #[cfg(windows)]
+        junction::create(&elsewhere, &other).unwrap();
+        let points_to = elsewhere.display().to_string();
 
         let st = l.status(None);
-        assert_eq!(st.cli.link, LinkState::OtherLink { points_to: "/somewhere/else".into() });
-        assert_eq!(st.agents.iter().find(|a| a.id == "agents").unwrap().link, LinkState::NotALink { is_dir: true });
+        let item = |st: &Status, id: &str| if id == "cli" { st.cli.link.clone() } else { st.agents.iter().find(|a| a.id == id).unwrap().link.clone() };
+        assert_eq!(item(&st, other_id), LinkState::OtherLink { points_to: points_to.clone() });
+        assert_eq!(item(&st, "agents"), LinkState::NotALink { is_dir: true });
 
-        assert!(l.install("cli", false).is_err());
+        assert!(l.install(other_id, false).is_err());
         assert!(l.install("agents", false).is_err());
-        assert!(l.uninstall("cli").is_err());
-        assert_eq!(std::fs::read_link(&other).unwrap(), PathBuf::from("/somewhere/else"));
+        assert!(l.uninstall(other_id).is_err());
+        assert_eq!(link_target(&other), Some(elsewhere.clone()));
         assert_eq!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap(), "mine");
 
-        assert!(l.install("cli", true).unwrap().is_some());
+        assert!(l.install(other_id, true).unwrap().is_some());
+        // Replacing the link removed the link, not the folder it pointed to.
+        assert!(elsewhere.is_dir());
         let note = l.install("agents", true).unwrap().unwrap();
         assert!(note.contains(".backup-"), "{note}");
         let st = l.status(None);
-        assert_eq!(st.cli.link, LinkState::Installed);
-        assert_eq!(st.agents.iter().find(|a| a.id == "agents").unwrap().link, LinkState::Installed);
+        assert_eq!(item(&st, other_id), LinkState::Installed);
+        assert_eq!(item(&st, "agents"), LinkState::Installed);
         let backup = std::fs::read_dir(f.home().join(".agents/skills"))
             .unwrap()
             .filter_map(|e| e.ok())
             .find(|e| e.file_name().to_string_lossy().starts_with("devicesteer.backup-"))
             .unwrap();
         assert_eq!(std::fs::read_to_string(backup.path().join("SKILL.md")).unwrap(), "mine");
+    }
+
+    /// A file at the CLI's path that isn't ours (on Windows our CLI may be a hard link, which is
+    /// a plain file too).
+    #[test]
+    fn a_foreign_cli_file_is_a_conflict() {
+        let f = Fixture::new("foreign-cli");
+        let l = f.layout("A");
+        let cli = f.home().join(".local/bin").join(CLI);
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::write(&cli, "someone else's").unwrap();
+        assert_eq!(l.status(None).cli.link, LinkState::NotALink { is_dir: false });
+        assert!(l.install("cli", false).is_err());
+        assert_eq!(std::fs::read_to_string(&cli).unwrap(), "someone else's");
+    }
+
+    /// Without Developer Mode the CLI is a hard link (see `symlink`): it counts as ours, and
+    /// removing it leaves the app's copy.
+    #[cfg(windows)]
+    #[test]
+    fn a_hard_linked_cli_is_ours() {
+        let f = Fixture::new("hard-link");
+        let l = f.layout("A");
+        l.install("claude", false).unwrap();
+        let (cli, target) = l.link("cli").unwrap();
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::hard_link(&target, &cli).unwrap();
+        assert!(!std::fs::symlink_metadata(&cli).unwrap().file_type().is_symlink());
+        assert_eq!(l.status(None).cli.link, LinkState::Installed);
+        l.install("cli", false).unwrap();
+        l.uninstall("cli").unwrap();
+        assert!(std::fs::symlink_metadata(&cli).is_err());
+        assert!(f.root.join(Fixture::app_dir("A")).join(CLI_IN_APP).is_file());
     }
 
     #[test]
@@ -487,14 +712,15 @@ mod tests {
     #[test]
     fn finds_the_bundle() {
         let f = Fixture::new("bundle");
-        let contents = f.root.join("A/DeviceSteer.app/Contents").canonicalize().unwrap();
-        std::fs::write(contents.join("MacOS/devicesteer-app"), "").unwrap();
-        assert_eq!(bundle_contents(&contents.join("MacOS/devicesteer-app")).unwrap(), contents);
+        let contents = f.root.join(Fixture::app_dir("A"));
+        let app_exe = if cfg!(windows) { contents.join("devicesteer-app.exe") } else { contents.join("MacOS/devicesteer-app") };
+        std::fs::write(&app_exe, "").unwrap();
+        assert_eq!(bundle_contents(&app_exe).unwrap(), contents);
         // A development build runs from target/debug.
         assert!(bundle_contents(&f.root.join("target/debug/devicesteer-app")).is_err());
-        // A bundle without the CLI (built without tauri.bundle.conf.json).
-        std::fs::remove_file(contents.join("MacOS/devicesteer")).unwrap();
-        assert!(bundle_contents(&contents.join("MacOS/devicesteer-app")).unwrap_err().contains("doesn't include"));
+        // A build without the CLI (built without tauri.bundle.conf.json).
+        std::fs::remove_file(contents.join(CLI_IN_APP)).unwrap();
+        assert!(bundle_contents(&app_exe).unwrap_err().contains("doesn't include"));
     }
 
     #[test]
@@ -502,7 +728,10 @@ mod tests {
         let f = Fixture::new("path");
         let l = f.layout("A");
         let bin = f.home().join(".local/bin");
-        assert!(l.bin_dir_in(&format!("/usr/bin:{}", bin.display())));
-        assert!(!l.bin_dir_in("/usr/bin:/bin"));
+        let (sys, sep) = if cfg!(windows) { (r"C:\Windows\System32", ";") } else { ("/usr/bin", ":") };
+        assert!(l.bin_dir_in(&format!("{sys}{sep}{}", bin.display())));
+        assert!(!l.bin_dir_in(sys));
+        #[cfg(windows)]
+        assert!(l.bin_dir_in(&format!("{sys};{}\\", bin.display().to_string().to_uppercase())));
     }
 }

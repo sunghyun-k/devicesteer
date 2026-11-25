@@ -23,8 +23,16 @@ tauri-plugin-process = "2"
 serde.workspace = true
 serde_json.workspace = true
 arboard = { version = "3.7.0", default-features = false }
+# The home folder from the OS (the profile folder on Windows, where HOME is usually unset).
+dirs = "7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSArray"] }
+
+[target.'cfg(windows)'.dependencies]
+# Agent setup links without Developer Mode: directory junctions, and recognizing the CLI's hard link.
+junction = "1"
+same-file = "1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }

@@ -7,8 +7,10 @@
 //! If so, the page sends the device its Space and asks for the Mac's previous input source back
 //! ([`restore`]), so only the device switches.
 
-/// The page event sent when the Mac's input source changes.
-pub const CHANGED: &str = "input-source-changed";
+/// The page event sent when the Mac's input source changes. Only the Mac has the shortcut to work
+/// around, so nothing else sends it.
+#[cfg(target_os = "macos")]
+const CHANGED: &str = "input-source-changed";
 
 #[cfg(target_os = "macos")]
 mod mac {

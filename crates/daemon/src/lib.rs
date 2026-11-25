@@ -14,4 +14,7 @@ pub mod wire;
 pub use client::Client;
 pub use control::{ControlAction, Source};
 pub use server::run_blocking;
+#[cfg(windows)]
+pub use transport::pipe_name;
+#[cfg(unix)]
 pub use transport::socket_path;

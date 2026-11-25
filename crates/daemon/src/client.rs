@@ -58,18 +58,64 @@ fn cli_binary() -> PathBuf {
     PathBuf::from(name)
 }
 
-fn spawn_daemon(udid: &str) -> Result<()> {
-    let log = devicesteer_core::paths::state_dir().join(format!("{udid}.daemon.log"));
+fn daemon_log(udid: &str) -> PathBuf {
+    devicesteer_core::paths::state_dir().join(format!("{udid}.daemon.log"))
+}
+
+fn spawn_daemon(udid: &str) -> Result<std::process::Child> {
     let mut cmd = std::process::Command::new(cli_binary());
     cmd.args(["daemon", "--udid", udid])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::fs::File::create(&log)?);
+        .stderr(std::fs::File::create(daemon_log(udid))?);
     // Its own process group, so closing the terminal that started it does not end it.
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    cmd.spawn().with_context(|| format!("could not start the daemon ({})", cli_binary().display()))?;
-    Ok(())
+    // The same on Windows, where it also needs no console of its own: started from the viewer
+    // (a GUI process), the console-subsystem CLI would otherwise open a console window.
+    #[cfg(windows)]
+    {
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        keep_std_handles_from_children();
+    }
+    cmd.spawn().with_context(|| format!("could not start the daemon ({})", cli_binary().display()))
+}
+
+/// Stops children from inheriting this process's stdin, stdout and stderr (PITFALLS #50).
+///
+/// Windows hands a child every inheritable handle its parent has, not just the three it is given,
+/// and the standard handles a process gets are inheritable. The daemon outlives the CLI, so it held
+/// the write end of the pipe the CLI's output went to, and whatever read that pipe (`| jq`, an
+/// agent's shell tool) waited for the daemon to exit. Rust's own spawns don't need the flag: they
+/// duplicate the handles they pass.
+#[cfg(windows)]
+fn keep_std_handles_from_children() {
+    use windows_sys::Win32::{
+        Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation},
+        System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
+    };
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: only clears a flag on our own handles; a missing one (a GUI process) fails harmlessly.
+        unsafe {
+            let h = GetStdHandle(which);
+            if !h.is_null() {
+                SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
+}
+
+/// Why the daemon didn't come up, from its log: the error it printed on the way out (the CLI
+/// prints errors as `{"error": ...}`), or else the log's last line.
+fn startup_error(log: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(log).ok()?;
+    let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
+    let error = lines.clone().rev().find_map(|l| {
+        serde_json::from_str::<Value>(l).ok()?.get("error")?.as_str().map(str::to_owned)
+    });
+    error.or_else(|| lines.next_back().map(str::to_owned))
 }
 
 impl Client {
@@ -82,16 +128,26 @@ impl Client {
                 // No daemon yet: refuse a device it couldn't serve before starting one, so the
                 // caller gets the reason rather than a daemon that fails every request.
                 devicesteer_core::ensure_supported(Some(&udid)).await?;
-                spawn_daemon(&udid)?;
+                let mut child = spawn_daemon(&udid)?;
+                let log = daemon_log(&udid);
                 let began = Instant::now();
                 loop {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     if let Ok(s) = transport::connect(&udid).await {
                         break s;
                     }
+                    // It exited: say why instead of waiting out the timeout. (Another client may
+                    // have started a daemon first, which makes ours exit; then connect again.)
+                    if let Ok(Some(status)) = child.try_wait() {
+                        if let Ok(s) = transport::connect(&udid).await {
+                            break s;
+                        }
+                        let why = startup_error(&log).unwrap_or_else(|| format!("it exited with {status}"));
+                        bail!("the daemon could not start: {why} (log: {})", log.display());
+                    }
                     if began.elapsed() > Duration::from_secs(5) {
-                        let log = devicesteer_core::paths::state_dir().join(format!("{udid}.daemon.log"));
-                        bail!("the daemon did not come up within 5 s; see {}", log.display());
+                        let last = startup_error(&log).map(|l| format!("; its log ends with: {l}")).unwrap_or_default();
+                        bail!("the daemon did not come up within 5 s{last} (log: {})", log.display());
                     }
                 }
             }
@@ -185,5 +241,25 @@ impl Drop for Client {
     fn drop(&mut self) {
         self._reader.abort();
         self._writer.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::startup_error;
+
+    #[test]
+    fn startup_error_prefers_the_printed_error() {
+        let dir = std::env::temp_dir().join(format!("devicesteer-startup-error-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("daemon.log");
+        std::fs::write(&log, "2026-01-01 INFO starting\n{\"error\":\"no device with UDID x is connected\"}\n\n").unwrap();
+        assert_eq!(startup_error(&log).as_deref(), Some("no device with UDID x is connected"));
+        std::fs::write(&log, "INFO starting\nthread 'main' has overflowed its stack\n").unwrap();
+        assert_eq!(startup_error(&log).as_deref(), Some("thread 'main' has overflowed its stack"));
+        std::fs::write(&log, "").unwrap();
+        assert_eq!(startup_error(&log), None);
+        assert_eq!(startup_error(&dir.join("missing.log")), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
