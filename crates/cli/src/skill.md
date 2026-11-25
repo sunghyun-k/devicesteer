@@ -145,6 +145,10 @@ devicesteer ui --full          # also accessibility identifiers (slower)
 devicesteer screenshot -o /absolute/path/screen.png
 ```
 
+`screenshot` writes an 8-bit PNG (a few MB at full resolution) and takes about 2 s, over Wi-Fi too:
+most of it is the device capturing. `--raw` keeps the device's own PNG (16 bits per channel on most
+screens, about four times larger); you don't need it to read the screen.
+
 - **Read the screen before your first input** in a session. The user may have just been in another
   app. If it isn't the screen you expected, stop and ask.
 - `ui` lists the apps on screen and, on system screens, a `surface` (`home_screen`, `cover_sheet`

@@ -124,6 +124,12 @@ impl Display {
         ((pw * k).round().min(cw), (ph * k).round().min(ch))
     }
 
+    /// The `displayUniqueID` a screenshot of this panel asks for; `None` on a phone with one
+    /// panel, which has no id (PITFALLS #9) and is the panel the device captures without one.
+    pub fn capture_id(&self) -> Option<&str> {
+        Some(self.unique_id.as_str()).filter(|id| *id != NO_UNIQUE_ID)
+    }
+
     /// Whether `other` is the same panel: a foldable switches panels when it is folded or
     /// unfolded (PITFALLS #47), and the video and the touchscreen are bound to one.
     pub fn same_panel(&self, other: &Display) -> bool {

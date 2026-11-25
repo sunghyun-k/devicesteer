@@ -758,6 +758,67 @@ impl Daemon {
         }
     }
 
+    /// Captures the screen into the file `path`. The device lock is held only to look up the panel
+    /// and the tunnel: the capture takes seconds (PITFALLS #63), and touches and readings go on
+    /// meanwhile on connections of their own.
+    async fn screenshot(self: &Arc<Self>, req: &Request) -> Result<Value> {
+        let a = &req.args;
+        let path = PathBuf::from(a.get("path").and_then(Value::as_str).context("screenshot needs a path")?);
+        if !path.is_absolute() {
+            bail!("screenshot needs an absolute path (the daemon runs in another directory)");
+        }
+        let raw = a.get("raw").and_then(Value::as_bool).unwrap_or(false);
+        if req.source == Source::Agent {
+            self.wait_for_human_touch().await;
+        }
+        let began = Instant::now();
+        let looked_up = async {
+            let mut dev = self.device.lock().await;
+            let note = self.check_agent(req)?;
+            let found = async {
+                let c = self.controller(&mut dev).await?;
+                let display = match a.get("display").and_then(Value::as_str) {
+                    Some(id) => Some(id.to_owned()),
+                    // Kept up to date by the display poll, a foldable's panel switch included.
+                    None => c.display().await?.capture_id().map(str::to_owned),
+                };
+                anyhow::Ok((c.session.adapter().clone(), c.session.rsd().clone(), c.session.transport, display))
+            }
+            .await;
+            if let Err(e) = &found
+                && is_connection_error(e)
+            {
+                self.forget(&mut dev, e).await;
+            }
+            found.map(|f| (f, note))
+        };
+        let ((mut adapter, mut rsd, transport, display), note) = looked_up.await?;
+        let png = match devicesteer_core::screenshot::capture(&mut adapter, &mut rsd, display.as_deref()).await {
+            Ok(png) => png,
+            Err(e) => {
+                if is_connection_error(&e) {
+                    self.forget(&mut *self.device.lock().await, &e).await;
+                }
+                return Err(e);
+            }
+        };
+        let captured_ms = began.elapsed().as_millis() as u64;
+        // Off the runtime thread: re-encoding takes ~0.1 s, more in a debug build.
+        let shot = tokio::task::spawn_blocking(move || devicesteer_core::screenshot::finish(png, raw)).await??;
+        std::fs::write(&path, &shot.png).with_context(|| format!("could not write {}", path.display()))?;
+        let mut r = serde_json::to_value(&shot)?;
+        r["udid"] = json!(self.udid);
+        r["transport"] = json!(transport);
+        r["path"] = json!(path);
+        r["bytes"] = json!(shot.png.len());
+        r["capture_ms"] = json!(captured_ms);
+        r["ms"] = json!(began.elapsed().as_millis() as u64);
+        if let Some(note) = note {
+            r["note"] = json!(note);
+        }
+        Ok(r)
+    }
+
     /// Runs one request against the device. Connection errors drop the cached session.
     async fn device_op(self: &Arc<Self>, req: &Request) -> Result<Value> {
         if req.source == Source::Agent {
@@ -1388,6 +1449,7 @@ impl Daemon {
                     Err(_) => Err(anyhow!("control action is one of take_over, hand_back, done, stop")),
                 },
                 "session" => self.session_cmd(&req).await,
+                "screenshot" => self.screenshot(&req).await,
                 "shutdown" => {
                     let _ = shutdown.send(()).await;
                     Ok(json!({ "stopping": true }))
