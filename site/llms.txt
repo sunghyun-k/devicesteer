@@ -2,6 +2,8 @@
 
 > DeviceSteer sees and controls a real iPhone or iPad (iOS / iPadOS 27 or later) connected over USB or Wi-Fi, from macOS or Windows, without Xcode. It has a viewer app with the live screen and human control, and a JSON CLI (`devicesteer`) with an agent skill so coding agents such as Claude Code, Codex, Cursor and GitHub Copilot CLI can drive the device in sessions the human can watch, take over, hand back or stop.
 
+DeviceSteer is in beta. It runs on macOS 14 Sonoma or later (Apple silicon or Intel) and Windows 10 and 11 (x64).
+
 The device is usually someone's personal phone. It is not a simulator.
 
 ## For agents
@@ -33,8 +35,8 @@ devicesteer session finish                        # at the end of your reply
 - A new device needs three steps: trust this computer, Developer Mode, and the developer disk image. `devicesteer setup --udid <UDID>` runs them; the first two need the person holding the device.
 - Wi-Fi pairing without a cable: `devicesteer setup wifi`. On the device: Settings > Privacy & Security > Developer Mode > Pair with "DeviceSteer", then the device's own passcode, then the 6-digit code shown on the computer. On Windows the firewall asks then whether DeviceSteer may accept connections (the device connects to the computer to pair): allow it on private networks. Finding and using devices doesn't ask.
 - The viewer app's interface is in English, Korean, Japanese, Simplified and Traditional Chinese, Spanish, French, German, Brazilian Portuguese and Italian, following the system's language (Settings › General overrides it). The CLI, its JSON output and the skill stay in English.
-- Install on macOS: `DeviceSteer_<version>_universal.dmg` from GitHub Releases. On Windows 10 and 11 (x64): `irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex` in PowerShell (per user, no administrator rights), or `DeviceSteer_<version>_x64-setup.exe`; USB needs Apple Devices or iTunes, opened once.
-- The app installs the `devicesteer` command (`~/.local/bin/devicesteer`; `%USERPROFILE%\.local\bin\devicesteer.exe` on Windows) and links the skill into agents' skill folders (Settings › Agents).
+- Install on macOS from a terminal: `curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh` (installs or updates the app in /Applications, checks it against the release's SHA256SUMS, and links the `devicesteer` command and the skill; options after `sh -s --`: `--version <v>`, `--quit`, `--dir <folder>`, `--no-agents`). Or the disk image https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg. All downloads and steps: https://devicesteer.sunghyunkim.com/download. On Windows 10 and 11 (x64): `irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex` in PowerShell (per user, no administrator rights; it also links the `devicesteer` command and the skill, `-NoAgents` to skip), or the installer https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe; USB needs Apple Devices or iTunes, opened once.
+- The app installs the `devicesteer` command (`~/.local/bin/devicesteer`; `%USERPROFILE%\.local\bin\devicesteer.exe` on Windows) and links the skill into agents' skill folders (Settings › Agents, or `devicesteer agents install` from a terminal).
 
 ## Links
 

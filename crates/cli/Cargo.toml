@@ -17,6 +17,7 @@ tauri-winres = "0.3"
 [dependencies]
 devicesteer-core.workspace = true
 devicesteer-daemon.workspace = true
+devicesteer-agents.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow.workspace = true
 serde.workspace = true

@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 devicesteer-core.workspace = true
 devicesteer-daemon.workspace = true
+devicesteer-agents.workspace = true
 tokio = { workspace = true, features = ["process"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-updater = "2"
@@ -34,7 +35,4 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSArray"] }
 
 [target.'cfg(windows)'.dependencies]
-# Agent setup links without Developer Mode: directory junctions, and recognizing the CLI's hard link.
-junction = "1"
-same-file = "1"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging"] }

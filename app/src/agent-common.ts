@@ -55,7 +55,7 @@ export const pref = {
   },
 };
 
-/** What `agent_setup_change` reports when it replaced something (agent_setup.rs `Note`). */
+/** What `agent_setup_change` reports when it replaced something (`Note` in crates/agents). */
 export interface Note {
   code: string;
   path: string;

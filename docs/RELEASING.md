@@ -13,14 +13,23 @@ it, signs the installer and adds it to `latest.json`.
 
 | Asset | For |
 | --- | --- |
-| `DeviceSteer_<version>_universal.dmg` | People installing for the first time (README). Signed, notarized, stapled. |
+| `DeviceSteer_universal.dmg` | People installing for the first time (README, homepage). Signed, notarized, stapled. |
 | `DeviceSteer.app.tar.gz` | The in-app updater: the same notarized, stapled app. |
 | `DeviceSteer.app.tar.gz.sig` | Its updater signature (minisign, made with the updater key). |
-| `DeviceSteer_<version>_x64-setup.exe` | Windows: the NSIS installer, for first installs and for the in-app updater. Not code-signed yet (see "Windows" below). |
-| `DeviceSteer_<version>_x64-setup.exe.sig` | Its updater signature, made on the release Mac. |
+| `DeviceSteer_x64-setup.exe` | Windows: the NSIS installer, for first installs and for the in-app updater. Not code-signed yet (see "Windows" below). |
+| `DeviceSteer_x64-setup.exe.sig` | Its updater signature, made on the release Mac. |
 | `install.ps1` | The PowerShell installer (`scripts/install.ps1` at the release's commit): `irm https://github.com/<repo>/releases/latest/download/install.ps1 \| iex`. |
-| `SHA256SUMS` | SHA-256 of the Windows installer and `install.ps1`; `install.ps1` checks the installer against it. |
+| `install.sh` | The macOS terminal installer (`scripts/install.sh` at the release's commit): `curl -fsSL https://github.com/<repo>/releases/latest/download/install.sh \| sh`. |
+| `SHA256SUMS` | SHA-256 of the disk image, the app archive and `install.sh` (written by `scripts/release.sh`), and of the Windows installer and `install.ps1` (added by the Windows workflow, which keeps the macOS lines). `install.sh` checks the archive against it, `install.ps1` the installer. |
 | `latest.json` | What the updater reads: version, notes, and the archive's URL and signature for `darwin-aarch64` and `darwin-x86_64` (one universal archive serves both), and `windows-x86_64` for the installer. |
+
+**Asset names are fixed and carry no version.** The homepage, README and `docs/SETUP.md` link to
+`https://github.com/<repo>/releases/latest/download/<name>` (`DeviceSteer_universal.dmg`,
+`DeviceSteer_x64-setup.exe`, `install.sh`, `install.ps1`), `install.sh` downloads
+`DeviceSteer.app.tar.gz`, and the updater to `latest.json`, so renaming an asset breaks those
+links. Tauri names the Windows installer after the version; `release-windows.yml` renames it before
+uploading. Releases up to 1.0.0-beta.4 used `DeviceSteer_<version>_universal.dmg` and
+`DeviceSteer_<version>_x64-setup.exe`; `install.ps1 -Version` still finds those.
 
 The app is universal (arm64 + x86_64). Inside it:
 
@@ -35,7 +44,7 @@ Both extras come from `app/src-tauri/tauri.bundle.conf.json`, which bundling pas
 `externalBin` to exist, which would break `cargo build` and `tauri dev` before the CLI is built.
 
 The app's Settings window (Agents) links `~/.local/bin/devicesteer` and each agent's skill folder to these
-through `~/.local/share/devicesteer/current` (see `app/src-tauri/src/agent_setup.rs` for why), so
+through `~/.local/share/devicesteer/current` (see `crates/agents/src/lib.rs` for why), so
 an update replaces the CLI and the skill along with the app.
 
 The Windows installer puts the same three in the app's folder (`%LOCALAPPDATA%\DeviceSteer` by
@@ -130,9 +139,10 @@ runner, which holds no secret.
    exists:
 
    7. starts the **Windows release** workflow for the version unless the draft already has
-      `DeviceSteer_<version>_x64-setup.exe`, and waits for it. The workflow reads the draft's
+      `DeviceSteer_x64-setup.exe`, and waits for it. The workflow reads the draft's
       commit, checks the three versions there, builds the NSIS installer from that commit on a
-      GitHub-hosted Windows runner (`build-windows.yml`) and uploads it to the draft with
+      GitHub-hosted Windows runner (`build-windows.yml`) and uploads it to the draft, renamed to
+      `DeviceSteer_x64-setup.exe`, with
       `install.ps1` and `SHA256SUMS`. It refuses a release that isn't a draft. While waiting, the
       script retries GitHub API errors (the 404 GitHub answers for a run it has just started, 5xx,
       network) with a backoff for about five minutes before giving up; a run that ends in anything

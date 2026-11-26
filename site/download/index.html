@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download DeviceSteer for macOS and Windows</title>
+<meta name="description" content="Download DeviceSteer for macOS or Windows, or install it from a terminal with one command. Requirements and install steps for both.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0e14" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://devicesteer.sunghyunkim.com/download">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/images/favicon.png" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="preload" href="/fonts/InstrumentSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="DeviceSteer">
+<meta property="og:url" content="https://devicesteer.sunghyunkim.com/download">
+<meta property="og:title" content="Download DeviceSteer">
+<meta property="og:description" content="For macOS and Windows. Or install from a terminal with one command.">
+<meta property="og:image" content="https://devicesteer.sunghyunkim.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The DeviceSteer viewer showing a real iPhone's Appearance settings as an agent switches it to Dark mode, its label next to the pointer, above a bar reading Agent is in control">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Download DeviceSteer">
+<meta name="twitter:description" content="For macOS and Windows. Or install from a terminal with one command.">
+<meta name="twitter:image" content="https://devicesteer.sunghyunkim.com/og.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="dl-page">
+<!-- Download links point at releases/latest/download/<name>: release assets carry no version
+     (scripts/release.sh, docs/RELEASING.md), so these always fetch the latest release. -->
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="brand" href="/" aria-label="DeviceSteer home">
+      <img src="/icon.svg" alt="" width="24" height="24">
+      <span>DeviceSteer</span>
+    </a>
+    <span class="badge" title="DeviceSteer is in beta">Beta</span>
+    <nav class="top-links" aria-label="Sections">
+      <a href="#macos">macOS</a>
+      <a href="#windows">Windows</a>
+      <a href="/#start">Get started</a>
+      <a href="/#agents">For agents</a>
+    </nav>
+    <a class="btn small" href="https://github.com/sunghyun-k/devicesteer">GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="dl-hero" aria-labelledby="dl-title">
+  <div class="wrap">
+    <h1 id="dl-title">Download DeviceSteer</h1>
+    <p class="dl-beta"><span class="badge">Beta</span><span>DeviceSteer is in beta: it works, and it is still changing.
+      Please <a href="https://github.com/sunghyun-k/devicesteer/issues">report problems on GitHub</a>.</span></p>
+    <p class="lede">See and control a real iPhone or iPad from your Mac or Windows PC, and let your coding agent
+      drive it too. Free and open source.</p>
+
+    <!-- The script at the end puts Windows first for Windows visitors (or ?os=windows); without
+         it the page shows the macOS order, and the tabs still work (radio buttons and CSS). -->
+    <div class="dl-get">
+      <div class="dl-buttons">
+        <div class="cta">
+          <a class="btn primary" id="dl-mac" href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg">Download for Mac</a>
+          <a class="btn" id="dl-win" href="#windows">Get it for Windows</a>
+        </div>
+        <p class="meta" id="dl-meta">macOS 14 Sonoma or later (Apple silicon or Intel) · Windows 10 and 11 (x64) ·
+          <a href="https://github.com/sunghyun-k/devicesteer/releases/latest">Release notes</a></p>
+      </div>
+
+      <div class="dl-term">
+        <p class="dl-term-lead" id="dl-term-lead">Or install from a terminal, for SSH sessions and agents:</p>
+        <div class="tabs">
+          <input type="radio" name="os" id="tab-mac" checked>
+          <input type="radio" name="os" id="tab-win">
+          <div class="tabs-bar" role="presentation">
+            <label for="tab-mac">macOS</label>
+            <label for="tab-win">Windows</label>
+            <button class="copy" type="button" hidden>Copy</button>
+          </div>
+          <div class="tab-pane" data-pane="mac">
+            <pre class="code" aria-label="macOS install command">curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh</pre>
+            <p class="note">In Terminal. Installs or updates DeviceSteer in Applications and sets up the
+              <code>devicesteer</code> command and the agent skill. <a href="#macos-terminal">Options</a>.</p>
+          </div>
+          <div class="tab-pane" data-pane="win">
+            <pre class="code" aria-label="PowerShell install command">irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</pre>
+            <p class="note">In PowerShell. Installs for your account only, without administrator rights, isn't
+              stopped by SmartScreen, and sets up the <code>devicesteer</code> command and the agent skill.
+              <a href="#windows">Details</a>.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="macos" class="sec" aria-labelledby="mac-title">
+  <div class="wrap dl-grid">
+    <header class="sec-head">
+      <h2 id="mac-title">macOS</h2>
+      <p>macOS 14 Sonoma or later (Apple silicon or Intel). A universal app, signed and notarized by Apple.</p>
+    </header>
+    <div class="dl-body">
+      <h3>Requirements</h3>
+      <ul class="sub">
+        <li>An iPhone or iPad on iOS / iPadOS 27 or later, over USB or Wi-Fi.</li>
+        <li>macOS 14 Sonoma or later (Apple silicon or Intel). The viewer decodes the screen with the system's WebKit, which handles it from macOS 14 on.</li>
+        <li>Nothing else on the Mac: no Xcode, no other software.</li>
+      </ul>
+
+      <h3>Install the app</h3>
+      <ol class="sub">
+        <li><a href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg">Download
+          <code>DeviceSteer_universal.dmg</code></a>, open it and drag DeviceSteer to Applications.</li>
+        <li>Open DeviceSteer. On first launch it offers to set up agents: the <code>devicesteer</code> command
+          (<code>~/.local/bin/devicesteer</code>) and the DeviceSteer skill for the coding agents it finds
+          (Claude Code, Codex and others that read <code>~/.agents/skills</code>, Cursor, GitHub Copilot CLI).
+          Both are links into the app, so they update with it. Change this any time in
+          <em>Settings › Agents</em> (⌘,).</li>
+        <li>If it says <code>~/.local/bin</code> isn't on your PATH, add
+          <code>export PATH="$HOME/.local/bin:$PATH"</code> to your shell profile.</li>
+      </ol>
+      <p class="note">The app keeps itself up to date.</p>
+
+      <h3 id="macos-terminal">Or from a terminal</h3>
+      <pre class="code dl-line" aria-label="macOS install command">curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh</pre>
+      <p>It downloads the latest release, checks it against the release's <code>SHA256SUMS</code> and its
+        code signature, and installs it in <code>/Applications</code> (<code>~/Applications</code> when that
+        isn't writable). An installed copy is updated in place. Then it sets up the command and the skill,
+        as <em>Settings › Agents</em> does, and prints what went where.</p>
+      <p>Options go after <code>sh -s --</code>:</p>
+      <ul class="sub">
+        <li><code>--version 1.0.0</code>: a given release instead of the latest.</li>
+        <li><code>--quit</code>: quit a running DeviceSteer first (otherwise it stops and asks you to).</li>
+        <li><code>--dir &lt;folder&gt;</code>: install somewhere else.</li>
+        <li><code>--no-agents</code>: skip the command and the skill.</li>
+      </ul>
+      <p class="note">Later, <code>devicesteer agents</code> shows what is set up, and
+        <code>devicesteer agents install</code> or <code>uninstall</code> changes it.</p>
+    </div>
+  </div>
+</section>
+
+<section id="windows" class="sec" aria-labelledby="win-title">
+  <div class="wrap dl-grid">
+    <header class="sec-head">
+      <h2 id="win-title">Windows</h2>
+      <p>Windows 10 and 11, x64. Installs for your account only, without administrator rights.</p>
+    </header>
+    <div class="dl-body">
+      <h3>Requirements</h3>
+      <ul class="sub">
+        <li>An iPhone or iPad on iOS / iPadOS 27 or later, over USB or Wi-Fi.</li>
+        <li>For USB: <a href="https://apps.microsoft.com/detail/9NP83LWLPZ9K">Apple Devices</a> from the
+          Microsoft Store (or iTunes), opened once with its license accepted. A device paired over Wi-Fi needs
+          neither.</li>
+      </ul>
+
+      <h3>Install from PowerShell</h3>
+      <pre class="code dl-line" aria-label="PowerShell install command">irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</pre>
+      <p>It downloads the latest installer, checks it against the release's <code>SHA256SUMS</code>,
+        installs it in <code>%LOCALAPPDATA%\DeviceSteer</code> and sets up the <code>devicesteer</code>
+        command and the agent skill, as <em>Settings › Agents</em> does. A given version, or
+        <code>-NoAgents</code> to skip the command and the skill:</p>
+      <pre class="code dl-line" aria-label="PowerShell install command for a given version">&amp; ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -Version 1.0.0</pre>
+
+      <h3>Or run the installer</h3>
+      <p><a id="dl-exe" href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe">Download
+        <code>DeviceSteer_x64-setup.exe</code></a> and run it. DeviceSteer isn't code-signed yet, so:</p>
+      <ul class="sub">
+        <li><strong>SmartScreen</strong> stops an installer a browser downloaded ("Windows protected your PC"):
+          click <em>More info</em>, then <em>Run anyway</em>. The PowerShell install doesn't hit this.</li>
+        <li><strong>Smart App Control</strong> (Windows 11) blocks unsigned apps however they arrive, with no
+          exception for one app. While it is on, DeviceSteer can't be installed.</li>
+      </ul>
+
+      <h3>After installing</h3>
+      <ul class="sub">
+        <li>The <code>devicesteer</code> command is <code>%USERPROFILE%\.local\bin\devicesteer.exe</code>
+          (the PowerShell install sets it up; with the installer, the app offers to on first launch). If
+          <code>%USERPROFILE%\.local\bin</code> isn't on your PATH, add it to your user Path and open a new
+          terminal.</li>
+        <li>Pairing a device over Wi-Fi makes Windows Firewall ask once whether DeviceSteer may accept
+          connections: allow it on private networks.</li>
+      </ul>
+      <p class="note">The app keeps itself up to date. Before uninstalling, turn the items off in
+        <em>Settings › Agents</em>: the uninstaller doesn't remove the links.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec" aria-labelledby="next-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <h2 id="next-title">Next: set up your device</h2>
+      <p>Connect an iPhone or iPad and select it in the app; it walks you through trusting the computer,
+        Developer Mode and the developer tools. Or pair over Wi-Fi without a cable.
+        <a href="/#start">Get started</a>.</p>
+    </header>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <p class="foot-brand"><img src="/icon.svg" alt="" width="20" height="20"><strong>DeviceSteer</strong>
+      <span>Free and open source, MIT. By <a href="https://sunghyunkim.com">Sunghyun Kim</a>.</span></p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/sunghyun-k/devicesteer">GitHub</a>
+      <a href="https://github.com/sunghyun-k/devicesteer/releases">Releases</a>
+      <a href="https://github.com/sunghyun-k/devicesteer/blob/main/crates/cli/src/skill.md">Agent guide</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a href="https://github.com/sunghyun-k/devicesteer/blob/main/LICENSE">License</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+// Windows first for Windows visitors (or ?os=windows; ?os=mac keeps the macOS order), and the
+// Copy button. Windows gets the PowerShell command as the main way: an installer a browser
+// downloads carries the Mark of the Web, and SmartScreen stops it while it is unsigned.
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const asked = new URLSearchParams(location.search).get('os');
+  const platform = navigator.userAgentData?.platform || navigator.platform || '';
+  const windows = asked ? asked === 'windows' : /Win/.test(platform) || /Windows/.test(navigator.userAgent);
+  if (windows) {
+    document.documentElement.dataset.os = 'windows';
+    $('tab-win').checked = true;
+    $('dl-term-lead').textContent = 'Install from PowerShell, for your account only and without administrator rights:';
+    const mac = $('dl-mac'), win = $('dl-win');
+    mac.classList.remove('primary');
+    win.textContent = 'Download the installer (.exe)';
+    win.href = $('dl-exe').href;
+    win.after(mac);
+    $('dl-meta').innerHTML = 'The installer isn’t code-signed yet: SmartScreen may stop it (<em>More info</em>, then <em>Run anyway</em>). <a href="#windows">Details</a>';
+  }
+
+  const copy = document.querySelector('.copy');
+  if (!navigator.clipboard) return;
+  copy.hidden = false;
+  copy.addEventListener('click', async () => {
+    const pane = $('tab-win').checked ? 'win' : 'mac';
+    const text = document.querySelector(`.tab-pane[data-pane="${pane}"] pre`).textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      copy.textContent = 'Copied';
+    } catch {
+      copy.textContent = 'Copy failed';
+    }
+    setTimeout(() => { copy.textContent = 'Copy'; }, 1600);
+  });
+})();
+</script>
+</body>
+</html>

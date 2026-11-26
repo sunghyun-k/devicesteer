@@ -169,6 +169,9 @@ jobs:
             if (-not (Test-Path (Join-Path $dir $f))) { Get-ChildItem -Recurse $dir; throw "the install lacks $f" }
           }
           & (Join-Path $dir 'devicesteer.exe') --version
+          # install.ps1 runs `agents install` from here: the installed CLI must find its app.
+          $agents = & (Join-Path $dir 'devicesteer.exe') agents status | Out-String | ConvertFrom-Json
+          if ($agents.unavailable) { throw "agent setup is unavailable in the installed app: $($agents.unavailable)" }
           # `devices` reads the Wi-Fi pairings; without usbmuxd it may fail, which doesn't matter here.
           & (Join-Path $dir 'devicesteer.exe') devices 2>&1 | Out-Host
           $global:LASTEXITCODE = 0

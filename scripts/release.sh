@@ -50,7 +50,9 @@ for tool in $tools; do
 done
 gh auth status >/dev/null 2>&1 || die "gh isn't signed in: run 'gh auth login'"
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-installer="DeviceSteer_${version}_x64-setup.exe"
+# Asset names carry no version: the homepage links to releases/latest/download/<name>, so they must
+# stay the same from release to release (docs/RELEASING.md).
+installer="DeviceSteer_x64-setup.exe"
 
 if [ "$mac" = 1 ]; then
 
@@ -202,7 +204,7 @@ COPYFILE_DISABLE=1 tar -czf "$archive" -C "$out" DeviceSteer.app
 sign_updater "$archive"
 
 step "Making the disk image"
-dmg="$out/DeviceSteer_${version}_universal.dmg"
+dmg="$out/DeviceSteer_universal.dmg"
 stage="$out/dmg"
 mkdir -p "$stage"
 ditto "$app" "$stage/DeviceSteer.app"
@@ -212,6 +214,12 @@ rm -rf "$stage"
 codesign --sign "$identity" --timestamp "$dmg"
 notarize "$dmg"
 xcrun stapler staple "$dmg"
+
+step "Writing SHA256SUMS"
+# scripts/install.sh checks the app archive against this. The Windows workflow adds its lines to
+# the same file on the draft rather than replacing it.
+cp "$root/scripts/install.sh" "$out/install.sh"
+(cd "$out" && shasum -a 256 "$(basename "$dmg")" "$(basename "$archive")" install.sh > SHA256SUMS && cat SHA256SUMS)
 
 step "Writing latest.json"
 url="https://github.com/$repo/releases/download/$tag/DeviceSteer.app.tar.gz"
@@ -231,7 +239,7 @@ node -e '
 
 step "Creating the draft release $tag"
 gh release create "$tag" --draft --target "$(git rev-parse HEAD)" --title "DeviceSteer $version" --generate-notes \
-  "$dmg" "$archive" "$archive.sig" "$out/latest.json"
+  "$dmg" "$archive" "$archive.sig" "$out/latest.json" "$out/install.sh" "$out/SHA256SUMS"
 
 fi # mac
 

@@ -11,27 +11,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-/// Why the app at a path won't last there.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Reason {
-    /// Under `/Volumes`: a disk image, gone when ejected.
-    DiskImage,
-    /// A Gatekeeper copy under `.../AppTranslocation/`, gone when the app quits.
-    Translocated,
-}
-
-/// Whether the app bundle (or anything inside it) at `path` runs from a place that goes away.
-pub fn temporary(path: &Path) -> Option<Reason> {
-    let s = path.to_string_lossy();
-    if s.contains("/AppTranslocation/") {
-        Some(Reason::Translocated)
-    } else if s.starts_with("/Volumes/") {
-        Some(Reason::DiskImage)
-    } else {
-        None
-    }
-}
+// Shared with agent setup, which refuses the same places.
+pub use devicesteer_agents::{Reason, temporary};
 
 /// The `.app` folder `exe` belongs to, if it runs from one.
 fn bundle_of(exe: &Path) -> Option<PathBuf> {

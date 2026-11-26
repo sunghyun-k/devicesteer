@@ -291,6 +291,18 @@ beyond the task.
 - `devicesteer session finish` as the last command of your reply.
 - Tell the user what you did and anything you left changed.
 
+## Install, update and agent setup
+
+`devicesteer agents` prints whether the command (`~/.local/bin/devicesteer`) and the skill are set
+up for each coding agent; `devicesteer agents install` links them (the command and every agent
+found), and `install <id> --replace` replaces what isn't DeviceSteer's at a path, after the user
+agreed. To install or update the app on macOS, with the user's go-ahead:
+`curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh`
+(`| sh -s -- --quit` quits a running viewer first, which closes the user's view of the device: ask).
+On Windows, in PowerShell:
+`irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex`, which also
+sets up the command and the skill. The app also updates itself.
+
 ## Don't
 
 - Don't approve permission, consent, sign-in or payment prompts on the user's behalf. Hand off.

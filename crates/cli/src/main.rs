@@ -276,6 +276,14 @@ enum Command {
     },
     /// Print the guide for agents that matches this version of DeviceSteer (Markdown).
     Skill,
+    /// Set up this computer for agents, as the app's Settings › Agents does: the `devicesteer`
+    /// command in ~/.local/bin and the DeviceSteer skill in coding agents' skill folders, as links
+    /// into the installed app (so they update with it). Run the CLI inside the installed app.
+    /// Without an action, prints what is set up.
+    Agents {
+        #[command(subcommand)]
+        action: Option<AgentsAction>,
+    },
     /// Screen-sharing media streams on the device.
     Media {
         #[command(flatten)]
@@ -283,6 +291,25 @@ enum Command {
         #[command(subcommand)]
         action: MediaAction,
     },
+}
+
+#[derive(Subcommand)]
+enum AgentsAction {
+    /// What is set up, and which agents were found. Reads only; changes nothing.
+    Status,
+    /// Link the command and the skill. Without ids, the command and the skill for every agent
+    /// found on this computer. Something at a path that isn't DeviceSteer's is left alone and
+    /// listed in `skipped`, unless --replace.
+    Install {
+        /// `cli`, `claude`, `agents` (Codex, Gemini CLI, OpenCode and others), `cursor`, `copilot`.
+        ids: Vec<String>,
+        /// Replace what isn't DeviceSteer's: a link elsewhere is removed, a file or folder is
+        /// moved aside to `<name>.backup-<seconds>`.
+        #[arg(long)]
+        replace: bool,
+    },
+    /// Remove DeviceSteer's links. Without ids, all of them. Leaves anything that isn't ours.
+    Uninstall { ids: Vec<String> },
 }
 
 #[derive(Subcommand)]
@@ -467,6 +494,7 @@ fn run_command(cli: Cli) {
 async fn run(command: Command) -> Result<serde_json::Value> {
     Ok(match command {
         Command::Skill => unreachable!("handled in main"),
+        Command::Agents { action } => agents(action)?,
         Command::Session { target, action } => {
             let client = target.client().await?;
             let args = match action {
@@ -875,3 +903,65 @@ fn plist_to_json(v: &plist::Value) -> serde_json::Value {
     }
 }
 
+/// `devicesteer agents`: agent setup from the CLI, through the same code as the app's Settings ›
+/// Agents (crates/agents).
+fn agents(action: Option<AgentsAction>) -> Result<serde_json::Value> {
+    use devicesteer_agents::{Layout, LinkState, Status};
+    let layout = Layout::current().context("could not find your home folder")?;
+    // The PATH this command runs with; the app checks the login shell's instead.
+    let on_path = std::env::var("PATH").ok().map(|p| layout.bin_dir_in(&p));
+    let status = layout.status(on_path);
+    let items = |st: &Status| std::iter::once(&st.cli).chain(&st.agents).map(|i| (i.id.clone(), i.name.clone(), i.path.clone(), i.detected, i.link.clone())).collect::<Vec<_>>();
+    let known: Vec<_> = devicesteer_agents::ids().collect();
+    let check = |ids: &[String]| -> Result<()> {
+        match ids.iter().find(|id| !known.contains(&id.as_str())) {
+            Some(id) => anyhow::bail!("unknown item `{id}`: use one of {}", known.join(", ")),
+            None => Ok(()),
+        }
+    };
+    match action.unwrap_or(AgentsAction::Status) {
+        AgentsAction::Status => Ok(serde_json::to_value(&status)?),
+        AgentsAction::Install { ids, replace } => {
+            if let Some(reason) = &status.unavailable {
+                anyhow::bail!("{reason} (run the devicesteer inside the installed DeviceSteer.app, for example /Applications/DeviceSteer.app/Contents/MacOS/devicesteer)");
+            }
+            check(&ids)?;
+            let (mut installed, mut skipped, mut notes) = (vec![], vec![], vec![]);
+            for (id, name, path, detected, link) in items(&status) {
+                let wanted = if ids.is_empty() { id == "cli" || detected } else { ids.contains(&id) };
+                if !wanted {
+                    continue;
+                }
+                let already = link == LinkState::Installed;
+                match layout.install(&id, replace) {
+                    Ok(note) => {
+                        installed.push(json!({ "id": id, "name": name, "path": path, "already": already }));
+                        notes.extend(note.map(|n| n.message));
+                    }
+                    Err(error) => skipped.push(json!({ "id": id, "name": name, "path": path, "error": error })),
+                }
+            }
+            let mut v = json!({ "installed": installed, "skipped": skipped, "notes": notes, "on_path": on_path });
+            if !skipped.is_empty() {
+                v["next"] = json!("something that isn't DeviceSteer's is at a skipped path: ask the user, then rerun with --replace and those ids to replace it (it is moved aside, not deleted)");
+            } else if on_path == Some(false) {
+                v["next"] = json!("~/.local/bin isn't on PATH: add `export PATH=\"$HOME/.local/bin:$PATH\"` to the shell profile");
+            }
+            Ok(v)
+        }
+        AgentsAction::Uninstall { ids } => {
+            check(&ids)?;
+            let (mut removed, mut kept) = (vec![], vec![]);
+            for (id, _, path, _, link) in items(&status) {
+                if !(ids.is_empty() && link == LinkState::Installed || ids.contains(&id)) {
+                    continue;
+                }
+                match layout.uninstall(&id) {
+                    Ok(()) => removed.push(json!({ "id": id, "path": path })),
+                    Err(error) => kept.push(json!({ "id": id, "path": path, "error": error })),
+                }
+            }
+            Ok(json!({ "removed": removed, "kept": kept }))
+        }
+    }
+}

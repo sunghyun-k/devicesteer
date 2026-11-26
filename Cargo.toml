@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/daemon", "crates/cli", "app/src-tauri"]
+members = ["crates/core", "crates/daemon", "crates/agents", "crates/cli", "app/src-tauri"]
 
 [workspace.package]
 version = "1.0.0-beta.4"
@@ -44,6 +44,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
 devicesteer-core = { path = "crates/core" }
 devicesteer-daemon = { path = "crates/daemon" }
+devicesteer-agents = { path = "crates/agents" }
 uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 

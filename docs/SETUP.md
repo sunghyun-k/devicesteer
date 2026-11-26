@@ -104,6 +104,37 @@ has one build identity per board, so a device newer than its Xcode needs a newer
 - The download from GitHub (`raw.githubusercontent.com`), once per pin, only when no local copy
   fits. Nothing about the device is sent.
 
+## Installing on macOS from a terminal
+
+DeviceSteer needs macOS 14 Sonoma or later (Apple silicon or Intel); it is tested on macOS 26. The
+app's `LSMinimumSystemVersion` is 14.0 (`bundle.macOS.minimumSystemVersion`), because the viewer
+decodes the screen's HEVC with WebKit's WebCodecs, which works from Safari 17 on (PITFALLS #69).
+`install.sh` stops on an older macOS.
+
+```sh
+curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh
+# options go after `sh -s --`:
+curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh -s -- --version 1.0.0 --quit
+```
+
+`install.sh` (`scripts/install.sh`, attached to every release from the one after 1.0.0-beta.4)
+reads the latest release's tag from the `releases/latest` redirect (no API call), downloads that
+release's `DeviceSteer.app.tar.gz` (the notarized, stapled app the in-app updater installs) and
+`SHA256SUMS`, checks the archive's SHA-256 and the app's code signature, and swaps the app into
+place: next to the destination first, then one rename, so a failure never leaves half an app. The
+destination is where DeviceSteer already is (`/Applications`, then `~/Applications`), else
+`/Applications` when writable, else `~/Applications`, or `--dir`. A running DeviceSteer from that
+copy stops it with a message, unless `--quit` (SIGTERM: an Apple event would ask for Automation
+permission, which an SSH session can't answer). Device daemons of the old version keep running
+until they stop, as after an in-app update. curl adds no quarantine, so Gatekeeper doesn't stop
+the first launch.
+
+Then it runs the new app's `devicesteer agents install` (unless `--no-agents`): the same code as
+Settings › Agents (`crates/agents`), linking the command and the skill for every agent found, and
+skipping anything at those paths that isn't DeviceSteer's. `devicesteer agents` prints the state;
+`agents install <id>... [--replace]` and `agents uninstall [<id>...]` change it. On other systems
+the script prints the Windows command and exits.
+
 ## Windows
 
 Wi-Fi discovery asks Windows' own mDNS responder (the DNS Client service, through
@@ -139,17 +170,27 @@ The recommended way is the PowerShell installer:
 irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex
 # a given version:
 & ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -Version 1.0.0
+# without setting up the command and the skill (also $env:DEVICESTEER_NO_AGENTS = '1' with iex):
+& ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -NoAgents
 ```
 
 `install.ps1` (`scripts/install.ps1`, attached to every release) finds the release through GitHub's
 API, downloads the installer with `curl.exe`, checks its SHA-256 against the release's
 `SHA256SUMS` and runs it silently (`/S`). Files fetched that way carry no Mark of the Web, so
 SmartScreen doesn't stop the unsigned installer. The checksum catches a broken download; it can't
-catch a compromised release, since both files come from the same place.
+catch a compromised release, since both files come from the same place. Then it runs the
+installed `devicesteer.exe agents install` (`crates/agents`, the code behind Settings › Agents):
+the command in `%USERPROFILE%\.local\bin` and the skill for every agent found, skipping anything
+there that isn't DeviceSteer's, and says whether `%USERPROFILE%\.local\bin` is on the user's or
+the system's Path (read from the registry, as a new terminal gets it). Releases whose CLI has no
+`agents` command (up to 1.0.0-beta.4) leave that to the app. The script's text is ASCII only:
+Windows PowerShell may decode `irm` output as Windows-1252.
 
-The installer itself, `DeviceSteer_<version>_x64-setup.exe` on
-[Releases](https://github.com/sunghyun-k/devicesteer/releases/latest), is an NSIS installer for x64
-Windows 10 and 11. It installs for the current user, without administrator rights, into
+The installer itself,
+[`DeviceSteer_x64-setup.exe`](https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe)
+on [Releases](https://github.com/sunghyun-k/devicesteer/releases/latest)
+(`DeviceSteer_<version>_x64-setup.exe` up to 1.0.0-beta.4), is an NSIS installer for x64 Windows 10
+and 11. It installs for the current user, without administrator rights, into
 `%LOCALAPPDATA%\DeviceSteer`: the app (`devicesteer-app.exe`), the CLI (`devicesteer.exe`, which
 also runs the daemons) and the skill (`skills\devicesteer`). Pairing records, the disk image and
 logs are kept apart, in `%LOCALAPPDATA%\com.sunghyunkim.devicesteer`: updates and uninstalling keep

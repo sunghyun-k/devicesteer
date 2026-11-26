@@ -3,8 +3,10 @@
 # --windows` starts it by itself. It builds the commit the draft points at, so the Windows build is
 # the same source as the macOS one.
 #
-# It uploads DeviceSteer_<version>_x64-setup.exe, scripts/install.ps1 (the PowerShell installer,
-# `irm .../releases/latest/download/install.ps1 | iex`) and SHA256SUMS for both. The updater signature and the
+# It uploads the installer as DeviceSteer_x64-setup.exe (no version: the homepage links to
+# releases/latest/download/DeviceSteer_x64-setup.exe), scripts/install.ps1 (the PowerShell installer,
+# `irm .../releases/latest/download/install.ps1 | iex`) and their lines in SHA256SUMS (added to
+# the macOS lines scripts/release.sh put there). The updater signature and the
 # `windows-x86_64` entry in latest.json are made on the release Mac, which alone holds the updater
 # key (docs/RELEASING.md). It never publishes the release and refuses a release that isn't a draft.
 #
@@ -94,7 +96,18 @@ jobs:
           [ "$INSTALLER" = "DeviceSteer_${VERSION}_x64-setup.exe" ] || { echo "::error::unexpected installer name $INSTALLER"; exit 1; }
           # Checked again: someone may have published it while this ran.
           [ "$(gh release view "v$VERSION" --json isDraft -q .isDraft)" = true ] || { echo "::error::v$VERSION was published meanwhile; not uploading"; exit 1; }
+          # Tauri names the installer after the version; the release asset has none, so that
+          # releases/latest/download/DeviceSteer_x64-setup.exe (the homepage's link) always works.
+          asset=DeviceSteer_x64-setup.exe
+          mv "installer/$INSTALLER" "installer/$asset"
           cp src/scripts/install.ps1 installer/install.ps1
-          # install.ps1 checks the installer against this before running it.
-          (cd installer && sha256sum "$INSTALLER" install.ps1 > SHA256SUMS && cat SHA256SUMS)
-          gh release upload "v$VERSION" "installer/$INSTALLER" installer/install.ps1 installer/SHA256SUMS --clobber
+          # install.ps1 checks the installer against this before running it. scripts/release.sh
+          # put the macOS lines (for install.sh) in the draft's SHA256SUMS first: keep them and
+          # replace only ours, from an earlier run.
+          mkdir draft
+          gh release download "v$VERSION" --pattern SHA256SUMS --dir draft 2>/dev/null || true
+          (cd installer && sha256sum "$asset" install.ps1 > ours)
+          { grep -vE "^[0-9a-f]{64} [ *]($asset|install\.ps1)$" draft/SHA256SUMS 2>/dev/null || true; cat installer/ours; } > installer/SHA256SUMS
+          rm installer/ours
+          cat installer/SHA256SUMS
+          gh release upload "v$VERSION" "installer/$asset" installer/install.ps1 installer/SHA256SUMS --clobber

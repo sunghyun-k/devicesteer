@@ -28,5 +28,6 @@ the guide says which steps need the person holding the device.
 
 If `devicesteer` is not found, ask the user to install the DeviceSteer app and turn on the
 command-line tool in its Settings, Agents pane (it links `~/.local/bin/devicesteer`; that folder must be on
-PATH), or, in a checkout of the DeviceSteer repository, build it (`cargo build`, then use
+PATH). On macOS, with the user's go-ahead, you can install it yourself:
+`curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh`. Or, in a checkout of the DeviceSteer repository, build it (`cargo build`, then use
 `target/debug/devicesteer`).
