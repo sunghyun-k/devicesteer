@@ -165,6 +165,10 @@ screens, about four times larger); you don't need it to read the screen.
   for the lock screen and notifications, `control_center`, `app_switcher`, `permission_alert`).
   No `surface` means `ui` didn't recognise the screen, not that an app is open: check `apps`
   (a locked device may list SpringBoard with no elements at all).
+- A reading with no elements may carry a `note` saying why (the tree still loading, or the device
+  listing an empty app over the screen): do what it says, and fall back to a screenshot.
+- When the device lists only an empty Siri over the screen (seen on a folded foldable), `ui` ends
+  that Siri process and reads again; its `note` says when it did.
 - Widgets (home and lock screen) are listed with their text but **no frame**: their positions
   aren't known, so tap them at the point a screenshot shows.
 - Refs (`@e12`) are valid **until the next `ui`**. Read again after anything that changes the screen.
@@ -192,6 +196,11 @@ never turn points yourself.
 - A foldable iPhone uses its inner panel when unfolded and its cover panel when folded, each with
   its own size. Folding or unfolding is like a turn: the daemon follows within about half a second,
   and **you read the screen again** before the next input.
+- On a foldable's inner panel, an app made for a smaller iPhone is drawn scaled in a window with
+  black margins (compatibility mode). `ui` lists that app with its `window` (where it is drawn, in
+  screen points) and places its frames in it, so refs, labels and frames still work as anywhere
+  else. Finding the window takes a screenshot, which makes such a reading about 2 s slower (more over
+  Wi-Fi) once every 30 s.
 - `devicesteer display` shows the current `rotation` and `orientation` without reading the screen.
 
 ## Input

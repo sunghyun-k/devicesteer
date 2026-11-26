@@ -3,7 +3,7 @@
 //! The walk (depth-first from each application in the device's child order, visible children
 //! first) follows iphone-cli `src/ax/tree.rs`, MIT, see THIRD_PARTY_NOTICES.md.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     apps::{ProcName, SPRINGBOARD, draws_in_springboard},
@@ -16,6 +16,7 @@ use super::{
     archive::Ka,
     attrs::{self, traits},
     dump::{Dump, ObjKey, RawElement},
+    window,
 };
 
 /// A rectangle in screen points.
@@ -142,12 +143,18 @@ pub struct AppInfo {
     /// (PITFALLS #21); a widget's elements are listed without a frame (PITFALLS #62).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hosted: bool,
+    /// Where an app made for a smaller screen is drawn, scaled, on a foldable's inner panel
+    /// (compatibility mode). Its elements' frames are already placed in it (PITFALLS #70).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<Rect>,
 }
 
 /// One reading of the screen.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Screen {
-    /// Screen size in points, from the application frames.
+    /// Screen size in points as the user sees it, from the display. Application frames don't
+    /// always give it: SpringBoard's on a foldable's inner panel is the cover panel's size, and an
+    /// app in compatibility mode has its own (PITFALLS #70).
     pub width: f64,
     pub height: f64,
     pub apps: Vec<AppInfo>,
@@ -157,6 +164,10 @@ pub struct Screen {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<String>,
     pub elements: Vec<Element>,
+    /// Why the reading has no elements, when the device listed only an app with nothing in it
+    /// (PITFALLS #71).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// An element on screen offers the home screen's edit mode (`_accessibilityToggleJigglyMode`),
     /// as the home screen's icons do (PITFALLS #62).
     #[serde(skip)]
@@ -167,6 +178,53 @@ pub struct Screen {
 pub struct BuildOptions {
     /// Keep containers with nothing to read, and elements outside the screen.
     pub all: bool,
+}
+
+/// How a dump's frames map onto the screen as the user sees it.
+#[derive(Debug, Clone, Default)]
+pub struct Geometry {
+    /// The screen's size in points ([`Display::size`]).
+    ///
+    /// [`Display::size`]: crate::Display::size
+    pub screen: (f64, f64),
+    /// The turn of the space apps' frames come in: the touchscreen's (PITFALLS #61).
+    pub turn: Rotation,
+    /// The turn of SpringBoard's frames ([`Display::system_frame_turn`]), for the processes in
+    /// `system`.
+    ///
+    /// [`Display::system_frame_turn`]: crate::Display::system_frame_turn
+    pub system_turn: Rotation,
+    /// SpringBoard and the processes that draw in it, by pid.
+    pub system: HashSet<i64>,
+    /// Apps drawn in a window of their own, by pid: where the window is on the screen
+    /// ([`window::find`]). Their frames are in their own points (PITFALLS #70).
+    pub windows: HashMap<i64, Rect>,
+}
+
+/// How one application's frames, and those of the elements under it, reach the screen.
+#[derive(Debug, Clone, Copy)]
+enum Placement {
+    /// Turned by this, over the whole screen.
+    Turned(Rotation),
+    /// Scaled from an app of this size into a window.
+    Window { app: (f64, f64), window: Rect },
+}
+
+impl Placement {
+    fn apply(&self, f: &Rect, screen: (f64, f64)) -> Rect {
+        match self {
+            Self::Turned(t) => f.unturn(*t, screen),
+            Self::Window { app, window } => window::place(f, *app, window),
+        }
+    }
+
+    /// The part of the screen the application's elements show in.
+    fn bounds(&self, (w, h): (f64, f64)) -> Rect {
+        match self {
+            Self::Turned(_) => Rect { x: 0.0, y: 0.0, w, h },
+            Self::Window { window, .. } => *window,
+        }
+    }
 }
 
 pub(crate) fn value_text(v: Option<&Ka>) -> Option<String> {
@@ -235,43 +293,61 @@ fn children_of(raw: &RawElement, all: bool) -> Vec<ObjKey> {
 }
 
 impl Screen {
+    /// The application frames in a dump, by pid: an app in compatibility mode has its own size
+    /// there (PITFALLS #70).
+    pub(crate) fn app_frames(dump: &Dump) -> Vec<(i64, Rect)> {
+        dump.applications.iter().filter_map(|k| Some((k.pid, dump.elements.get(k).and_then(frame_of)?))).collect()
+    }
+
     /// The elements of a dump, in screen points.
     ///
-    /// `touch_rotation` is how the touchscreen is turned from the panel ([`Display`]'s
-    /// `touch_rotation`). The application frames are screen points, but the elements' frames come
-    /// turned by it as well: on an iPad in landscape they are portrait (PITFALLS #61). Phones and
-    /// foldables have `rot0` there.
-    ///
-    /// [`Display`]: crate::Display
-    pub fn build(dump: &Dump, opts: BuildOptions, touch_rotation: Rotation) -> Screen {
-        let mut screen = Screen::default();
-        // The screen is as large as the largest application frame.
-        for key in &dump.applications {
-            if let Some(f) = dump.elements.get(key).and_then(frame_of) {
-                screen.width = screen.width.max(f.x + f.w);
-                screen.height = screen.height.max(f.y + f.h);
+    /// Frames come in several spaces: apps' turned like the touchscreen (on an iPad in landscape
+    /// they are portrait, PITFALLS #61), SpringBoard's on a foldable also not turned with the
+    /// interface, and those of an app in compatibility mode in its own smaller screen
+    /// (PITFALLS #70). Each element is placed as the application it was reached from.
+    pub fn build(dump: &Dump, opts: BuildOptions, geometry: &Geometry) -> Screen {
+        let mut screen = Screen { width: geometry.screen.0, height: geometry.screen.1, ..Screen::default() };
+        let size = geometry.screen;
+        let placement = |pid: i64| -> Placement {
+            if let Some(window) = geometry.windows.get(&pid) {
+                let app = dump
+                    .applications
+                    .iter()
+                    .find(|k| k.pid == pid)
+                    .and_then(|k| dump.elements.get(k))
+                    .and_then(frame_of)
+                    .map(|f| (f.w, f.h));
+                if let Some(app) = app {
+                    return Placement::Window { app, window: *window };
+                }
             }
-        }
-        let bounds = Rect { x: 0.0, y: 0.0, w: screen.width, h: screen.height };
+            Placement::Turned(if geometry.system.contains(&pid) { geometry.system_turn } else { geometry.turn })
+        };
 
         let mut seen: HashSet<ObjKey> = HashSet::new();
         // SpringBoard listed the battery in Control Center twice, same label, value and frame.
         let mut printed: HashSet<String> = HashSet::new();
-        let mut stack: Vec<ObjKey> = dump.applications.iter().rev().copied().collect();
-        while let Some(key) = stack.pop() {
+        let mut stack: Vec<(ObjKey, Placement)> =
+            dump.applications.iter().rev().map(|k| (*k, placement(k.pid))).collect();
+        while let Some((key, place)) = stack.pop() {
             if !seen.insert(key) {
                 continue;
             }
             let Some(raw) = dump.elements.get(&key) else { continue };
             for child in children_of(raw, opts.all).into_iter().rev() {
-                stack.push(child);
+                stack.push((child, place));
             }
             let label = text(raw.attrs.get(&attrs::LABEL)).or_else(|| text(raw.attrs.get(&attrs::LABEL_PLAIN)));
             if raw.is_application {
-                screen.apps.push(AppInfo { pid: key.pid, name: label, bundle_id: None, system: false, hosted: false });
+                let window = match place {
+                    Placement::Window { window, .. } => Some(window),
+                    Placement::Turned(_) => None,
+                };
+                screen.apps.push(AppInfo { pid: key.pid, name: label, bundle_id: None, system: false, hosted: false, window });
                 continue;
             }
-            let frame = frame_of(raw).map(|f| f.unturn(touch_rotation, (screen.width, screen.height)));
+            let frame = frame_of(raw).map(|f| place.apply(&f, size));
+            let bounds = place.bounds(size);
             let on_screen = match frame {
                 Some(f) if bounds.w > 0.0 => f.w > 0.0 && f.h > 0.0 && f.intersects(&bounds),
                 Some(f) => f.w > 0.0 && f.h > 0.0,
@@ -325,7 +401,7 @@ impl Screen {
         }
         for pid in hosted {
             let p = describe(pid);
-            self.apps.push(AppInfo { pid, name: p.name, bundle_id: p.bundle_id, system: false, hosted: true });
+            self.apps.push(AppInfo { pid, name: p.name, bundle_id: p.bundle_id, system: false, hosted: true, window: None });
         }
         for app in &mut self.apps {
             app.system = app.bundle_id.as_deref() == Some(SPRINGBOARD);
@@ -342,6 +418,26 @@ impl Screen {
             e.frame = None;
         }
         self.surface = self.system_surface().map(str::to_string);
+        self.note = self.empty_note();
+    }
+
+    /// What to tell the reader when the device listed apps but no element: right after a launch the
+    /// tree can be empty for a moment (PITFALLS #10), and on a foldable's cover panel the device
+    /// listed only Siri AI, empty, over the app the screen showed, reading after reading
+    /// (PITFALLS #71). Set by [`Screen::name_processes`].
+    fn empty_note(&self) -> Option<String> {
+        let apps: Vec<&AppInfo> = self.apps.iter().filter(|a| !a.hosted).collect();
+        if !self.elements.is_empty() || apps.is_empty() || apps.iter().any(|a| a.system) {
+            return None;
+        }
+        let names: Vec<String> =
+            apps.iter().map(|a| a.name.clone().unwrap_or_else(|| format!("pid {}", a.pid))).collect();
+        Some(format!(
+            "the device listed only {} and no element in it. Right after a launch, read again. If a screenshot \
+             shows another app (seen: Siri AI over the app on a foldable's cover panel), its elements can't be \
+             read: tap points from the screenshot",
+            names.join(", ")
+        ))
     }
 
     /// True when SpringBoard is the only app (not counting hosted processes).
@@ -525,7 +621,7 @@ mod tests {
             Element { identifier: Some("Page control".into()), pid: 37, ..el(1, "adjustable", "x") },
             Element { pid: 163, ..el(2, "key", "q") },
         ]);
-        s.apps = vec![AppInfo { pid: 37, name: None, bundle_id: None, system: false, hosted: false }];
+        s.apps = vec![AppInfo { pid: 37, name: None, bundle_id: None, system: false, hosted: false, window: None }];
         s.name_processes(|pid| match pid {
             37 => ProcName { name: Some("SpringBoard".into()), bundle_id: Some(SPRINGBOARD.into()) },
             _ => ProcName { name: Some("InputUI".into()), bundle_id: Some("com.apple.InputUI".into()) },
@@ -537,7 +633,7 @@ mod tests {
 
         // An app on screen: no system surface.
         let mut s = screen(vec![Element { identifier: Some("Page control".into()), pid: 805, ..el(1, "adjustable", "x") }]);
-        s.apps = vec![AppInfo { pid: 805, name: Some("Settings".into()), bundle_id: None, system: false, hosted: false }];
+        s.apps = vec![AppInfo { pid: 805, name: Some("Settings".into()), bundle_id: None, system: false, hosted: false, window: None }];
         s.name_processes(|_| ProcName { name: Some("Preferences".into()), bundle_id: Some("com.apple.Preferences".into()) });
         assert_eq!(s.apps[0].name.as_deref(), Some("Settings"));
         assert_eq!(s.surface, None);
@@ -587,7 +683,7 @@ mod tests {
             order: elements.keys().copied().collect(),
             elements,
         };
-        let mut s = Screen::build(&dump, BuildOptions::default(), Rotation::R0);
+        let mut s = Screen::build(&dump, BuildOptions::default(), &geo((1032.0, 1376.0), Rotation::R0));
         s.name_processes(|pid| match pid {
             40 => ProcName { name: Some("SpringBoard".into()), bundle_id: Some(SPRINGBOARD.into()) },
             _ => ProcName {
@@ -645,7 +741,7 @@ mod tests {
             order: elements.keys().copied().collect(),
             elements,
         };
-        let mut s = Screen::build(&dump, BuildOptions::default(), Rotation::R270);
+        let mut s = Screen::build(&dump, BuildOptions::default(), &geo((1376.0, 1032.0), Rotation::R270));
         s.name_processes(|pid| match pid {
             38 => ProcName { name: Some("SpringBoard".into()), bundle_id: Some(SPRINGBOARD.into()) },
             _ => ProcName {
@@ -671,9 +767,109 @@ mod tests {
         for k in [key(sb, 2), key(sb, 3), key(sb, 4)] {
             plain.elements.get_mut(&k).unwrap().attrs.remove(&attrs::CUSTOM_ACTIONS);
         }
-        let mut s = Screen::build(&plain, BuildOptions::default(), Rotation::R270);
+        let mut s = Screen::build(&plain, BuildOptions::default(), &geo((1376.0, 1032.0), Rotation::R270));
         s.name_processes(|_| ProcName { name: None, bundle_id: Some(SPRINGBOARD.into()) });
         assert_eq!(s.surface, None);
+    }
+
+    fn geo(screen: (f64, f64), turn: Rotation) -> Geometry {
+        Geometry { screen, turn, system_turn: turn, ..Default::default() }
+    }
+
+    #[test]
+    fn foldable_springboard_frames_are_turned_and_the_screen_comes_from_the_display() {
+        // A foldable's inner panel (669x951 points) held upside down, home screen (iOS 27.3):
+        // SpringBoard's application frame was the cover panel's 466x678, and its elements' frames
+        // were in the panel's own orientation, the dock's first icon at {{416.3, 35}, {64, 64}}
+        // while the screenshot showed it at the bottom left (PITFALLS #70). Labels made up.
+        let sb = 853;
+        let key = |object_id: u64| ObjKey { pid: sb, object_id };
+        let mut elements = std::collections::HashMap::new();
+        elements.insert(key(1), raw(true, "{{0, 0}, {466, 678}}", Some(" "), None, &[key(2), key(3), key(4)]));
+        elements.insert(key(2), raw(false, "{{416.33333333333337, 35}, {64, 64}}", Some("Phone"), None, &[]));
+        elements.insert(key(3), raw(false, "{{188.33333333333337, 35}, {64, 64}}", Some("Music"), None, &[]));
+        let mut dots = raw(false, "{{298, 136}, {73, 35.3}}", None, None, &[]);
+        dots.attrs.insert(attrs::TRAITS, Ka::UInt(traits::ADJUSTABLE));
+        dots.attrs.insert(attrs::VALUE, Ka::Str("page 1 of 3".into()));
+        elements.insert(key(4), dots);
+        let dump = Dump {
+            kind: super::super::dump::DumpKind::Initial,
+            applications: vec![key(1)],
+            order: elements.keys().copied().collect(),
+            elements,
+        };
+        let geometry = Geometry {
+            screen: (669.0, 951.0),
+            turn: Rotation::R0,
+            system_turn: Rotation::R180,
+            system: HashSet::from([sb]),
+            windows: HashMap::new(),
+        };
+        let s = Screen::build(&dump, BuildOptions::default(), &geometry);
+        assert_eq!((s.width, s.height), (669.0, 951.0));
+        let frame = |label: &str| s.elements.iter().find(|e| e.label.as_deref() == Some(label)).unwrap().frame.unwrap();
+        // Where the screenshot showed them: Phone at the dock's left end, about (220, 883).
+        assert_eq!(frame("Phone"), Rect { x: 188.7, y: 852.0, w: 64.0, h: 64.0 });
+        assert_eq!(frame("Music"), Rect { x: 416.7, y: 852.0, w: 64.0, h: 64.0 });
+        let dots = s.elements.iter().find(|e| e.role == "adjustable").unwrap().frame.unwrap();
+        assert_eq!(dots, Rect { x: 298.0, y: 779.7, w: 73.0, h: 35.3 });
+    }
+
+    #[test]
+    fn a_compat_app_is_placed_in_its_window() {
+        // An app made for a 375x667 screen on a foldable's inner panel (iOS 27.3), drawn from
+        // x 46.3 at 1.426 times its size (PITFALLS #70). Frames as seen; labels made up.
+        let app = 18695;
+        let key = |object_id: u64| ObjKey { pid: app, object_id };
+        let mut elements = std::collections::HashMap::new();
+        elements.insert(key(1), raw(true, "{{0, 0}, {375, 667}}", Some("app"), None, &[key(2), key(3), key(4)]));
+        elements.insert(key(2), raw(false, "{{20, 522.33335113525391}, {45, 24}}", Some("Likes"), None, &[]));
+        elements.insert(key(3), raw(false, "{{20, 310.00000762939447}, {335, 40}}", Some("More"), None, &[]));
+        // Scrolled off the app's screen: not on screen either.
+        elements.insert(key(4), raw(false, "{{20, 700}, {335, 40}}", Some("Below"), None, &[]));
+        let dump = Dump {
+            kind: super::super::dump::DumpKind::Initial,
+            applications: vec![key(1)],
+            order: elements.keys().copied().collect(),
+            elements,
+        };
+        let window = Rect { x: 46.33, y: 0.0, w: 534.67, h: 951.0 };
+        let geometry = Geometry {
+            screen: (669.0, 951.0),
+            turn: Rotation::R0,
+            system_turn: Rotation::R180,
+            system: HashSet::new(),
+            windows: HashMap::from([(app, window)]),
+        };
+        let s = Screen::build(&dump, BuildOptions::default(), &geometry);
+        assert_eq!((s.width, s.height), (669.0, 951.0));
+        assert_eq!(s.apps[0].window, Some(window));
+        let frame = |label: &str| s.elements.iter().find(|e| e.label.as_deref() == Some(label)).map(|e| e.frame.unwrap());
+        // The screenshot showed the button from about (75, 459) to (550, 498).
+        assert_eq!(frame("More"), Some(Rect { x: 74.8, y: 442.0, w: 477.6, h: 57.0 }));
+        assert_eq!(frame("Likes"), Some(Rect { x: 74.8, y: 744.7, w: 64.2, h: 34.2 }));
+        assert_eq!(frame("Below"), None);
+        let tap = s.tap_point(s.find("Likes").unwrap()).unwrap();
+        assert!((tap.0 - 106.9).abs() < 0.1 && (tap.1 - 761.8).abs() < 0.1, "{tap:?}");
+    }
+
+    #[test]
+    fn an_empty_app_alone_gets_a_note() {
+        // Seen on a foldable's cover panel (iOS 27.3): only Siri AI, no element (PITFALLS #71).
+        let mut s = screen(vec![]);
+        s.apps = vec![AppInfo { pid: 11, name: Some("Siri AI".into()), bundle_id: None, system: false, hosted: false, window: None }];
+        s.name_processes(|_| ProcName::default());
+        assert!(s.note.as_deref().is_some_and(|n| n.contains("only Siri AI")), "{:?}", s.note);
+        // A locked SpringBoard with no element is a system screen, not this (PITFALLS #60).
+        let mut s = screen(vec![]);
+        s.apps = vec![AppInfo { pid: 37, name: None, bundle_id: None, system: false, hosted: false, window: None }];
+        s.name_processes(|_| ProcName { name: Some("SpringBoard".into()), bundle_id: Some(SPRINGBOARD.into()) });
+        assert_eq!(s.note, None);
+        // Elements: no note.
+        let mut s = screen(vec![el(1, "button", "OK")]);
+        s.apps = vec![AppInfo { pid: 1, name: Some("App".into()), bundle_id: None, system: false, hosted: false, window: None }];
+        s.name_processes(|_| ProcName::default());
+        assert_eq!(s.note, None);
     }
 
     #[test]

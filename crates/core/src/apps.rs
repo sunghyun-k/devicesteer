@@ -86,11 +86,40 @@ fn unlisted(dir: &str) -> Option<(&'static str, &'static str)> {
     UNLISTED.iter().find(|(f, _, _)| *f == folder).map(|(_, n, id)| (*n, *id))
 }
 
-/// `file:///private/var/x/` and `/var/x` are the same place.
+/// `file:///private/var/x/` and `/var/x` are the same place. A `file://` URL escapes spaces and
+/// other bytes (`/Applications/Siri%20AI.app`), which `ui` showed as the app's name (PITFALLS #71).
 fn normalize(path: &str) -> String {
-    let p = path.strip_prefix("file://").unwrap_or(path);
+    let decoded;
+    let p = match path.strip_prefix("file://") {
+        Some(url) => {
+            decoded = percent_decode(url);
+            decoded.as_str()
+        }
+        None => path,
+    };
     let p = p.strip_prefix("/private").filter(|r| r.starts_with('/')).unwrap_or(p);
     p.trim_end_matches('/').to_string()
+}
+
+/// `%XX` escapes turned back into bytes; a malformed escape is kept as it is.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = |c: u8| (c as char).to_digit(16);
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2]))
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The innermost bundle folder (`.app`, `.appex`, `.xpc`) on an executable's path.
@@ -124,6 +153,15 @@ mod tests {
         assert!(!draws_in_springboard(Some(SPRINGBOARD)));
         assert!(!is_system_ui(Some("com.apple.Preferences")));
         assert!(!is_system_ui(None));
+    }
+
+    #[test]
+    fn file_urls_are_unescaped() {
+        let d = dir();
+        let p = d.describe("file:///Applications/Siri%20AI.app/Siri%20AI");
+        assert_eq!(p.name.as_deref(), Some("Siri AI"));
+        assert_eq!(percent_decode("a%2"), "a%2");
+        assert_eq!(percent_decode("%ED%95%9C"), "한");
     }
 
     #[test]

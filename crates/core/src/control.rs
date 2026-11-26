@@ -2,7 +2,10 @@
 //! carries the live screen), and the HID connection. The CLI uses it for one command; the daemon
 //! keeps it open.
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use serde::Serialize;
@@ -10,7 +13,7 @@ use serde::Serialize;
 use crate::{
     Session,
     apps::{AppDirectory, ProcName},
-    ax::{AxClient, AxUnresponsive, BuildOptions, Dump, Screen},
+    ax::{AxClient, AxUnresponsive, BuildOptions, Dump, Geometry, Rect, Screen},
     display::Display,
     input::{Button, Input, Motion, TAP_HOLD, TouchPhase},
     keyboard::Stroke,
@@ -51,7 +54,23 @@ pub struct Controller {
     want_keyboard: bool,
     /// How `type` typed each script in an app (by pid), so later calls skip the probe.
     pub(crate) typing_ways: HashMap<(i64, crate::KeyboardLanguage), crate::typing::Way>,
+    /// Where apps in compatibility mode were found drawn, so `ui` doesn't take a screenshot
+    /// every time (PITFALLS #70).
+    windows: HashMap<WindowKey, (Rect, Instant)>,
+    /// Siri processes ended because they hid the screen (PITFALLS #71).
+    siri_ended: crate::ax::Cooldown,
 }
+
+/// An app in compatibility mode on one screen: its pid, its own size and the screen's, in
+/// hundredths of a point.
+type WindowKey = (i64, (i64, i64), (i64, i64));
+
+/// How long a found window is reused. It moves only when the person resizes it, but then taps
+/// would miss until this runs out.
+const WINDOW_REUSE: Duration = Duration::from_secs(30);
+
+/// A pause after ending Siri before reading again, for the device to drop it (PITFALLS #71).
+const SIRI_SETTLE: Duration = Duration::from_millis(300);
 
 /// Longest wait for one accessibility reading.
 const AX_TIMEOUT: Duration = Duration::from_secs(15);
@@ -77,6 +96,8 @@ impl Controller {
             apps_refreshed: false,
             want_keyboard: false,
             typing_ways: HashMap::new(),
+            windows: HashMap::new(),
+            siri_ended: Default::default(),
         }
     }
 
@@ -286,8 +307,29 @@ impl Controller {
             Err(e) if e.is::<AxUnresponsive>() => self.restart_axauditd(full).await?,
             r => r?,
         };
-        let pids: Vec<i64> = dump.elements.keys().map(|k| k.pid).collect();
+        let mut pids: Vec<i64> = dump.elements.keys().map(|k| k.pid).collect();
         self.learn_processes(&pids).await;
+        // Folded, the device listed only Siri, empty, over the screen; ending it brought the
+        // tree back with no visible change (PITFALLS #71). Once per call, and not the same pid
+        // again within the cooldown.
+        let mut ended_siri = None;
+        if let Some(pid) = crate::ax::lone_empty_siri(&dump, |p| self.describe(p).bundle_id)
+            && self.siri_ended.allows(pid, Instant::now())
+        {
+            self.siri_ended.record(pid, Instant::now());
+            tracing::warn!("ui: only an empty Siri (pid {pid}) is listed over the screen; ending it and reading again");
+            match self.session.kill(pid).await {
+                Ok(()) => {
+                    ended_siri = Some(pid);
+                    tokio::time::sleep(SIRI_SETTLE).await;
+                    dump = self.read_ax(AX_TIMEOUT, full, true).await?;
+                    pids = dump.elements.keys().map(|k| k.pid).collect();
+                    self.learn_processes(&pids).await;
+                    tracing::warn!("ui: after ending Siri (pid {pid}), {} elements", dump.elements.len());
+                }
+                Err(e) => tracing::warn!("ui: could not end Siri (pid {pid}): {e:#}"),
+            }
+        }
         // Widget renderers come as applications of their own on the home and lock screens
         // (PITFALLS #60).
         let springboard_only = !dump.applications.is_empty()
@@ -300,15 +342,92 @@ impl Controller {
             }
         }
         let names: HashMap<i64, ProcName> = pids.iter().map(|&p| (p, self.describe(p))).collect();
-        let touch_rotation = self.display().await?.touch_rotation;
+        let display = self.display().await?;
+        let system: HashSet<i64> = names
+            .iter()
+            .filter(|(_, n)| crate::apps::is_system_ui(n.bundle_id.as_deref()))
+            .map(|(&pid, _)| pid)
+            .collect();
+        let windows = self.compat_windows(&dump, &display, &system).await;
+        let geometry = Geometry {
+            screen: display.size(),
+            turn: display.touch_rotation,
+            system_turn: display.system_frame_turn(),
+            system,
+            windows,
+        };
         let screen = tokio::task::spawn_blocking(move || {
-            let mut screen = Screen::build(&dump, opts, touch_rotation);
+            let mut screen = Screen::build(&dump, opts, &geometry);
             screen.name_processes(|pid| names.get(&pid).cloned().unwrap_or_default());
             screen
         })
         .await?;
+        let mut screen = screen;
+        if let Some(pid) = ended_siri {
+            let done = format!(
+                "ended the empty Siri overlay (pid {pid}) that hid the screen from the accessibility service, and read again"
+            );
+            screen.note = Some(match screen.note.take() {
+                Some(n) => format!("{done}; {n}"),
+                None => done,
+            });
+        }
         self.last_screen = Some(screen.clone());
         Ok(screen)
+    }
+
+    /// Where each app in compatibility mode is drawn: on a foldable's inner panel, an app made for
+    /// a smaller iPhone has an application frame of its own size, and the window it is scaled into
+    /// is found in a screenshot (PITFALLS #70). An app whose window isn't found is left out, and its
+    /// frames stay its own points.
+    async fn compat_windows(&mut self, dump: &Dump, display: &Display, system: &HashSet<i64>) -> HashMap<i64, Rect> {
+        let screen = display.size();
+        let near = |a: f64, b: f64| (a - b).abs() < 1.0;
+        // Only seen on a foldable; an iPad's windows in Split View or Stage Manager have frames of
+        // their own size too, but in screen points as far as is known.
+        let compat: Vec<(i64, (f64, f64))> = if display.foldable {
+            Screen::app_frames(dump)
+                .into_iter()
+                .filter(|(pid, f)| !system.contains(pid) && !(near(f.w, screen.0) && near(f.h, screen.1)))
+                .filter(|(_, f)| f.w > 0.0 && f.h > 0.0)
+                .map(|(pid, f)| (pid, (f.w, f.h)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let hundredths = |(a, b): (f64, f64)| ((a * 100.0).round() as i64, (b * 100.0).round() as i64);
+        let mut out = HashMap::new();
+        let mut image: Option<(usize, usize, Vec<u8>)> = None;
+        self.windows.retain(|_, (_, at)| at.elapsed() < WINDOW_REUSE);
+        for (pid, app) in compat {
+            let key = (pid, hundredths(app), hundredths(screen));
+            if let Some((w, _)) = self.windows.get(&key) {
+                out.insert(pid, *w);
+                continue;
+            }
+            if image.is_none() {
+                let shot = async {
+                    let shot = self.session.screenshot(display.capture_id(), true).await?;
+                    tokio::task::spawn_blocking(move || crate::screenshot::rgb8(&shot.png)).await?
+                };
+                match shot.await {
+                    Ok(i) => image = Some(i),
+                    Err(e) => {
+                        tracing::warn!("ui: no screenshot to find an app's window: {e:#}");
+                        break;
+                    }
+                }
+            }
+            let (w, h, rgb) = image.as_ref().expect("taken above");
+            match crate::ax::find_window(&crate::ax::Image { width: *w, height: *h, rgb }, screen, app) {
+                Some(found) => {
+                    self.windows.insert(key, (found, Instant::now()));
+                    out.insert(pid, found);
+                }
+                None => tracing::warn!("ui: the window of an app of {app:?} points was not found on the screenshot"),
+            }
+        }
+        out
     }
 
     async fn read_ax(&mut self, timeout: Duration, full: bool, changed: bool) -> Result<std::sync::Arc<Dump>> {
