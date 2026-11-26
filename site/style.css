@@ -103,6 +103,15 @@ ul { margin: 0; }
 .top-links a { color: var(--mute); text-decoration: none; }
 .top-links a:hover { color: var(--fg); }
 .top .btn { margin-left: auto; }
+/* "Beta" beside the brand and on the download page: the product is in beta; no version number,
+   which would go stale. */
+.badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px;
+  font: 600 12px/1 var(--sans); letter-spacing: 0.02em; color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); }
+.top .badge { margin-left: -26px; }
+.dl-beta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: var(--t-sm); color: var(--mute);
+  margin-bottom: 20px; }
 @media (max-width: 760px) { .top-links { display: none; } }
 
 /* hero: the headline beside the lede and buttons, then the viewer across the page */

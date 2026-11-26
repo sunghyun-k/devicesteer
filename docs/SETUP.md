@@ -106,6 +106,9 @@ has one build identity per board, so a device newer than its Xcode needs a newer
 
 ## Installing on macOS from a terminal
 
+DeviceSteer is tested on macOS 26 and later. Nothing refuses an older version (the app sets no
+minimum system version); `install.sh` warns and continues.
+
 ```sh
 curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh
 # options go after `sh -s --`:
@@ -165,13 +168,21 @@ The recommended way is the PowerShell installer:
 irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex
 # a given version:
 & ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -Version 1.0.0
+# without setting up the command and the skill (also $env:DEVICESTEER_NO_AGENTS = '1' with iex):
+& ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -NoAgents
 ```
 
 `install.ps1` (`scripts/install.ps1`, attached to every release) finds the release through GitHub's
 API, downloads the installer with `curl.exe`, checks its SHA-256 against the release's
 `SHA256SUMS` and runs it silently (`/S`). Files fetched that way carry no Mark of the Web, so
 SmartScreen doesn't stop the unsigned installer. The checksum catches a broken download; it can't
-catch a compromised release, since both files come from the same place.
+catch a compromised release, since both files come from the same place. Then it runs the
+installed `devicesteer.exe agents install` (`crates/agents`, the code behind Settings › Agents):
+the command in `%USERPROFILE%\.local\bin` and the skill for every agent found, skipping anything
+there that isn't DeviceSteer's, and says whether `%USERPROFILE%\.local\bin` is on the user's or
+the system's Path (read from the registry, as a new terminal gets it). Releases whose CLI has no
+`agents` command (up to 1.0.0-beta.4) leave that to the app. The script's text is ASCII only:
+Windows PowerShell may decode `irm` output as Windows-1252.
 
 The installer itself,
 [`DeviceSteer_x64-setup.exe`](https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe)

@@ -6,6 +6,10 @@
 #
 #   & ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -Version 1.0.0
 #
+# -NoAgents (also $env:DEVICESTEER_NO_AGENTS = '1') skips setting up the devicesteer command and the
+# agent skill, which it otherwise does after installing, through the installed CLI's
+# `devicesteer agents install` (the same code as the app's Settings > Agents).
+#
 # It downloads DeviceSteer_x64-setup.exe and the release's SHA256SUMS, checks the
 # installer against it, and runs the installer silently for the current user (no administrator
 # rights). Why a script and not only the installer: a file a browser downloads carries the Mark of
@@ -18,7 +22,9 @@
 [CmdletBinding()]
 param(
     # Version to install, like 1.0.0; the latest release when empty.
-    [string]$Version = $env:DEVICESTEER_VERSION
+    [string]$Version = $env:DEVICESTEER_VERSION,
+    # Don't set up the devicesteer command and the agent skill (the app's Settings > Agents can).
+    [switch]$NoAgents = ($env:DEVICESTEER_NO_AGENTS -eq '1')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,5 +105,57 @@ try {
     Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "DeviceSteer $Version is installed. Open it from the Start menu; it offers to set up the devicesteer command and the agent skill." -ForegroundColor Green
+# Where the installer puts a per-user install (bundle.windows.nsis.installMode currentUser).
+$installDir = Join-Path $env:LOCALAPPDATA 'DeviceSteer'
+$cli = Join-Path $installDir 'devicesteer.exe'
+Write-Host "DeviceSteer $Version is installed in $installDir." -ForegroundColor Green
+
+# Text in this file stays ASCII: `irm | iex` may decode it as Windows-1252 in Windows PowerShell.
+if ($NoAgents) {
+    Write-Host "Agents weren't set up (-NoAgents). Run `"$cli`" agents install, or use Settings > Agents in the app."
+} elseif (-not (Test-Path -LiteralPath $cli -PathType Leaf)) {
+    Write-Host "Open DeviceSteer from the Start menu; it offers to set up the devicesteer command and the agent skill."
+} else {
+    # Native commands: with 'Stop', Windows PowerShell turns a line on stderr into a terminating
+    # error, so the CLI's own error JSON would abort the script instead of being reported.
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        # Releases up to 1.0.0-beta.4 have no `agents` command.
+        & $cli agents --help *> $null
+        $hasAgents = ($LASTEXITCODE -eq 0)
+        $result = $null
+        $ok = $false
+        if ($hasAgents) {
+            $result = & $cli agents install 2> $null
+            $ok = ($LASTEXITCODE -eq 0)
+        }
+    } finally {
+        $ErrorActionPreference = $saved
+    }
+    if (-not $hasAgents) {
+        Write-Host "This version can't set up agents from the command line: open DeviceSteer and use Settings > Agents."
+    } elseif (-not $ok) {
+        Write-Host "Setting up agents failed: open DeviceSteer and use Settings > Agents, or run `"$cli`" agents install to see why." -ForegroundColor Yellow
+    } else {
+        $r = ($result -join "`n") | ConvertFrom-Json
+        foreach ($i in @($r.installed)) {
+            if ($i.id -eq 'cli') { Write-Host "The devicesteer command: $($i.path)" }
+            else { Write-Host "The DeviceSteer skill for $($i.name): $($i.path)" }
+        }
+        foreach ($i in @($r.skipped)) { Write-Host "Skipped $($i.path): $($i.error)" -ForegroundColor Yellow }
+        foreach ($n in @($r.notes)) { Write-Host $n }
+        $skipped = @($r.skipped | ForEach-Object { $_.id })
+        if ($skipped.Count -gt 0) {
+            Write-Host ("To replace what is there (it is moved aside, not deleted): devicesteer agents install --replace " + ($skipped -join ' '))
+        }
+        # The Path a new terminal gets, from the registry: this session's $env:Path may be older.
+        $bin = (Join-Path $env:USERPROFILE '.local\bin').TrimEnd('\')
+        $paths = @([Environment]::GetEnvironmentVariable('Path', 'User'), [Environment]::GetEnvironmentVariable('Path', 'Machine')) -join ';'
+        $onPath = @($paths -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ieq $bin) }).Count -gt 0
+        if (-not $onPath) {
+            Write-Host "$bin isn't on your Path: add it to your user Path (Edit environment variables for your account) and open a new terminal." -ForegroundColor Yellow
+        }
+    }
+}
 Write-Host 'For USB devices, install Apple Devices from the Microsoft Store (or iTunes), open it once and accept its license.'

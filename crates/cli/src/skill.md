@@ -299,7 +299,9 @@ found), and `install <id> --replace` replaces what isn't DeviceSteer's at a path
 agreed. To install or update the app on macOS, with the user's go-ahead:
 `curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh`
 (`| sh -s -- --quit` quits a running viewer first, which closes the user's view of the device: ask).
-The app also updates itself.
+On Windows, in PowerShell:
+`irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex`, which also
+sets up the command and the skill. The app also updates itself.
 
 ## Don't
 

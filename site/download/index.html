@@ -42,6 +42,7 @@
       <img src="/icon.svg" alt="" width="24" height="24">
       <span>DeviceSteer</span>
     </a>
+    <span class="badge" title="DeviceSteer is in beta">Beta</span>
     <nav class="top-links" aria-label="Sections">
       <a href="#macos">macOS</a>
       <a href="#windows">Windows</a>
@@ -57,6 +58,8 @@
 <section class="dl-hero" aria-labelledby="dl-title">
   <div class="wrap">
     <h1 id="dl-title">Download DeviceSteer</h1>
+    <p class="dl-beta"><span class="badge">Beta</span><span>DeviceSteer is in beta: it works, and it is still changing.
+      Please <a href="https://github.com/sunghyun-k/devicesteer/issues">report problems on GitHub</a>.</span></p>
     <p class="lede">See and control a real iPhone or iPad from your Mac or Windows PC, and let your coding agent
       drive it too. Free and open source.</p>
 
@@ -68,7 +71,7 @@
           <a class="btn primary" id="dl-mac" href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg">Download for Mac</a>
           <a class="btn" id="dl-win" href="#windows">Get it for Windows</a>
         </div>
-        <p class="meta" id="dl-meta">Universal app for Apple silicon and Intel Macs · Windows 10 and 11 (x64) ·
+        <p class="meta" id="dl-meta">macOS 26 or later, Apple silicon and Intel · Windows 10 and 11 (x64) ·
           <a href="https://github.com/sunghyun-k/devicesteer/releases/latest">Release notes</a></p>
       </div>
 
@@ -89,8 +92,9 @@
           </div>
           <div class="tab-pane" data-pane="win">
             <pre class="code" aria-label="PowerShell install command">irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</pre>
-            <p class="note">In PowerShell. Installs for your account only, without administrator rights, and
-              isn't stopped by SmartScreen. <a href="#windows">Details</a>.</p>
+            <p class="note">In PowerShell. Installs for your account only, without administrator rights, isn't
+              stopped by SmartScreen, and sets up the <code>devicesteer</code> command and the agent skill.
+              <a href="#windows">Details</a>.</p>
           </div>
         </div>
       </div>
@@ -102,12 +106,13 @@
   <div class="wrap dl-grid">
     <header class="sec-head">
       <h2 id="mac-title">macOS</h2>
-      <p>A universal app for Apple silicon and Intel Macs. Signed and notarized by Apple.</p>
+      <p>macOS 26 or later. A universal app for Apple silicon and Intel Macs, signed and notarized by Apple.</p>
     </header>
     <div class="dl-body">
       <h3>Requirements</h3>
       <ul class="sub">
         <li>An iPhone or iPad on iOS / iPadOS 27 or later, over USB or Wi-Fi.</li>
+        <li>macOS 26 or later (the versions it is tested on; the terminal install warns on an older one).</li>
         <li>Nothing else on the Mac: no Xcode, no other software.</li>
       </ul>
 
@@ -161,8 +166,10 @@
 
       <h3>Install from PowerShell</h3>
       <pre class="code dl-line" aria-label="PowerShell install command">irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</pre>
-      <p>It downloads the latest installer, checks it against the release's <code>SHA256SUMS</code> and
-        installs it in <code>%LOCALAPPDATA%\DeviceSteer</code>. A given version:</p>
+      <p>It downloads the latest installer, checks it against the release's <code>SHA256SUMS</code>,
+        installs it in <code>%LOCALAPPDATA%\DeviceSteer</code> and sets up the <code>devicesteer</code>
+        command and the agent skill, as <em>Settings › Agents</em> does. A given version, or
+        <code>-NoAgents</code> to skip the command and the skill:</p>
       <pre class="code dl-line" aria-label="PowerShell install command for a given version">&amp; ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -Version 1.0.0</pre>
 
       <h3>Or run the installer</h3>
@@ -177,8 +184,8 @@
 
       <h3>After installing</h3>
       <ul class="sub">
-        <li>Open DeviceSteer. It offers to set up the <code>devicesteer</code> command
-          (<code>%USERPROFILE%\.local\bin\devicesteer.exe</code>) and the agent skill. If
+        <li>The <code>devicesteer</code> command is <code>%USERPROFILE%\.local\bin\devicesteer.exe</code>
+          (the PowerShell install sets it up; with the installer, the app offers to on first launch). If
           <code>%USERPROFILE%\.local\bin</code> isn't on your PATH, add it to your user Path and open a new
           terminal.</li>
         <li>Pairing a device over Wi-Fi makes Windows Firewall ask once whether DeviceSteer may accept

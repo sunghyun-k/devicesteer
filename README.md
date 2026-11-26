@@ -13,11 +13,11 @@ accessibility switches, VoiceOver, simulated location). The viewer shows the liv
 watch the agent work and can take over at any moment. No Xcode needed: DeviceSteer talks to the
 device through [idevice](https://github.com/jkcoxson/idevice).
 
-DeviceSteer 1.0 is in beta.
+DeviceSteer 1.0 is in beta. It is tested on macOS 26 and later and on Windows 10 and 11 (x64).
 
 ## Install
 
-### macOS
+### macOS (26 or later)
 
 1. Download [`DeviceSteer_universal.dmg`](https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg) (the latest
    [release](https://github.com/sunghyun-k/devicesteer/releases/latest)), open it and drag
@@ -53,8 +53,10 @@ agents install|uninstall` changes it. See [the download page](https://devicestee
    irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex
    ```
 
-   It downloads the latest installer, checks it against the release's `SHA256SUMS` and installs it
-   for your account only (in `%LOCALAPPDATA%\DeviceSteer`), without administrator rights. Or
+   It downloads the latest installer, checks it against the release's `SHA256SUMS`, installs it
+   for your account only (in `%LOCALAPPDATA%\DeviceSteer`), without administrator rights, and sets
+   up the `devicesteer` command and the skill as Settings › Agents does (`-NoAgents` skips that;
+   see [docs/SETUP.md](docs/SETUP.md#installing) for options). Or
    download [`DeviceSteer_x64-setup.exe`](https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe) (the latest
    [release](https://github.com/sunghyun-k/devicesteer/releases/latest)) and run it.
 3. DeviceSteer isn't code-signed yet, so Windows may stop it:
@@ -64,8 +66,9 @@ agents install|uninstall` changes it. See [the download page](https://devicestee
      downloaded, and has no exception for a single app. While it is on, DeviceSteer can't be
      installed; it is listed under Windows Security › App & browser control › Smart App Control
      settings.
-4. Open DeviceSteer. It offers to set up agents as on macOS: `%USERPROFILE%\.local\bin\devicesteer.exe`
-   and the skill links. If `%USERPROFILE%\.local\bin` isn't on your PATH, add it to your user Path
+4. After the PowerShell install the command (`%USERPROFILE%\.local\bin\devicesteer.exe`) and the
+   skill links are set up; after the installer, DeviceSteer offers to set them up on first launch,
+   as on macOS. If `%USERPROFILE%\.local\bin` isn't on your PATH, add it to your user Path
    (Edit environment variables for your account) and open a new terminal.
 5. Pairing a device over Wi-Fi (**Pair over Wi-Fi**, or `devicesteer setup wifi`) is the one time
    DeviceSteer accepts a connection from the network, so Windows Defender Firewall asks then
@@ -89,7 +92,8 @@ The app updates itself from GitHub Releases. To build from source instead, see
   Image (from Xcode's copy when there is one, else Apple's files downloaded from a pinned commit of
   [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) and checked by SHA-256).
   This repository contains no Apple files. See [docs/SETUP.md](docs/SETUP.md).
-- macOS: nothing extra (usbmuxd ships with the OS). Windows 10 or 11 (x64): for USB,
+- macOS 26 or later (the versions it is tested on; older ones aren't refused): nothing extra
+  (usbmuxd ships with the OS). Windows 10 or 11 (x64): for USB,
   [Apple Devices](https://apps.microsoft.com/detail/9NP83LWLPZ9K) from the Microsoft Store (or
   iTunes), opened once with its license accepted; devices paired over Wi-Fi work without it. See
   [docs/SETUP.md](docs/SETUP.md#windows).
