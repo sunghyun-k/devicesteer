@@ -2,7 +2,10 @@
 //! carries the live screen), and the HID connection. The CLI uses it for one command; the daemon
 //! keeps it open.
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use serde::Serialize;
@@ -10,7 +13,7 @@ use serde::Serialize;
 use crate::{
     Session,
     apps::{AppDirectory, ProcName},
-    ax::{AxClient, AxUnresponsive, BuildOptions, Dump, Screen},
+    ax::{AxClient, AxUnresponsive, BuildOptions, Dump, Geometry, Rect, Screen},
     display::Display,
     input::{Button, Input, Motion, TAP_HOLD, TouchPhase},
     keyboard::Stroke,
@@ -51,7 +54,18 @@ pub struct Controller {
     want_keyboard: bool,
     /// How `type` typed each script in an app (by pid), so later calls skip the probe.
     pub(crate) typing_ways: HashMap<(i64, crate::KeyboardLanguage), crate::typing::Way>,
+    /// Where apps in compatibility mode were found drawn, so `ui` doesn't take a screenshot
+    /// every time (PITFALLS #70).
+    windows: HashMap<WindowKey, (Rect, Instant)>,
 }
+
+/// An app in compatibility mode on one screen: its pid, its own size and the screen's, in
+/// hundredths of a point.
+type WindowKey = (i64, (i64, i64), (i64, i64));
+
+/// How long a found window is reused. It moves only when the person resizes it, but then taps
+/// would miss until this runs out.
+const WINDOW_REUSE: Duration = Duration::from_secs(30);
 
 /// Longest wait for one accessibility reading.
 const AX_TIMEOUT: Duration = Duration::from_secs(15);
@@ -77,6 +91,7 @@ impl Controller {
             apps_refreshed: false,
             want_keyboard: false,
             typing_ways: HashMap::new(),
+            windows: HashMap::new(),
         }
     }
 
@@ -300,15 +315,82 @@ impl Controller {
             }
         }
         let names: HashMap<i64, ProcName> = pids.iter().map(|&p| (p, self.describe(p))).collect();
-        let touch_rotation = self.display().await?.touch_rotation;
+        let display = self.display().await?;
+        let system: HashSet<i64> = names
+            .iter()
+            .filter(|(_, n)| crate::apps::is_system_ui(n.bundle_id.as_deref()))
+            .map(|(&pid, _)| pid)
+            .collect();
+        let windows = self.compat_windows(&dump, &display, &system).await;
+        let geometry = Geometry {
+            screen: display.size(),
+            turn: display.touch_rotation,
+            system_turn: display.system_frame_turn(),
+            system,
+            windows,
+        };
         let screen = tokio::task::spawn_blocking(move || {
-            let mut screen = Screen::build(&dump, opts, touch_rotation);
+            let mut screen = Screen::build(&dump, opts, &geometry);
             screen.name_processes(|pid| names.get(&pid).cloned().unwrap_or_default());
             screen
         })
         .await?;
         self.last_screen = Some(screen.clone());
         Ok(screen)
+    }
+
+    /// Where each app in compatibility mode is drawn: on a foldable's inner panel, an app made for
+    /// a smaller iPhone has an application frame of its own size, and the window it is scaled into
+    /// is found in a screenshot (PITFALLS #70). An app whose window isn't found is left out, and its
+    /// frames stay its own points.
+    async fn compat_windows(&mut self, dump: &Dump, display: &Display, system: &HashSet<i64>) -> HashMap<i64, Rect> {
+        let screen = display.size();
+        let near = |a: f64, b: f64| (a - b).abs() < 1.0;
+        // Only seen on a foldable; an iPad's windows in Split View or Stage Manager have frames of
+        // their own size too, but in screen points as far as is known.
+        let compat: Vec<(i64, (f64, f64))> = if display.foldable {
+            Screen::app_frames(dump)
+                .into_iter()
+                .filter(|(pid, f)| !system.contains(pid) && !(near(f.w, screen.0) && near(f.h, screen.1)))
+                .filter(|(_, f)| f.w > 0.0 && f.h > 0.0)
+                .map(|(pid, f)| (pid, (f.w, f.h)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let hundredths = |(a, b): (f64, f64)| ((a * 100.0).round() as i64, (b * 100.0).round() as i64);
+        let mut out = HashMap::new();
+        let mut image: Option<(usize, usize, Vec<u8>)> = None;
+        self.windows.retain(|_, (_, at)| at.elapsed() < WINDOW_REUSE);
+        for (pid, app) in compat {
+            let key = (pid, hundredths(app), hundredths(screen));
+            if let Some((w, _)) = self.windows.get(&key) {
+                out.insert(pid, *w);
+                continue;
+            }
+            if image.is_none() {
+                let shot = async {
+                    let shot = self.session.screenshot(display.capture_id(), true).await?;
+                    tokio::task::spawn_blocking(move || crate::screenshot::rgb8(&shot.png)).await?
+                };
+                match shot.await {
+                    Ok(i) => image = Some(i),
+                    Err(e) => {
+                        tracing::warn!("ui: no screenshot to find an app's window: {e:#}");
+                        break;
+                    }
+                }
+            }
+            let (w, h, rgb) = image.as_ref().expect("taken above");
+            match crate::ax::find_window(&crate::ax::Image { width: *w, height: *h, rgb }, screen, app) {
+                Some(found) => {
+                    self.windows.insert(key, (found, Instant::now()));
+                    out.insert(pid, found);
+                }
+                None => tracing::warn!("ui: the window of an app of {app:?} points was not found on the screenshot"),
+            }
+        }
+        out
     }
 
     async fn read_ax(&mut self, timeout: Duration, full: bool, changed: bool) -> Result<std::sync::Arc<Dump>> {

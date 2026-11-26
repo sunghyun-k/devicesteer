@@ -111,6 +111,28 @@ pub fn finish(png: Vec<u8>, raw: bool) -> Result<Screenshot> {
     Ok(Screenshot { png: out, width, height, device_bits, device_bytes })
 }
 
+/// A screenshot's pixels as 8-bit RGB: width, height and `width * height * 3` bytes.
+pub(crate) fn rgb8(png: &[u8]) -> Result<(usize, usize, Vec<u8>)> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().context("the device sent an image that is not a PNG")?;
+    let mut pixels = vec![0; reader.output_buffer_size().context("the device's PNG is too large")?];
+    let frame = reader.next_frame(&mut pixels).context("the device's PNG is damaged")?;
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    let channels = match frame.color_type {
+        png::ColorType::Rgb => 3,
+        png::ColorType::Rgba => 4,
+        png::ColorType::Grayscale => 1,
+        png::ColorType::GrayscaleAlpha => 2,
+        png::ColorType::Indexed => bail!("the device sent an indexed PNG"),
+    };
+    let rgb = pixels[..w * h * channels]
+        .chunks_exact(channels)
+        .flat_map(|p| if channels < 3 { [p[0], p[0], p[0]] } else { [p[0], p[1], p[2]] })
+        .collect();
+    Ok((w, h, rgb))
+}
+
 /// `pixels` at 8 bits per channel, without an alpha channel that is opaque everywhere, or `None`
 /// when they are that already (or of a kind this doesn't handle).
 fn to_8bit_opaque(color: png::ColorType, depth: png::BitDepth, pixels: Vec<u8>) -> Option<(png::ColorType, Vec<u8>)> {

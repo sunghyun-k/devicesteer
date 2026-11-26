@@ -192,6 +192,11 @@ never turn points yourself.
 - A foldable iPhone uses its inner panel when unfolded and its cover panel when folded, each with
   its own size. Folding or unfolding is like a turn: the daemon follows within about half a second,
   and **you read the screen again** before the next input.
+- On a foldable's inner panel, an app made for a smaller iPhone is drawn scaled in a window with
+  black margins (compatibility mode). `ui` lists that app with its `window` (where it is drawn, in
+  screen points) and places its frames in it, so refs, labels and frames still work as anywhere
+  else. Finding the window takes a screenshot, which makes such a reading about 2 s slower (more over
+  Wi-Fi) once every 30 s.
 - `devicesteer display` shows the current `rotation` and `orientation` without reading the screen.
 
 ## Input

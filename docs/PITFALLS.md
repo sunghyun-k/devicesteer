@@ -18,8 +18,8 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Connection and tunnel | #3, #4, #16, #50, #55 |
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39, #58, #65 |
-| Display info | #9, #27 |
-| Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27, #65 |
+| Display info | #9, #27, #70 |
+| Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27, #61, #62, #65, #70 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
 | Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57, #64, #69 |
@@ -947,6 +947,8 @@ stream as raw HEVC, one file per `config`, decoded with ffmpeg afterwards.
   interface's: an app that stays in portrait while the phone is held sideways would be shown turned,
   and touches placed turned. Not seen yet; no app like that was tried. A phone with one panel
   keeps using `currentOrientation`, which there is the interface orientation (#27).
+- Later the inner panel said `rot180` while held upside down (#70), so its `currentOrientation`
+  does move at times; the device's orientation still matched the interface there.
 - Touches after a turn on this phone were not tried (the owner's device; no input was sent). They
   go through the same `Display::report_point` as on a phone with one panel, which #27 checked.
 - **Recordings keep the padding.** An MP4 has the coded picture with no crop, on every device (#11):
@@ -1433,3 +1435,39 @@ Not observed on a device: gathered from WebKit's history, for `bundle.macOS.mini
   shows a viewer that never draws the screen. So the app declares `LSMinimumSystemVersion` 14.0
   and `scripts/install.sh` refuses an older macOS. Rust's `MACOSX_DEPLOYMENT_TARGET` is unchanged:
   the binaries don't need anything newer.
+
+### 70. A foldable's accessibility frames: SpringBoard's are not turned, compatibility-mode apps' are their own
+
+Foldable iPhone (iOS 27.3, USB), unfolded, held upside down: `getdisplayinfo` said
+`portraitUpsideDown` for the device and `rot180` for the inner panel (669x951 points), and touches
+placed with `rot180` went where the screenshot showed (a leftward swipe on the home screen turned to
+the next page). **The screenshot is upright in the interface's orientation**, not the panel's.
+
+- **SpringBoard's application frame is the cover panel's size** (`{{0, 0}, {466, 678}}`) while the
+  inner panel is in use. `ui` took the screen's size from the application frames and reported
+  466x678 (0x0 for a reading with no application frame); it now takes it from the display.
+- **SpringBoard's frames are not turned with the interface**: they are in the panel's own
+  orientation. The dock's first icon read `{{416.3, 35}, {64, 64}}` while the screenshot showed it
+  at the bottom left, about (220, 883); turned by `rot180` it is `{{188.7, 852}, {64, 64}}`, where
+  it is. A label tap on a dock icon opened that app once `ui` turned them. Its application frame
+  being the cover's suggests SpringBoard lays out for the cover panel, whose orientation stays `rot0`
+  (#48). `Display::system_frame_turn` turns SpringBoard's and its widget renderers' frames by the
+  display's rotation on a foldable. Not seen: landscape, and the cover panel when folded.
+- **An app's frames (Settings) were in the interface's orientation**, matching the screenshot, with
+  an application frame of the screen's size. So the turn is per process, not per screen.
+- **Compatibility mode.** An app made for a 375x667 screen is drawn on the inner panel in a window
+  scaled by 951 / 667 = 1.426 to the panel's height, from x 46.3 to 581 (not centred: a column with
+  the status bar and a resize button sits at x 600 to 646), on black. Its application frame and
+  every frame were in its own 375x667 points, upright (not turned like SpringBoard's), and the dump
+  had nothing about the window: attributes 21, 43 and 48 (the three frames) and 1 (the activation
+  point) were all in the app's points, and no SpringBoard element came with the app's dump. A label
+  tap went to the frame's middle in the app's points, (139, 84), where the element showed at about
+  (245, 120).
+  `ax::window::find` finds the window in a screenshot (the window at the app's aspect ratio, as
+  large as the screen allows, placed where its edges turn from black to lit), and `ui` scales the
+  app's frames into it and lists it as the app's `window`. A post and the back button tapped by ref
+  and label then opened and closed as expected. The screenshot costs ~1.8 s on USB, so a found
+  window is reused for 30 s (a window resized by hand in that time is missed). An app dark at its
+  edges isn't found and keeps its own points (logged). Only foldables are checked for this: an iPad
+  in Split View or Stage Manager also has application frames smaller than the screen, untried.
+- The app's own tab bar was not in the tree at all, so it can only be tapped by points.

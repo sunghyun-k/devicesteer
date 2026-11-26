@@ -8,7 +8,10 @@ mod attrs;
 mod dump;
 mod service;
 mod tree;
+mod window;
 
 pub(crate) use dump::Dump;
 pub use service::{AxClient, AxUnresponsive};
-pub use tree::{AppInfo, BuildOptions, Element, Rect, Screen};
+pub use tree::{AppInfo, BuildOptions, Element, Geometry, Rect, Screen};
+pub(crate) use window::{Image, find as find_window};
+

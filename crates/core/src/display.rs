@@ -20,9 +20,10 @@ xpc_link!(DeviceInfoLink, "com.apple.coredevice.deviceinfo");
 const FEATURE_DISPLAY_INFO: &str = "com.apple.coredevice.feature.getdisplayinfo";
 
 /// How the display is turned from its panel's native orientation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub enum Rotation {
     #[serde(rename = "rot0")]
+    #[default]
     R0,
     #[serde(rename = "rot90")]
     R90,
@@ -67,6 +68,26 @@ impl Rotation {
     pub(crate) fn is_quarter(self) -> bool {
         matches!(self, Self::R90 | Self::R270)
     }
+
+    fn quarters(self) -> u8 {
+        match self {
+            Self::R0 => 0,
+            Self::R90 => 1,
+            Self::R180 => 2,
+            Self::R270 => 3,
+        }
+    }
+
+    /// This turn followed by `other`. Quarter turns of a square's shares commute, so the order
+    /// doesn't matter.
+    pub(crate) fn then(self, other: Rotation) -> Rotation {
+        match (self.quarters() + other.quarters()) % 4 {
+            0 => Self::R0,
+            1 => Self::R90,
+            2 => Self::R180,
+            _ => Self::R270,
+        }
+    }
 }
 
 /// The display in use.
@@ -85,6 +106,9 @@ pub struct Display {
     /// How the touchscreen is turned from the panel (`nativeOrientation`): `rot270` on an iPad,
     /// whose touch reports stay portrait while its panel is landscape (PITFALLS #58).
     pub touch_rotation: Rotation,
+    /// One of a foldable's panels (the device marks them `active`, PITFALLS #47).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub foldable: bool,
 }
 
 impl Display {
@@ -102,6 +126,13 @@ impl Display {
             Rotation::R90 | Rotation::R270 => (h, w),
             _ => (w, h),
         }
+    }
+
+    /// The turn of the space SpringBoard's accessibility frames come in, from the screen: the
+    /// touchscreen's (PITFALLS #61), and on a foldable not turned with the interface either: there
+    /// SpringBoard's frames were in the panel's own orientation (PITFALLS #70).
+    pub fn system_frame_turn(&self) -> Rotation {
+        if self.foldable { self.rotation.then(self.touch_rotation) } else { self.touch_rotation }
     }
 
     /// The screen's size in pixels, native orientation, as screenshots have it.
@@ -238,6 +269,7 @@ fn parse(output: &plist::Value) -> Result<Display> {
             .and_then(|v| v.as_string())
             .and_then(|r| Rotation::parse(r).ok())
             .unwrap_or(Rotation::R0),
+        foldable: marks_active,
     })
 }
 
@@ -302,7 +334,33 @@ mod tests {
             scale: 3.0,
             rotation,
             touch_rotation: Rotation::R0,
+            foldable: false,
         }
+    }
+
+    #[test]
+    fn turns_add_up() {
+        assert_eq!(Rotation::R90.then(Rotation::R90), Rotation::R180);
+        assert_eq!(Rotation::R270.then(Rotation::R180), Rotation::R90);
+        assert_eq!(Rotation::R0.then(Rotation::R270), Rotation::R270);
+        for a in [Rotation::R0, Rotation::R90, Rotation::R180, Rotation::R270] {
+            for b in [Rotation::R0, Rotation::R90, Rotation::R180, Rotation::R270] {
+                let p = (0.25, 0.625);
+                assert_eq!(a.then(b).turn_share(p), b.turn_share(a.turn_share(p)), "{a:?} {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn springboard_frames_on_a_foldable_are_not_turned_with_the_interface() {
+        // Seen on a foldable's inner panel held upside down (iOS 27.3): rot180, and SpringBoard's
+        // frames in the panel's own orientation (PITFALLS #70). A phone with one panel: only the
+        // touchscreen's turn (PITFALLS #61).
+        let folded = Display { foldable: true, ..display(Rotation::R180) };
+        assert_eq!(folded.system_frame_turn(), Rotation::R180);
+        assert_eq!(display(Rotation::R180).system_frame_turn(), Rotation::R0);
+        let ipad = Display { touch_rotation: Rotation::R270, ..display(Rotation::R0) };
+        assert_eq!(ipad.system_frame_turn(), Rotation::R270);
     }
 
     #[test]
