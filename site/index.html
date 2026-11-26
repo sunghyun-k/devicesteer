@@ -213,14 +213,17 @@
         <ul>
           <li>The device's live screen in a window, used with your mouse and keyboard: tap, swipe and type.</li>
           <li>Home, Lock and volume buttons, screenshots and screen recordings.</li>
-          <li>Device settings at hand: appearance, text size, accessibility switches and a simulated location.</li>
+          <li>Send and get the clipboard, or keep it shared, and type from your computer's keyboard.</li>
+          <li>Device settings at hand: appearance, Liquid Glass, text size, accessibility switches, VoiceOver
+            and a simulated location.</li>
         </ul>
       </article>
       <article>
         <h3>For your agent: the CLI and skill</h3>
         <ul>
-          <li><code>devicesteer</code> reads the screen's accessibility tree, taps, swipes, types and launches
-            apps. Every command prints JSON; errors say what to do next.</li>
+          <li><code>devicesteer</code> reads the screen's accessibility tree, takes screenshots, taps, swipes,
+            types, launches apps, changes settings and records the screen. Every command prints JSON; errors
+            say what to do next.</li>
           <li>A bundled skill teaches Claude Code, Codex, Cursor, GitHub Copilot CLI and others how to use it.</li>
         </ul>
       </article>
@@ -336,7 +339,8 @@
           (<code>~/.local/bin/devicesteer</code>) and the DeviceSteer skill for the coding agents it finds:
           Claude Code, Codex and others that read <code>~/.agents/skills</code>, Cursor and GitHub Copilot CLI.
           Both are links into the app, so they update with it. Change this any time in
-          <em>Settings › Agents</em> (⌘,).</p>
+          <em>Settings › Agents</em> (⌘, or Ctrl+,), or with <code>devicesteer agents</code>; the terminal
+          install sets both up for you.</p>
         <p class="note">If it says <code>~/.local/bin</code> isn't on your PATH, add
           <code>export PATH="$HOME/.local/bin:$PATH"</code> to your shell profile.</p>
       </li>
