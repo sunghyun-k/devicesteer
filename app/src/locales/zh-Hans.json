@@ -225,6 +225,7 @@
   "settings.longitude": "经度",
   "settings.simulate": "模拟",
   "settings.locationInvalid": "请输入以度为单位的纬度（-90 到 90）和经度（-180 到 180）。",
+  "settings.notOnDevice": "此设备不支持",
   "settings.reading": "正在读取设置…",
   "settings.applying": "正在应用…",
   "settings.unsupported": "此设备无法与 DeviceSteer 搭配使用。",

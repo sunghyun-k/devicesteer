@@ -225,6 +225,7 @@
   "settings.longitude": "Längengrad",
   "settings.simulate": "Simulieren",
   "settings.locationInvalid": "Gib einen Breitengrad (-90 bis 90) und einen Längengrad (-180 bis 180) in Grad ein.",
+  "settings.notOnDevice": "Auf diesem Gerät nicht verfügbar",
   "settings.reading": "Einstellungen werden gelesen …",
   "settings.applying": "Wird angewendet …",
   "settings.unsupported": "Dieses Gerät kann nicht mit DeviceSteer verwendet werden.",

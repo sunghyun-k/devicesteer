@@ -1,0 +1,41 @@
+.dock { display: flex; align-items: center; justify-content: center; width: 100%; height: 40px; }
+.idle { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--fg-3); }
+.idle.away { visibility: hidden; }
+.dotIdle { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3); opacity: 0.6; }
+/* The session, as a control indicator (what a screen-sharing bar does): a strip tinted with
+   who holds the device, a live dot, the state and the agent's goal on one line, the actions.
+   Blue while the agent works, amber while a person has the device. */
+.panel {
+  --who: var(--accent);
+  display: flex; align-items: center; gap: 10px; width: min(100%, 520px); min-width: 0;
+  height: 40px; padding: 0 5px 0 14px; border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--who) 9%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--who) 26%, transparent);
+}
+.panel.human { --who: var(--warning); }
+.dot {
+  flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--who);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--who) 22%, transparent);
+  animation: live 1.6s ease-in-out infinite;
+}
+.panel.human .dot { animation: none; }
+@keyframes live { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--who) 8%, transparent); } }
+.text { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; white-space: nowrap; }
+.state { flex: none; max-width: 60%; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.name { min-width: 0; font-size: 13px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; }
+.panel :global(.btn.small) { height: 28px; }
+/* A press on the screen while the agent holds the device points here. */
+.nudge { animation: nudge 0.9s ease-out 2; }
+@keyframes nudge {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nudge { animation: none; outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+.stop { color: var(--fg-2); }
+.stop:hover { color: var(--danger); }
+@media (max-width: 480px) {
+  .panel { gap: 8px; }
+  .name { display: none; }
+}

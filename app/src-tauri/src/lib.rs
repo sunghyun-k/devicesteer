@@ -62,7 +62,7 @@ async fn setup_status(udid: String) -> Result<devicesteer_core::SetupStatus, Str
 
 /// How long a step waits for the person holding the device (tap Trust; turn on Developer Mode,
 /// restart and confirm) when the page doesn't say. The page passes its own (`SETUP_WAIT_S` in
-/// app/src/main.ts), since it counts the time down on the card.
+/// app/src/features/setup/setup.ts), since it counts the time down on the card.
 const SETUP_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// Runs one setup step (`trust`, `developer_mode`, `disk_image`) on `udid`, sending its progress

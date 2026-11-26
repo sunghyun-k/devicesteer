@@ -1,0 +1,33 @@
+.app {
+  --side-w: 288px; --insp-w: 320px; --sw: var(--side-w); --iw: var(--insp-w);
+  /* The headers' height: the macOS traffic lights (trafficLightPosition in tauri.conf.json) sit
+     in their middle, 23 points down (PITFALLS #33). */
+  --head-h: 46px;
+  display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--iw); height: 100vh; position: relative;
+}
+.app[data-sidebar="off"] { --sw: 0px; }
+.app[data-inspector="off"] { --iw: 0px; }
+
+/* The sidebar and inspector toggles: one button each, at a fixed place in the window (right of
+   the traffic lights; the top-right corner), whichever panel is open. Inside the headers they
+   would jump when their panel closes and the next header takes them, and a second click would
+   miss. The headers leave room under them (`--pin-room`). Their panel shows whether it is open,
+   so no pressed fill. */
+.app { --pin-l: 10px; --pin-r: 10px; --pin-room: calc(28px + 18px); }
+:global(:root.mac) .app { --pin-l: 78px; }
+.pin { position: absolute; z-index: 18; top: calc((var(--head-h) - 28px) / 2); }
+.sidebarToggle { left: var(--pin-l); }
+.inspectorToggle { right: var(--pin-r); }
+.pin[aria-pressed] { background: transparent; }
+.pin:hover { background: var(--hover); }
+.pin:active { background: var(--press); }
+
+/* The window keeps the size the user gives it (PITFALLS #29). Below a width that fits all three
+   columns, the inspector floats over the stage's right side; narrower still, the device list
+   floats over its left (Sidebar, Inspector). */
+@media (max-width: 1000px) {
+  .app, .app[data-inspector="off"] { --iw: 0px; }
+}
+@media (max-width: 720px) {
+  .app, .app[data-sidebar="off"], .app[data-inspector="off"] { --sw: 0px; }
+}

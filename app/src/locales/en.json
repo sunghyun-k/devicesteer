@@ -225,6 +225,7 @@
   "settings.longitude": "Longitude",
   "settings.simulate": "Simulate",
   "settings.locationInvalid": "Enter a latitude (-90 to 90) and a longitude (-180 to 180) in degrees.",
+  "settings.notOnDevice": "Not on this device",
   "settings.reading": "Reading settings…",
   "settings.applying": "Applying…",
   "settings.unsupported": "This device can’t be used with DeviceSteer.",
