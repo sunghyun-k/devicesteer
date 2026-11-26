@@ -697,6 +697,8 @@ async function configure(cfg: Config): Promise<void> {
     optimizeForLatency: true,
     hardwareAcceleration: "prefer-hardware",
   };
+  // On macOS this is the system WebKit's decoder: macOS 14 is the oldest that decodes hvc1, hence
+  // the app's minimum system version (PITFALLS #69).
   try {
     const support = await VideoDecoder.isConfigSupported(decoderConfig);
     stats.supported = !!support.supported;

@@ -56,11 +56,13 @@ if [ "$(uname -s)" != Darwin ]; then
   say "DeviceSteer runs on macOS and Windows only."
   exit 1
 fi
-# Tested on macOS 26 and later only; older versions aren't refused, since nothing is known to fail.
-macos=$(sw_vers -productVersion 2>/dev/null || echo 0)
-if [ "${macos%%.*}" -lt 26 ] 2>/dev/null; then
-  say "Warning: DeviceSteer is tested on macOS 26 or later; this Mac has macOS $macos. Installing anyway."
-fi
+# The app needs macOS 14 (its LSMinimumSystemVersion; docs/PITFALLS.md #69), so an older Mac
+# couldn't open it.
+macos=$(sw_vers -productVersion 2>/dev/null) || macos=
+case ${macos%%.*} in
+  '' | *[!0-9]*) ;; # unknown: let the app's own check decide
+  *) [ "${macos%%.*}" -ge 14 ] || fail "DeviceSteer needs macOS 14 Sonoma or later; this Mac has macOS $macos" ;;
+esac
 for tool in curl tar shasum ditto codesign; do
   command -v "$tool" >/dev/null 2>&1 || fail "'$tool' is missing"
 done

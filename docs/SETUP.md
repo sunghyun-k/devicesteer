@@ -106,8 +106,10 @@ has one build identity per board, so a device newer than its Xcode needs a newer
 
 ## Installing on macOS from a terminal
 
-DeviceSteer is tested on macOS 26 and later. Nothing refuses an older version (the app sets no
-minimum system version); `install.sh` warns and continues.
+DeviceSteer needs macOS 14 Sonoma or later (Apple silicon or Intel); it is tested on macOS 26. The
+app's `LSMinimumSystemVersion` is 14.0 (`bundle.macOS.minimumSystemVersion`), because the viewer
+decodes the screen's HEVC with WebKit's WebCodecs, which works from Safari 17 on (PITFALLS #69).
+`install.sh` stops on an older macOS.
 
 ```sh
 curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh

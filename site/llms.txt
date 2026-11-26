@@ -2,7 +2,7 @@
 
 > DeviceSteer sees and controls a real iPhone or iPad (iOS / iPadOS 27 or later) connected over USB or Wi-Fi, from macOS or Windows, without Xcode. It has a viewer app with the live screen and human control, and a JSON CLI (`devicesteer`) with an agent skill so coding agents such as Claude Code, Codex, Cursor and GitHub Copilot CLI can drive the device in sessions the human can watch, take over, hand back or stop.
 
-DeviceSteer is in beta. It runs on macOS 26 or later and Windows 10 and 11 (x64).
+DeviceSteer is in beta. It runs on macOS 14 Sonoma or later (Apple silicon or Intel) and Windows 10 and 11 (x64).
 
 The device is usually someone's personal phone. It is not a simulator.
 

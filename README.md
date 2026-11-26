@@ -13,11 +13,11 @@ accessibility switches, VoiceOver, simulated location). The viewer shows the liv
 watch the agent work and can take over at any moment. No Xcode needed: DeviceSteer talks to the
 device through [idevice](https://github.com/jkcoxson/idevice).
 
-DeviceSteer 1.0 is in beta. It is tested on macOS 26 and later and on Windows 10 and 11 (x64).
+DeviceSteer 1.0 is in beta. It runs on macOS 14 Sonoma or later (Apple silicon or Intel) and Windows 10 and 11 (x64); on macOS it is tested on 26 and later.
 
 ## Install
 
-### macOS (26 or later)
+### macOS (14 Sonoma or later)
 
 1. Download [`DeviceSteer_universal.dmg`](https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg) (the latest
    [release](https://github.com/sunghyun-k/devicesteer/releases/latest)), open it and drag
@@ -92,8 +92,8 @@ The app updates itself from GitHub Releases. To build from source instead, see
   Image (from Xcode's copy when there is one, else Apple's files downloaded from a pinned commit of
   [DeveloperDiskImage](https://github.com/doronz88/DeveloperDiskImage) and checked by SHA-256).
   This repository contains no Apple files. See [docs/SETUP.md](docs/SETUP.md).
-- macOS 26 or later (the versions it is tested on; older ones aren't refused): nothing extra
-  (usbmuxd ships with the OS). Windows 10 or 11 (x64): for USB,
+- macOS 14 Sonoma or later (Apple silicon or Intel), tested on macOS 26: nothing extra (usbmuxd ships with
+  the OS). Older versions can't decode the screen (docs/PITFALLS.md #69). Windows 10 or 11 (x64): for USB,
   [Apple Devices](https://apps.microsoft.com/detail/9NP83LWLPZ9K) from the Microsoft Store (or
   iTunes), opened once with its license accepted; devices paired over Wi-Fi work without it. See
   [docs/SETUP.md](docs/SETUP.md#windows).

@@ -22,7 +22,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27, #65 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
-| Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57, #64 |
+| Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57, #64, #69 |
 | Device setup (pairing, Developer Mode, DDI) | #30, #31, #32, #49, #55, #56, #59, #65 |
 | Keyboard, typing and clipboard | #35, #36, #37, #38, #39, #40, #41, #42 |
 | Windows host | #51, #52, #53, #54, #57, #59, #64 |
@@ -1415,3 +1415,21 @@ apart; refusing them left Block rules for `devicesteer-app.exe` and `devicesteer
   `New-NetFirewallRule` and `netsh advfirewall` need administrator rights, so the NSIS hook would
   need its own UAC prompt, which is no better. So it happens once, when the person pairs, and is
   documented; when no device connects, the timeout says a refused prompt may be why.
+
+### 69. macOS 14 is the oldest system whose WebKit decodes the screen
+
+Not observed on a device: gathered from WebKit's history, for `bundle.macOS.minimumSystemVersion`
+(14.0) in `app/src-tauri/tauri.conf.json`. DeviceSteer is tested on macOS 26 only.
+
+- **The viewer decodes the screen in the page.** The stream is HEVC (`hvc1`), decoded with
+  WebCodecs' `VideoDecoder` (`app/src/main.ts`) in the system WKWebView, so what decodes is the
+  Safari engine that ships with that macOS, not one we bundle.
+- **Safari 16.4 turned `hvc1` away** (Apple Developer Forums thread 729464). HEVC in WebKit's
+  WebCodecs landed in a commit of July 2023, and a bug where `isConfigSupported` said yes but
+  decoding then failed was fixed in WebKit bug 262950 (December 2023). So it works from the Safari
+  17 releases after that, probably 17.4.
+- **macOS 14 Sonoma is the oldest system that ships such a Safari** (17.x) as its own WebKit.
+  macOS 13 could get Safari 17 as an update, but nothing makes sure it has, and an older WebKit
+  shows a viewer that never draws the screen. So the app declares `LSMinimumSystemVersion` 14.0
+  and `scripts/install.sh` refuses an older macOS. Rust's `MACOSX_DEPLOYMENT_TARGET` is unchanged:
+  the binaries don't need anything newer.
