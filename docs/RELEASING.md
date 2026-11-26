@@ -133,7 +133,10 @@ runner, which holds no secret.
       `DeviceSteer_<version>_x64-setup.exe`, and waits for it. The workflow reads the draft's
       commit, checks the three versions there, builds the NSIS installer from that commit on a
       GitHub-hosted Windows runner (`build-windows.yml`) and uploads it to the draft with
-      `install.ps1` and `SHA256SUMS`. It refuses a release that isn't a draft;
+      `install.ps1` and `SHA256SUMS`. It refuses a release that isn't a draft. While waiting, the
+      script retries GitHub API errors (the 404 GitHub answers for a run it has just started, 5xx,
+      network) with a backoff for about five minutes before giving up; a run that ends in anything
+      but success stops the script at once with the run's URL;
    8. downloads the installer and the draft's `latest.json`, signs the installer for the updater
       (bound to the version, like the macOS archive), adds `windows-x86_64` (its URL and
       signature) to `latest.json`, and uploads `latest.json` and the `.sig` to the draft.

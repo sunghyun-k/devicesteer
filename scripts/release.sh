@@ -250,14 +250,37 @@ run_windows_workflow() {
   if [ -z "$id" ]; then
     for _ in 1 2 3 4 5 6; do
       sleep 5
-      id=$(gh run list --workflow release-windows.yml --event workflow_dispatch --branch "$branch" --created ">=$since" --limit 1 --json databaseId -q '.[0].databaseId')
+      id=$(gh run list --workflow release-windows.yml --event workflow_dispatch --branch "$branch" --created ">=$since" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null) || id=
       [ -n "$id" ] && break
     done
   fi
   [ -n "$id" ] || die "started the Windows workflow but couldn't find its run: watch it on GitHub, then run scripts/release.sh --windows-only $version"
   echo "Waiting for https://github.com/$repo/actions/runs/$id (the build takes a while)"
-  gh run watch "$id" --exit-status --interval 30 >/dev/null \
-    || die "the Windows workflow failed: see https://github.com/$repo/actions/runs/$id, then run scripts/release.sh --windows-only $version"
+  wait_for_run "$id"
+}
+
+# Polls a workflow run until it completes; fails unless it succeeded. Not `gh run watch`: it gives
+# up on the first API error, and right after dispatch the API answers 404 for a run it just
+# created (it showed up and succeeded later), so a release failed with nothing wrong. Errors
+# (404, 5xx, network) are retried with a backoff for about five minutes, counted from the last
+# good answer; a run that completes with any conclusion but success fails at once.
+wait_for_run() {
+  local id=$1 url="https://github.com/$repo/actions/runs/$1" state errors=0
+  while :; do
+    if state=$(gh run view "$id" --json status,conclusion -q '.status + " " + .conclusion' 2>&1); then
+      errors=0
+      case $state in
+        "completed success") return 0 ;;
+        completed\ *) die "the Windows workflow ended with '${state#completed }': see $url, then run scripts/release.sh --windows-only $version" ;;
+      esac
+      sleep 30
+    else
+      errors=$((errors + 1))
+      [ "$errors" -le 8 ] \
+        || die "couldn't read the Windows workflow's status from GitHub ($state): see $url; once it succeeds, run scripts/release.sh --windows-only $version"
+      sleep $((errors < 5 ? 5 << (errors - 1) : 60)) # 5, 10, 20, 40, then 60 s: about 5 minutes
+    fi
+  done
 }
 
 if [ "$windows" = 1 ]; then
