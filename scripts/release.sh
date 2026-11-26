@@ -215,6 +215,12 @@ codesign --sign "$identity" --timestamp "$dmg"
 notarize "$dmg"
 xcrun stapler staple "$dmg"
 
+step "Writing SHA256SUMS"
+# scripts/install.sh checks the app archive against this. The Windows workflow adds its lines to
+# the same file on the draft rather than replacing it.
+cp "$root/scripts/install.sh" "$out/install.sh"
+(cd "$out" && shasum -a 256 "$(basename "$dmg")" "$(basename "$archive")" install.sh > SHA256SUMS && cat SHA256SUMS)
+
 step "Writing latest.json"
 url="https://github.com/$repo/releases/download/$tag/DeviceSteer.app.tar.gz"
 # A universal app serves both architectures from one archive.
@@ -233,7 +239,7 @@ node -e '
 
 step "Creating the draft release $tag"
 gh release create "$tag" --draft --target "$(git rev-parse HEAD)" --title "DeviceSteer $version" --generate-notes \
-  "$dmg" "$archive" "$archive.sig" "$out/latest.json"
+  "$dmg" "$archive" "$archive.sig" "$out/latest.json" "$out/install.sh" "$out/SHA256SUMS"
 
 fi # mac
 

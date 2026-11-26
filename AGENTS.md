@@ -78,6 +78,9 @@ crates/core/        devicesteer-core: all device I/O. Tunnel session, display in
 crates/daemon/      devicesteer-daemon: the per-device daemon (Unix socket; a named pipe limited
                     to the current user on Windows), its wire format, agent/human control state,
                     and the Client both the CLI and the viewer use
+crates/agents/      devicesteer-agents: agent setup (the `devicesteer` command and the skill linked
+                    into the installed app), shared by the app's Settings › Agents and the CLI's
+                    `devicesteer agents`
 crates/cli/         binary `devicesteer`: JSON CLI. Device commands go through the daemon, which
                     it starts on demand (`--no-daemon` for the direct path). `src/skill.md` is the
                     agent guide `devicesteer skill` prints: keep it in step with the commands
@@ -87,17 +90,18 @@ app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC
                     src/agents.ts: the main window's launch sheets and update banner;
                     src/settings.ts: the Settings window (settings.html: language, agent setup,
                     updates); src/i18n.ts and src/locales/: localization (see "Language")
-app/src-tauri/      Tauri shell (workspace member), a daemon client. agent_setup.rs installs the
-                    CLI and skill links; tauri.bundle.conf.json adds the CLI and the skill to
+app/src-tauri/      Tauri shell (workspace member), a daemon client. agent_setup.rs serves the
+                    Agents pane (crates/agents makes the links); tauri.bundle.conf.json adds the CLI and the skill to
                     bundles. A new command also goes in build.rs's COMMANDS and the
                     capabilities/*.json of each window that calls it, or the window can't
 scripts/            build-cli.sh (the CLI for the bundle), release.sh (release Mac only),
-                    check-version.sh (shared with CI), install.ps1 (Windows PowerShell installer,
-                    attached to releases)
+                    check-version.sh (shared with CI), install.sh (macOS terminal installer) and
+                    install.ps1 (Windows PowerShell installer), both attached to releases
 .github/workflows/  build-windows.yml (Windows installer, checked on PRs), release-windows.yml
                     (attaches it to a draft release; see docs/RELEASING.md)
 app/src-tauri/windows/  installer-hooks.nsh: additions to Tauri's NSIS installer
-site/               The product homepage, devicesteer.sunghyunkim.com: static HTML/CSS with no build
+site/               The product homepage, devicesteer.sunghyunkim.com (download/: the download
+                    page, /download): static HTML/CSS with no build
                     step, served by Vercel from this folder (production branch main); llms.txt
                     summarises the product for agents; images/ holds its pictures; fonts/ holds
                     Instrument Sans and IBM Plex Mono (OFL)
@@ -140,7 +144,7 @@ build` makes an app without them, whose Settings window (Agents) says so. Releas
 Mac with `scripts/release.sh`; see `docs/RELEASING.md`. Never commit the updater's private key or
 anything else from that Mac's keychain.
 
-**Agent setup** (Settings › Agents, `agent_setup.rs`) writes to the user's home: `~/.local/bin`,
+**Agent setup** (Settings › Agents and `devicesteer agents`, `crates/agents`) writes to the user's home: `~/.local/bin`,
 `~/.local/share/devicesteer` and agents' skill folders. Test it with unit tests or a temporary
 `HOME`, never against your real agent folders.
 

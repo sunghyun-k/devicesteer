@@ -1116,18 +1116,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "devicesteer-agents"
+version = "1.0.0-beta.4"
+dependencies = [
+ "dirs",
+ "junction",
+ "same-file",
+ "serde",
+]
+
+[[package]]
 name = "devicesteer-app"
 version = "1.0.0-beta.4"
 dependencies = [
  "arboard",
+ "devicesteer-agents",
  "devicesteer-core",
  "devicesteer-daemon",
  "dirs",
- "junction",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
- "same-file",
  "serde",
  "serde_json",
  "tauri",
@@ -1145,6 +1154,7 @@ version = "1.0.0-beta.4"
 dependencies = [
  "anyhow",
  "clap",
+ "devicesteer-agents",
  "devicesteer-core",
  "devicesteer-daemon",
  "plist",

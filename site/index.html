@@ -38,7 +38,7 @@
   "operatingSystem": "macOS, Windows",
   "description": "See and control a real iPhone or iPad from macOS or Windows without Xcode, for you or for a coding agent.",
   "url": "https://devicesteer.sunghyunkim.com/",
-  "downloadUrl": "https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg",
+  "downloadUrl": "https://devicesteer.sunghyunkim.com/download",
   "license": "https://opensource.org/licenses/MIT",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "author": { "@type": "Person", "name": "Sunghyun Kim", "url": "https://sunghyunkim.com" }
@@ -66,7 +66,7 @@
       <a href="#agents">For agents</a>
       <a href="#requirements">Requirements</a>
     </nav>
-    <a class="btn small" id="get-top" href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg">Download</a>
+    <a class="btn small" id="get-top" href="/download">Download</a>
   </div>
 </header>
 
@@ -86,10 +86,10 @@
            the macOS version. -->
       <p class="get-note" id="get-note" hidden></p>
       <div class="cta">
-        <a class="btn primary" id="get-primary" href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg">Download for macOS</a>
+        <a class="btn primary" id="get-primary" href="/download">Download for macOS</a>
         <a class="btn" id="get-secondary" href="https://github.com/sunghyun-k/devicesteer">View on GitHub</a>
       </div>
-      <p class="get-alt" id="get-alt">On Windows? <a href="#windows">Get it for Windows</a>.</p>
+      <p class="get-alt" id="get-alt">On Windows? <a href="/download?os=windows">Get it for Windows</a>.</p>
       <p class="meta">Free and open source (MIT) · iOS / iPadOS 27 or later · USB or Wi-Fi · no Xcode</p>
     </div>
   </div>
@@ -288,22 +288,12 @@
     <ol class="rail">
       <li id="install">
         <h3>Install the app</h3>
-        <p>Download <a href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg"><code>DeviceSteer_universal.dmg</code></a>
-          (also on <a href="https://github.com/sunghyun-k/devicesteer/releases/latest">GitHub Releases</a>), open it and drag
-          DeviceSteer to Applications. The app keeps itself up to date.</p>
-        <div id="windows">
-          <p><strong>On Windows</strong> (10 and 11, x64): for USB, install Apple Devices from the Microsoft Store
-            (or iTunes), open it once and accept its license. Then install DeviceSteer from PowerShell, for your
-            account only and without administrator rights:</p>
-          <pre class="code" aria-label="PowerShell install command">irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</pre>
-          <p class="note">Or download and run <a href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe"><code>DeviceSteer_x64-setup.exe</code></a>
-            (also on <a href="https://github.com/sunghyun-k/devicesteer/releases/latest">GitHub Releases</a>). It isn't code-signed
-            yet: SmartScreen may stop a downloaded installer (<em>More info</em>, then <em>Run anyway</em>), and
-            Smart App Control on Windows 11 blocks it while it is on. See the
-            <a href="https://github.com/sunghyun-k/devicesteer#windows-10-and-11-x64">README</a>.
-            Pairing a device over Wi-Fi makes Windows Firewall ask once whether DeviceSteer may accept
-            connections: allow it on private networks.</p>
-        </div>
+        <p><a href="/download">Download DeviceSteer</a> for macOS (Apple silicon and Intel) or Windows 10 and 11
+          (x64), or install it from a terminal:</p>
+        <pre class="code install-line" aria-label="macOS install command">curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh</pre>
+        <p class="note">On Windows, in PowerShell: <code>irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</code>.
+          Requirements and the details for both are on the <a href="/download">download page</a>. The app keeps
+          itself up to date.</p>
       </li>
       <li id="device">
         <h3>Set up your device</h3>
@@ -414,14 +404,10 @@ devicesteer session finish</pre>
 // Points the download buttons at the visitor's system. Without this script the page shows the
 // macOS buttons, which is also what Macs get.
 (() => {
-  // Release assets carry no version (scripts/release.sh, docs/RELEASING.md), so these always
-  // fetch the latest release's installers.
-  const LATEST = 'https://github.com/sunghyun-k/devicesteer/releases/latest/download/';
-  const MAC_DOWNLOAD = LATEST + 'DeviceSteer_universal.dmg';
-  // The Windows buttons download the installer; set to null to point them at the install steps
-  // (#windows) instead.
-  const WINDOWS_DOWNLOAD = LATEST + 'DeviceSteer_x64-setup.exe';
-  const WINDOWS_STEPS = '#windows';
+  // The download page (/download) offers both systems and puts the visitor's first; ?os= picks
+  // the order for a visitor on the other system.
+  const MAC_PAGE = '/download?os=mac';
+  const WINDOWS_PAGE = '/download?os=windows';
 
   const ua = navigator.userAgent;
   const platform = navigator.userAgentData?.platform || navigator.platform || '';
@@ -432,8 +418,8 @@ devicesteer session finish</pre>
 
   const $ = (id) => document.getElementById(id);
   const setLink = (el, text, href) => { el.textContent = text; el.href = href; };
-  const windowsText = WINDOWS_DOWNLOAD ? 'Download for Windows' : 'Get it for Windows';
-  const windowsHref = WINDOWS_DOWNLOAD || WINDOWS_STEPS;
+  const windowsText = 'Download for Windows';
+  const windowsHref = WINDOWS_PAGE;
   const alt = $('get-alt');
   const altLink = (lead, text, href) => {
     alt.textContent = lead + ' ';
@@ -445,7 +431,7 @@ devicesteer session finish</pre>
   if (os === 'windows') {
     setLink($('get-primary'), windowsText, windowsHref);
     $('get-top').href = windowsHref;
-    altLink('On a Mac?', 'Download for macOS', MAC_DOWNLOAD);
+    altLink('On a Mac?', 'Download for macOS', MAC_PAGE);
   } else {
     const note = $('get-note');
     note.textContent = 'DeviceSteer is an app for a Mac or a Windows PC. It shows and controls the iPhone or iPad connected to that computer.';

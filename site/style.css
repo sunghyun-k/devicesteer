@@ -411,8 +411,52 @@ h3 { font-size: var(--t-base); line-height: 1.35; }
   border-radius: var(--radius); padding: 22px 24px; overflow-x: auto; font: 13.5px/1.75 var(--mono); }
 @media (max-width: 960px) { .agents-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; } }
 @media (max-width: 600px) { .code { font-size: 12.5px; padding: 16px; } }
-/* The one-line PowerShell install: a slim block that scrolls sideways on a phone. */
-#windows .code { margin: 0 0 12px; padding: 12px 16px; white-space: pre; overflow-x: auto; }
+/* The one-line terminal install: a slim block that scrolls sideways on a phone. */
+.install-line { margin: 0 0 12px; padding: 12px 16px; white-space: pre; overflow-x: auto; }
+
+/* download page (/download): the buttons and a terminal box with macOS / Windows tabs, then one
+   section per system */
+.dl-hero { padding: 80px 0 88px; }
+.dl-hero h1 { margin-bottom: 18px; }
+.dl-hero .lede { max-width: 640px; }
+.dl-get { display: flex; flex-direction: column; gap: 36px; max-width: 880px; }
+/* Windows visitors get the PowerShell command first (the script sets data-os). */
+[data-os="windows"] .dl-get { flex-direction: column-reverse; }
+.dl-term-lead { font-size: var(--t-sm); color: var(--mute); margin-bottom: 10px; }
+/* Tabs without script: the checked radio shows its pane. */
+.tabs { border: 1px solid var(--term-line); border-radius: var(--radius); background: var(--term); overflow: hidden; }
+.tabs > input { position: absolute; opacity: 0; pointer-events: none; }
+.tabs-bar { display: flex; align-items: center; gap: 4px; padding: 8px 8px 0; border-bottom: 1px solid var(--term-line); }
+.tabs-bar label { padding: 7px 12px 9px; font-size: var(--t-xs); font-weight: 600; color: var(--term-dim); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs-bar label:hover { color: var(--term-fg); }
+#tab-mac:checked ~ .tabs-bar label[for="tab-mac"], #tab-win:checked ~ .tabs-bar label[for="tab-win"] {
+  color: var(--term-fg); border-bottom-color: var(--accent); }
+#tab-mac:focus-visible ~ .tabs-bar label[for="tab-mac"], #tab-win:focus-visible ~ .tabs-bar label[for="tab-win"] {
+  outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.copy { margin: 0 0 6px auto; height: 28px; padding: 0 12px; border-radius: 7px; font: 600 var(--t-xs) var(--sans);
+  color: var(--term-fg); background: transparent; border: 1px solid var(--term-line); cursor: pointer; }
+.copy:hover { border-color: var(--term-dim); }
+.tab-pane { display: none; }
+#tab-mac:checked ~ .tab-pane[data-pane="mac"], #tab-win:checked ~ .tab-pane[data-pane="win"] { display: block; }
+.tab-pane .code { border: 0; border-radius: 0; padding: 16px 18px; white-space: pre; overflow-x: auto; }
+.tab-pane .note { margin: 0; padding: 0 18px 14px; color: var(--term-dim); }
+.tab-pane .note a { color: var(--term-fg); }
+.tab-pane .note code { background: transparent; border-color: var(--term-line); color: var(--term-fg); }
+.dl-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 56px; align-items: start; }
+.dl-grid .sec-head { margin-bottom: 0; }
+.dl-body { max-width: 720px; }
+.dl-body h3 { font-size: var(--t-md); margin: 36px 0 12px; }
+.dl-body h3:first-child { margin-top: 0; }
+.dl-body p, .dl-body .sub li { color: var(--mute); }
+.dl-body ol.sub { padding-left: 1.3em; }
+.dl-line { margin: 0 0 14px; padding: 12px 16px; white-space: pre; overflow-x: auto; }
+@media (max-width: 960px) { .dl-grid { grid-template-columns: minmax(0, 1fr); gap: 28px; } }
+@media (max-width: 600px) {
+  .dl-hero { padding: 44px 0 56px; }
+  .tab-pane .code { padding: 14px; }
+  .tab-pane .note { padding: 0 14px 12px; }
+}
 
 /* requirements: a two-column grid of short entries */
 .reqs { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; }

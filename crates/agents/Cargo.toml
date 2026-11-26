@@ -1,0 +1,17 @@
+[package]
+name = "devicesteer-agents"
+description = "Agent setup for DeviceSteer: the devicesteer command and the skill, linked into the installed app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+# The home folder from the OS (the profile folder on Windows, where HOME is usually unset).
+dirs = "7"
+
+[target.'cfg(windows)'.dependencies]
+# Links without Developer Mode: directory junctions, and recognizing the CLI's hard link.
+junction = "1"
+same-file = "1"

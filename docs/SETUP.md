@@ -104,6 +104,32 @@ has one build identity per board, so a device newer than its Xcode needs a newer
 - The download from GitHub (`raw.githubusercontent.com`), once per pin, only when no local copy
   fits. Nothing about the device is sent.
 
+## Installing on macOS from a terminal
+
+```sh
+curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh
+# options go after `sh -s --`:
+curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh -s -- --version 1.0.0 --quit
+```
+
+`install.sh` (`scripts/install.sh`, attached to every release from the one after 1.0.0-beta.4)
+reads the latest release's tag from the `releases/latest` redirect (no API call), downloads that
+release's `DeviceSteer.app.tar.gz` (the notarized, stapled app the in-app updater installs) and
+`SHA256SUMS`, checks the archive's SHA-256 and the app's code signature, and swaps the app into
+place: next to the destination first, then one rename, so a failure never leaves half an app. The
+destination is where DeviceSteer already is (`/Applications`, then `~/Applications`), else
+`/Applications` when writable, else `~/Applications`, or `--dir`. A running DeviceSteer from that
+copy stops it with a message, unless `--quit` (SIGTERM: an Apple event would ask for Automation
+permission, which an SSH session can't answer). Device daemons of the old version keep running
+until they stop, as after an in-app update. curl adds no quarantine, so Gatekeeper doesn't stop
+the first launch.
+
+Then it runs the new app's `devicesteer agents install` (unless `--no-agents`): the same code as
+Settings › Agents (`crates/agents`), linking the command and the skill for every agent found, and
+skipping anything at those paths that isn't DeviceSteer's. `devicesteer agents` prints the state;
+`agents install <id>... [--replace]` and `agents uninstall [<id>...]` change it. On other systems
+the script prints the Windows command and exits.
+
 ## Windows
 
 Wi-Fi discovery asks Windows' own mDNS responder (the DNS Client service, through

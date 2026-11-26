@@ -29,6 +29,19 @@ DeviceSteer 1.0 is in beta.
 3. If the pane says `~/.local/bin` isn't on your PATH, add it to your shell profile:
    `export PATH="$HOME/.local/bin:$PATH"`.
 
+Or from a terminal (an SSH session, or a coding agent installing it for you):
+
+```sh
+curl -fsSL https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.sh | sh
+```
+
+It downloads the latest release's app, checks it against the release's `SHA256SUMS` and its code
+signature, installs it in `/Applications` (`~/Applications` when that isn't writable; an installed
+copy is updated in place) and sets up the command and the skill as Settings › Agents does. Options
+go after `sh -s --`: `--version 1.0.0`, `--quit` (quit a running DeviceSteer first), `--dir
+<folder>`, `--no-agents`. Afterwards `devicesteer agents` shows what is set up and `devicesteer
+agents install|uninstall` changes it. See [the download page](https://devicesteer.sunghyunkim.com/download).
+
 ### Windows (10 and 11, x64)
 
 1. For USB, install **Apple Devices** from the Microsoft Store (or iTunes), open it once and accept

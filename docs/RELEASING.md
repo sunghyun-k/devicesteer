@@ -19,12 +19,14 @@ it, signs the installer and adds it to `latest.json`.
 | `DeviceSteer_x64-setup.exe` | Windows: the NSIS installer, for first installs and for the in-app updater. Not code-signed yet (see "Windows" below). |
 | `DeviceSteer_x64-setup.exe.sig` | Its updater signature, made on the release Mac. |
 | `install.ps1` | The PowerShell installer (`scripts/install.ps1` at the release's commit): `irm https://github.com/<repo>/releases/latest/download/install.ps1 \| iex`. |
-| `SHA256SUMS` | SHA-256 of the Windows installer and `install.ps1`; `install.ps1` checks the installer against it. |
+| `install.sh` | The macOS terminal installer (`scripts/install.sh` at the release's commit): `curl -fsSL https://github.com/<repo>/releases/latest/download/install.sh \| sh`. |
+| `SHA256SUMS` | SHA-256 of the disk image, the app archive and `install.sh` (written by `scripts/release.sh`), and of the Windows installer and `install.ps1` (added by the Windows workflow, which keeps the macOS lines). `install.sh` checks the archive against it, `install.ps1` the installer. |
 | `latest.json` | What the updater reads: version, notes, and the archive's URL and signature for `darwin-aarch64` and `darwin-x86_64` (one universal archive serves both), and `windows-x86_64` for the installer. |
 
 **Asset names are fixed and carry no version.** The homepage, README and `docs/SETUP.md` link to
 `https://github.com/<repo>/releases/latest/download/<name>` (`DeviceSteer_universal.dmg`,
-`DeviceSteer_x64-setup.exe`), and the updater to `latest.json`, so renaming an asset breaks those
+`DeviceSteer_x64-setup.exe`, `install.sh`, `install.ps1`), `install.sh` downloads
+`DeviceSteer.app.tar.gz`, and the updater to `latest.json`, so renaming an asset breaks those
 links. Tauri names the Windows installer after the version; `release-windows.yml` renames it before
 uploading. Releases up to 1.0.0-beta.4 used `DeviceSteer_<version>_universal.dmg` and
 `DeviceSteer_<version>_x64-setup.exe`; `install.ps1 -Version` still finds those.
@@ -42,7 +44,7 @@ Both extras come from `app/src-tauri/tauri.bundle.conf.json`, which bundling pas
 `externalBin` to exist, which would break `cargo build` and `tauri dev` before the CLI is built.
 
 The app's Settings window (Agents) links `~/.local/bin/devicesteer` and each agent's skill folder to these
-through `~/.local/share/devicesteer/current` (see `app/src-tauri/src/agent_setup.rs` for why), so
+through `~/.local/share/devicesteer/current` (see `crates/agents/src/lib.rs` for why), so
 an update replaces the CLI and the skill along with the app.
 
 The Windows installer puts the same three in the app's folder (`%LOCALAPPDATA%\DeviceSteer` by
