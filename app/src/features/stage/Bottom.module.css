@@ -1,0 +1,38 @@
+/* Under the device: the session slot and the device bar. Always the same height, whatever shows,
+   so the device never changes size when a session starts or ends or the screen is shown. Not over
+   the screen, where it would cover the home indicator. */
+.bottom { container: bottom / inline-size; flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 20px 18px; }
+
+/* The device toolbar: plain buttons in a row, an icon and a short word each, gray until
+   hovered, all the same size. The hardware buttons, a separator, then screenshot and record.
+   Nothing about it looks like a field: no surface around it, no primary button. Record shows the
+   usual record dot; while recording it turns red, counts the time and shows a stop square. */
+.controls { height: 40px; display: flex; align-items: center; justify-content: center; width: 100%; }
+.controls.away { visibility: hidden; }
+.bar { display: flex; align-items: center; gap: 6px; max-width: 100%; }
+.row { display: flex; align-items: center; gap: 2px; flex: none; }
+.sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--line); }
+.tool {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; height: 30px; padding: 0 10px 0 8px; border: 0;
+  border-radius: var(--r-sm); background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; white-space: nowrap;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.tool:hover { background: var(--hover); color: var(--fg); }
+.tool:active { background: var(--press); }
+.tool:disabled { opacity: 0.4; background: transparent; }
+.tool :global(.icon) { width: 17px; height: 17px; color: var(--fg-icon); }
+.record :global(.icon) { width: 15px; height: 15px; margin: 0 1px; color: var(--fg-2); }
+.record.recording, .record.recording :global(.icon) { color: var(--danger); }
+.record.recording { background: var(--danger-tint); }
+.record.recording :global(.icon) { animation: rec-pulse 1.2s ease-in-out infinite; }
+.recordLabel { font-variant-numeric: tabular-nums; }
+.record.recording .recordLabel { min-width: 3.2em; }
+@keyframes rec-pulse { 50% { opacity: 0.45; } }
+
+/* Not enough room under the device for the tools' words (the center column, not the window,
+   decides: the sidebar and inspector take their share): icons only, each keeping its tooltip and
+   accessible name; a running recording keeps its time. */
+@container bottom (max-width: 600px) {
+  .tool span:not(.recordLabel), .record:not(.recording) .recordLabel { display: none; }
+  .tool { padding: 0 8px; }
+}

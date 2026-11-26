@@ -1,0 +1,67 @@
+.sidebar { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; background: var(--side-bg); border-right: 1px solid var(--hairline); }
+.head { display: flex; align-items: center; gap: 4px; height: var(--head-h); padding: 0 10px; flex: none; }
+/* The macOS traffic lights sit over the window's top-left corner (titleBarStyle Overlay); this
+   keeps room for them in the sidebar's header. Only on macOS in the app. */
+.lights { display: none; flex: none; width: 64px; }
+:global(:root.mac) .lights { display: block; }
+.grow { flex: 1; align-self: stretch; }
+.titleRow { display: flex; align-items: center; gap: 4px; padding: 8px 10px 6px 12px; flex: none; }
+.title { padding: 0 6px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; line-height: 32px; }
+/* A search field like a settings sidebar's: full radius, hairline border. */
+.search {
+  display: flex; align-items: center; gap: 7px; margin: 4px 12px 6px; height: 32px; padding: 0 11px;
+  border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); color: var(--fg-3); flex: none;
+}
+.search :global(.icon) { width: 15px; height: 15px; }
+.search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font-size: 13px; color: var(--fg); }
+.search input::placeholder { color: var(--fg-3); }
+.search input::-webkit-search-cancel-button { opacity: 0.5; }
+.search:focus-within { border-color: color-mix(in srgb, var(--fg) 25%, transparent); }
+
+/* Rows like a chat list's: one line, 30 points, a soft fill when selected. */
+.list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 16px; }
+.list section { padding-bottom: 6px; }
+.list h3 { font-size: 13px; font-weight: 400; color: var(--fg-3); height: 25px; padding: 10px 10px 0; box-sizing: content-box; }
+.list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.dev {
+  display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: var(--r-sm);
+  transition: background 0.1s var(--ease);
+}
+.dev:hover { background: var(--hover); }
+.dev:focus-visible { outline-offset: -2px; }
+.dev[aria-selected="true"] { background: var(--select); }
+.dev .glyph { width: 16px; height: 16px; color: var(--fg-2); }
+.dev .text { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; white-space: nowrap; }
+.dev .name { flex: none; max-width: 100%; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; }
+/* The status: a few gray words after the name. */
+.dev .status { min-width: 0; color: var(--fg-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.dev .status:empty { display: none; }
+.dev.unavailable .name, .dev.unavailable .glyph { color: var(--fg-3); }
+/* An agent session runs on the device: its state in the status, and a dot at the row's end in
+   the session strip's colours: blue while the agent works, amber while it waits for the person,
+   an amber ring while the person has the device. */
+.dev .busy { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.dev .busy[data-owner="delegated_to_user"] { background: var(--warning); }
+.dev .busy[data-owner="user"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--warning); }
+.dev.hasSession .status { color: var(--fg-2); }
+.message { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 36px 16px; }
+.message .messageTitle { font-weight: 600; }
+.message .detail { color: var(--fg-3); font-size: 13px; overflow-wrap: anywhere; }
+.message.error .messageTitle { color: var(--danger); }
+.mux { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 8px 2px 6px; padding: 12px 14px; border-radius: var(--r-lg); }
+.mux .messageTitle { font-weight: 600; }
+.mux .muxDetail { color: var(--fg-2); font-size: 13px; }
+.mux .note { display: flex; gap: 8px; align-items: flex-start; color: var(--fg-3); font-size: 12px; }
+.mux .note :global(.spinner) { flex: none; width: 12px; height: 12px; margin-top: 2px; }
+/* Under the list: starting a device that isn't listed yet. */
+.foot { flex: none; padding: 8px 12px 12px; border-top: 1px solid var(--hairline); }
+.foot :global(.btn) { width: 100%; justify-content: flex-start; color: var(--fg-2); }
+.foot :global(.btn):hover { color: var(--fg); }
+
+/* Narrow windows: the device list floats over the stage's left side. */
+@media (max-width: 720px) {
+  .sidebar {
+    grid-column: auto; position: absolute; z-index: 16; top: 0; left: 0; bottom: 0; width: min(var(--side-w), calc(100% - 24px));
+    box-shadow: var(--shadow-md);
+  }
+}

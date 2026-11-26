@@ -4,7 +4,7 @@
 //! and the agent's). The page owns that setting and keeps it in its window settings; the menu only
 //! shows it and tells the page when it is chosen.
 //!
-//! The page owns the language too (app/src/i18n.ts: the catalogs and the person's choice in
+//! The page owns the language too (app/src/i18n/i18n.ts: the catalogs and the person's choice in
 //! Settings), so it sends the labels (`set_menu_labels`) at launch and when the language changes;
 //! until then the menu is in English.
 //!
@@ -19,12 +19,12 @@ use tauri::menu::{AboutMetadata, CheckMenuItem, HELP_SUBMENU_ID, Menu, MenuEvent
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 const SETTINGS: &str = "settings";
-/// ⌘,: the macOS convention. The page's `viewerShortcut` (app/src/main.ts) keeps it from going to
+/// ⌘,: the macOS convention. The page's `viewerShortcut` (app/src/input/keyboard.ts) keeps it from going to
 /// the device, or the menu never sees it.
 const SETTINGS_KEY: &str = "CmdOrCtrl+Comma";
 const SHOW_TOUCHES: &str = "show-touches";
 /// ⇧⌘T: free in the default menu and among the viewer's shortcuts (`viewerShortcut` in
-/// app/src/main.ts, which must keep it from going to the device, or the menu never sees it).
+/// app/src/input/keyboard.ts, which must keep it from going to the device, or the menu never sees it).
 const SHOW_TOUCHES_KEY: &str = "CmdOrCtrl+Shift+T";
 
 /// The menu's labels, from the page's catalog (`menu.*` in app/src/locales/*.json), and the

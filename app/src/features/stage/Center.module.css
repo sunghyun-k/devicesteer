@@ -1,0 +1,37 @@
+/* No background here: the agent's glow sits at a negative z-index, under the device, and would
+   paint under it (the body has the same color). */
+.center { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+.head {
+  display: flex; align-items: center; gap: 8px; height: var(--head-h); padding: 0 12px 0 20px; flex: none;
+  border-bottom: 1px solid var(--hairline);
+}
+:global([data-sidebar="off"]) .head { padding-left: calc(var(--pin-l) + var(--pin-room)); }
+:global([data-inspector="off"]) .head { padding-right: var(--pin-room); }
+.glyph { width: 17px; height: 17px; color: var(--fg-icon); }
+.title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; align-self: stretch; line-height: var(--head-h); }
+.name { flex: none; max-width: 70%; font-weight: 600; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { min-width: 0; color: var(--fg-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolbar { display: flex; align-items: center; gap: 14px; flex: none; }
+.group { display: inline-flex; align-items: center; gap: 6px; }
+
+/* The keyboard button while keys go to the device; dimmed while the hardware keyboard is
+   being connected or an agent has the device (forwarding stays on, but keys don't go). */
+.toolbar [data-forwarding="on"],
+.toolbar [data-forwarding="on"] :global(.icon) { color: var(--accent); }
+.toolbar [data-forwarding="connecting"],
+.toolbar [data-forwarding="connecting"] :global(.icon),
+.toolbar [data-forwarding="paused"],
+.toolbar [data-forwarding="paused"] :global(.icon) { color: var(--accent); opacity: 0.45; }
+
+@media (max-width: 1000px) {
+  .head { padding-right: var(--pin-room); }
+}
+@media (max-width: 720px) {
+  .head, :global([data-sidebar="off"]) .head { padding-left: calc(var(--pin-l) + var(--pin-room)); }
+}
+@media (max-width: 600px) {
+  .meta { display: none; }
+}
+@media (max-width: 480px) {
+  .toolbar { gap: 6px; }
+}

@@ -643,7 +643,7 @@ through the accessibility tree: `y: 15` put the 16-point buttons' top 5 points d
 13), and `y: 25` put it 15 points down (middle at 23). `x` matched the left edge. So `y` is 10
 points more than the top edge it gives.
 
-The viewer's headers are 46 points tall (`--head-h` in `app/src/style.css`) and the buttons sit in
+The viewer's headers are 46 points tall (`--head-h` in `app/src/app/App.module.css`) and the buttons sit in
 their middle, so the config has `y: 25`. Change both together, and measure again: the offset may
 change with Tauri or macOS.
 
@@ -1063,7 +1063,7 @@ top-left 1280x720 over the whole canvas. WebKit (#26) reports the whole coded pi
 
 The decoder is now configured with `codedWidth` and `codedHeight` from the daemon's `config`, and a
 frame whose visible rect is smaller than the screen it holds is redrawn from a `VideoFrame` cut to
-the screen (`drawFrame` in `app/src/main.ts`). `viewer.log` still shows the decoder's own rect.
+the screen (`draw` in `app/src/stream/screen.ts`). `viewer.log` still shows the decoder's own rect.
 
 ### 58. An iPad's touchscreen is turned from its panel: every drag's axis was swapped
 
@@ -1363,7 +1363,7 @@ Socket(Custom { kind: NetworkUnreachable, error: "adapter closed" }))`.
 ### 67. Windows: the page sees little of the Windows key, and Win+Space is Windows' own
 
 Windows 11, keys injected with `SendInput` into a Chromium page (Edge) that calls `preventDefault`
-on every keydown, to choose which PC keys the viewer sends as Command and Control (`keymap.ts`).
+on every keydown, to choose which PC keys the viewer sends as Command and Control (`app/src/input/keymap.ts`).
 
 - **A lone Windows key opens Start**: the page gets a `MetaLeft` keydown, then `blur`, and no
   keyup. So the Windows key can't be Command, the key a PC user presses most with letters.
@@ -1422,7 +1422,7 @@ Not observed on a device: gathered from WebKit's history, for `bundle.macOS.mini
 (14.0) in `app/src-tauri/tauri.conf.json`. DeviceSteer is tested on macOS 26 only.
 
 - **The viewer decodes the screen in the page.** The stream is HEVC (`hvc1`), decoded with
-  WebCodecs' `VideoDecoder` (`app/src/main.ts`) in the system WKWebView, so what decodes is the
+  WebCodecs' `VideoDecoder` (`app/src/stream/screen.ts`) in the system WKWebView, so what decodes is the
   Safari engine that ships with that macOS, not one we bundle.
 - **Safari 16.4 turned `hvc1` away** (Apple Developer Forums thread 729464). HEVC in WebKit's
   WebCodecs landed in a commit of July 2023, and a bug where `isConfigSupported` said yes but

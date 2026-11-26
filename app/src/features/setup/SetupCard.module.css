@@ -1,0 +1,74 @@
+/* Setup, while the device isn't ready: the card takes View Screen's place. Steps are a numbered
+   list like a settings page: hairlines between them, the current one opened with what to do and
+   one small button; done steps get a check and gray text, later ones wait in gray. Pairing over
+   Wi-Fi uses the same card. */
+.head h3 { font-size: var(--fs-md); font-weight: 600; }
+.head p { margin-top: 2px; color: var(--fg-3); font-size: var(--fs-sm); }
+.steps { list-style: none; margin: 10px 0 0; padding: 0; }
+.step { display: flex; gap: 12px; padding: 12px 0; }
+.step + .step { border-top: 1px solid var(--hairline); }
+.step:last-child { padding-bottom: 2px; }
+.mark {
+  display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid var(--line); color: var(--fg-3); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.mark :global(.icon) { width: 15px; height: 15px; stroke-width: 2; }
+.mark :global(.spinner) { width: 14px; height: 14px; }
+.step.done .mark { border-color: transparent; background: var(--tile); color: var(--fg-2); }
+.step.needed .mark { border-color: var(--fg); color: var(--fg); }
+.step.running .mark { border-color: transparent; }
+.body { flex: 1; min-width: 0; }
+.title { line-height: 22px; font-size: var(--fs-md); }
+.step.done .title, .step.blocked .title { color: var(--fg-3); }
+.step.needed .title { font-weight: 600; }
+.desc { margin-top: 2px; color: var(--fg-2); font-size: var(--fs-sm); }
+.progress { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; font-size: var(--fs-sm); color: var(--fg-2); }
+.bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.bar::before {
+  content: ""; display: block; height: 100%; width: calc(var(--f) * 100%); border-radius: inherit; background: var(--accent);
+  transition: width 0.2s var(--ease);
+}
+/* A step waiting for the person holding the device: a tinted box with a live dot, the time
+   left, and what to do now in full-strength text. */
+.wait {
+  margin-top: 6px; padding: 10px 12px; border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.waitHead { display: flex; align-items: center; gap: 7px; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); }
+.waitLabel { flex: 1; min-width: 0; }
+.waitTime { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--fg-2); }
+.waitTime.low { color: var(--warning); }
+.pulse {
+  flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: wait-pulse 1.6s var(--ease) infinite;
+}
+@keyframes wait-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
+.waitMsg { margin-top: 5px; font-size: 13.5px; color: var(--fg); user-select: text; -webkit-user-select: text; }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+.error { margin-top: 8px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.actions { display: flex; gap: 8px; margin-top: 10px; }
+
+/* Pairing: the steps on the device read like the setup card's, all at full strength (they are
+   instructions, not states); the current ones are bold. */
+.pairStep { display: flex; gap: 12px; padding: 9px 0; }
+.pairStep + .pairStep { border-top: 1px solid var(--hairline); }
+.pairStep .mark { color: var(--fg-2); }
+.pairStep.now .mark { border-color: var(--fg); color: var(--fg); }
+.pairStep.done .mark { border-color: transparent; background: var(--tile); color: var(--fg-2); }
+.pairStep.now .title { font-weight: 600; }
+.pairStep.done .title { color: var(--fg-3); }
+.pairStep .desc { margin-top: 1px; }
+.pairStep.done .desc { color: var(--fg-3); }
+.pair .wait { margin-top: 12px; }
+/* The code: big, monospaced and centered, so it reads from across a desk. */
+.code { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 10px 0 4px; }
+.codeLabel { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-3); }
+.digits {
+  font-family: var(--font-mono); font-size: 40px; font-weight: 600; line-height: 1.15;
+  letter-spacing: 0.1em; margin-right: -0.1em; font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap;
+}
+.withCode .waitMsg { text-align: center; color: var(--fg-2); }
+.done2 { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: var(--fs-sm); color: var(--fg-2); }
+.pair .error { margin-top: 12px; }
+.pair .actions { margin-top: 12px; }

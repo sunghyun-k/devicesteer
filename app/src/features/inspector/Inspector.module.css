@@ -1,0 +1,52 @@
+.inspector { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); border-left: 1px solid var(--hairline); }
+.head { display: flex; align-items: center; height: var(--head-h); padding: 0 var(--pin-room) 0 8px; flex: none; border-bottom: 1px solid var(--hairline); }
+.grow { flex: 1; align-self: stretch; }
+/* The pane picker: icons only, no track. The selected pane's icon sits on a soft gray disc; the
+   other is a plain gray icon that gets a fainter disc on hover. */
+.segmented { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.segmented [role="tab"] {
+  display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border: 0;
+  border-radius: 50%; background: transparent; color: var(--fg-3);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.segmented [role="tab"] :global(.icon) { width: 18px; height: 18px; }
+.segmented [role="tab"]:hover { background: color-mix(in srgb, var(--tile) 50%, transparent); color: var(--fg-2); }
+.segmented [role="tab"][aria-selected="true"] { background: var(--tile); color: var(--fg-icon); }
+.segmented [role="tab"]:focus-visible { outline-offset: 1px; }
+
+.coords { display: flex; gap: 8px; flex: 1 1 100%; min-width: 0; }
+/* Fields like a search box: full radius and a hairline border. */
+.coords input {
+  width: 50%; min-width: 0; height: 34px; padding: 0 13px; border-radius: var(--r-pill);
+  background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.coords input::placeholder { color: var(--fg-3); }
+.coords input:focus { outline: none; border-color: color-mix(in srgb, var(--fg) 25%, transparent); }
+.set { margin-left: auto; }
+
+/* An item the device doesn't have: dimmed, with a line saying so under its name. */
+.unsupported { opacity: 0.45; }
+.unsupportedNote { display: block; font-size: var(--fs-xs); font-weight: 400; color: var(--fg-3); }
+.status { color: var(--fg-3); font-size: var(--fs-sm); min-height: 1.4em; }
+.status.error { color: var(--danger); padding: 10px 12px; border-radius: var(--r-md); background: var(--danger-tint); }
+.status:empty { padding: 0; background: none; }
+.busy::before {
+  content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 6px; vertical-align: -1px;
+  border-radius: 50%; border: 1.5px solid var(--line); border-top-color: var(--fg-2); animation: spin 0.8s linear infinite;
+}
+.disabled :global(.group) { display: none; }
+
+/* Defaults read on an iOS 27.3 iPhone at its default settings: Liquid Glass 0.5 and Large (`l`,
+   step 3 of 11), the default text size. */
+.glass { --default: 0.5; }
+.textSize { --default: calc(3 / 11); }
+
+/* Narrow windows: the inspector floats over the stage's right side. */
+@media (max-width: 1000px) {
+  .inspector {
+    grid-column: auto; position: absolute; z-index: 15; top: calc(var(--head-h) + 6px); right: 10px; bottom: 10px; width: min(var(--insp-w), calc(100% - 20px));
+    border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-md); overflow: hidden;
+  }
+  .inspector :global(.pane) { padding: 4px 16px 16px; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }

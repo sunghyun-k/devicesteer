@@ -24,14 +24,14 @@ Guide for anyone changing the code of this repository: coding agents and human c
   Korean, Japanese, Simplified and Traditional Chinese, Spanish, French, German, Brazilian
   Portuguese and Italian. `en.json` is the source; `app/src/locales/TRANSLATING.md` has the format
   and the terms.
-- **Every string the viewer shows a person goes through `t()`** (`app/src/i18n.ts`; `data-i18n*`
-  attributes in the HTML), with its key added to every catalog in the same PR, translated, not
+- **Every string the viewer shows a person goes through `t()`** (`app/src/i18n/i18n.ts`; components
+  use `useT()` from `app/src/i18n/react.ts`, so they render again when the language changes), with its key added to every catalog in the same PR, translated, not
   copied in English. `npm test` (in `app/`) checks that every catalog has every key with the same
   placeholders. Labels that name something on the device (Settings › Privacy & Security ›
   Developer Mode, Trust) use Apple's wording in that language. Not translated: what agents read
   (CLI output, JSON, `skill.md`, the daemon's errors) and core or daemon messages the viewer shows
   as they are; for a message the Tauri shell writes for the person, return a `code` the page maps
-  to a catalog key (`errorText` in `i18n.ts`).
+  to a catalog key (`errorText` in `app/src/i18n/i18n.ts`).
 - **The homepage stays English** (`site/`). It names the viewer's languages, so adding or dropping
   a catalog updates `site/index.html` and `site/llms.txt` in the same PR ("Keep the homepage in
   step" below).
@@ -86,10 +86,9 @@ crates/cli/         binary `devicesteer`: JSON CLI. Device commands go through t
                     agent guide `devicesteer skill` prints: keep it in step with the commands
 skills/devicesteer/  SKILL.md: a bootstrap that tells agents to run `devicesteer skill`; bundled
                     into the app, which links agents' skill folders to it
-app/                Tauri v2 viewer: Vite + TypeScript front end (WebCodecs HEVC decoding);
-                    src/agents.ts: the main window's launch sheets and update banner;
-                    src/settings.ts: the Settings window (settings.html: language, agent setup,
-                    updates); src/i18n.ts and src/locales/: localization (see "Language")
+app/                Tauri v2 viewer: React + TypeScript front end built with Vite and React
+                    Compiler (WebCodecs HEVC decoding); two pages, index.html (the viewer) and
+                    settings.html (the Settings window). See "The viewer front end" below
 app/src-tauri/      Tauri shell (workspace member), a daemon client. agent_setup.rs serves the
                     Agents pane (crates/agents makes the links); tauri.bundle.conf.json adds the CLI and the skill to
                     bundles. A new command also goes in build.rs's COMMANDS and the
@@ -110,6 +109,42 @@ docs/PITFALLS.md    Numbered observations, cited from code as PITFALLS #N
 docs/SETUP.md       Device setup without Xcode: steps, detection, where the disk image comes from
 docs/RELEASING.md   Signing, notarizing and publishing a release; the updater key
 ```
+
+### The viewer front end
+
+```text
+app/src/
+  main.tsx, settings-main.tsx   Entries of the two pages: the mock (dev `?mock`), start-up, React root
+  app/          App.tsx: the main window's layout; start.ts: page-long listeners and the first look
+  backend/      Every Tauri invoke and event, typed (commands.ts), the mirrored types, the wire format
+  store/        viewer.ts: the main window's Zustand store (devices, selection, sessions, stage, ...)
+  device/       connection.ts: the daemon connection (attach, messages, stream start and stop);
+                device texts, stats and the viewer.log report
+  stream/       The decoder and the canvas (screen.ts), screen geometry: plain TypeScript
+  input/        Pointer and key input to HID, the key map: plain TypeScript
+  overlay/      The touch indicators, cursor and labels drawn over the screen: plain TypeScript
+  features/     One folder per part of the window, each a component with its logic and CSS module:
+                devices (the list), stage (screen, toolbar, banners, zoom, capture), session (the
+                agent session strip), keyboard, inspector, setup (setup and pairing cards),
+                agents (launch sheets, update banner), settings-window
+  components/   Shared pieces: icons, menus, sheets
+  i18n/  lib/  mock/  styles/   Localization; small helpers; the dev-only fake backend; global CSS
+```
+
+Rules that keep it fast and easy to change:
+
+- **Components don't call the backend.** They read the store (`useViewer`) and call functions in
+  their feature's module or `device/connection.ts`, which talk to `backend/commands.ts`.
+- **Nothing per frame goes through React.** `stream/`, `input/` and `overlay/` are plain modules
+  that live as long as the page; a component only lends them its elements in an effect and takes
+  them back in the cleanup. Lending again (StrictMode's second effect run, a remount) never makes a
+  second decoder or restarts the stream.
+- **Text kept in state is a `Text`** (a message key and its values, `msg()`), not a translated
+  string, so a language change says it again.
+- **Styles:** `styles/global.css` holds the tokens and the controls every feature uses (`.btn`,
+  settings rows, sheets); everything else is a CSS module next to its component. No UI library.
+- Element ids the mock and the verification scripts use (`#refresh`, `#screen`, `#session-primary`,
+  ...) stay as they are.
 
 ### The idevice pin
 
@@ -134,6 +169,11 @@ cargo build                                    # core + CLI + Tauri shell
 
 cd app && npm install
 npx tauri dev                                  # viewer, hot reload
+npx vite                                       # the viewer in a browser: open /?mock (fake devices)
+                                               # or /settings.html?mock; see src/mock/mock.ts
+npm run build                                  # type-check and build the pages
+npm test                                       # Vitest: catalogs, key map, geometry, ...
+npm run lint                                   # ESLint, with React Compiler's rules
 npm run bundle -- --bundles app                # macOS .app with the CLI and skill inside
                                                # (add --debug for a quick unsigned check)
 ```
@@ -153,8 +193,9 @@ run `devicesteer daemon stop` (the next command starts the new build); a viewer 
 attaches again by itself, which starts the new build. `tauri dev` restarts the viewer itself when the daemon crate changes.
 
 There is no test suite against devices; a clean `cargo build` and `cargo clippy --workspace` is the
-minimum for every change, plus `npm run build` and `npm test` in `app/` for a change to the
-viewer. Pure logic (parsing, geometry) should get unit tests.
+minimum for every change, plus `npm run build`, `npm test` and `npm run lint` in `app/` for a
+change to the viewer. Pure logic (parsing, geometry) should get unit tests (`*.test.ts` next to
+the module).
 
 ## Conventions
 
