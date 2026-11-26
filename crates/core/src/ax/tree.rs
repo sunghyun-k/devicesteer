@@ -164,6 +164,10 @@ pub struct Screen {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<String>,
     pub elements: Vec<Element>,
+    /// Why the reading has no elements, when the device listed only an app with nothing in it
+    /// (PITFALLS #71).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// An element on screen offers the home screen's edit mode (`_accessibilityToggleJigglyMode`),
     /// as the home screen's icons do (PITFALLS #62).
     #[serde(skip)]
@@ -414,6 +418,26 @@ impl Screen {
             e.frame = None;
         }
         self.surface = self.system_surface().map(str::to_string);
+        self.note = self.empty_note();
+    }
+
+    /// What to tell the reader when the device listed apps but no element: right after a launch the
+    /// tree can be empty for a moment (PITFALLS #10), and on a foldable's cover panel the device
+    /// listed only Siri AI, empty, over the app the screen showed, reading after reading
+    /// (PITFALLS #71). Set by [`Screen::name_processes`].
+    fn empty_note(&self) -> Option<String> {
+        let apps: Vec<&AppInfo> = self.apps.iter().filter(|a| !a.hosted).collect();
+        if !self.elements.is_empty() || apps.is_empty() || apps.iter().any(|a| a.system) {
+            return None;
+        }
+        let names: Vec<String> =
+            apps.iter().map(|a| a.name.clone().unwrap_or_else(|| format!("pid {}", a.pid))).collect();
+        Some(format!(
+            "the device listed only {} and no element in it. Right after a launch, read again. If a screenshot \
+             shows another app (seen: Siri AI over the app on a foldable's cover panel), its elements can't be \
+             read: tap points from the screenshot",
+            names.join(", ")
+        ))
     }
 
     /// True when SpringBoard is the only app (not counting hosted processes).
@@ -827,6 +851,25 @@ mod tests {
         assert_eq!(frame("Below"), None);
         let tap = s.tap_point(s.find("Likes").unwrap()).unwrap();
         assert!((tap.0 - 106.9).abs() < 0.1 && (tap.1 - 761.8).abs() < 0.1, "{tap:?}");
+    }
+
+    #[test]
+    fn an_empty_app_alone_gets_a_note() {
+        // Seen on a foldable's cover panel (iOS 27.3): only Siri AI, no element (PITFALLS #71).
+        let mut s = screen(vec![]);
+        s.apps = vec![AppInfo { pid: 11, name: Some("Siri AI".into()), bundle_id: None, system: false, hosted: false, window: None }];
+        s.name_processes(|_| ProcName::default());
+        assert!(s.note.as_deref().is_some_and(|n| n.contains("only Siri AI")), "{:?}", s.note);
+        // A locked SpringBoard with no element is a system screen, not this (PITFALLS #60).
+        let mut s = screen(vec![]);
+        s.apps = vec![AppInfo { pid: 37, name: None, bundle_id: None, system: false, hosted: false, window: None }];
+        s.name_processes(|_| ProcName { name: Some("SpringBoard".into()), bundle_id: Some(SPRINGBOARD.into()) });
+        assert_eq!(s.note, None);
+        // Elements: no note.
+        let mut s = screen(vec![el(1, "button", "OK")]);
+        s.apps = vec![AppInfo { pid: 1, name: Some("App".into()), bundle_id: None, system: false, hosted: false, window: None }];
+        s.name_processes(|_| ProcName::default());
+        assert_eq!(s.note, None);
     }
 
     #[test]

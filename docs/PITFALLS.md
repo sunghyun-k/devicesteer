@@ -19,7 +19,7 @@ Everything here was observed on real devices. Code comments cite entries as `PIT
 | Screenshots | #5 |
 | Touch and HID input | #6, #7, #8, #17, #18, #27, #34, #35, #36, #39, #58, #65 |
 | Display info | #9, #27, #70 |
-| Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27, #61, #62, #65, #70 |
+| Accessibility tree | #10, #12, #19, #20, #21, #22, #25, #27, #61, #62, #65, #70, #71 |
 | Daemon | #14, #23 |
 | Device settings | #24 |
 | Viewer | #15, #18, #23, #26, #27, #29, #33, #34, #57, #64, #69 |
@@ -1471,3 +1471,27 @@ the next page). **The screenshot is upright in the interface's orientation**, no
   edges isn't found and keeps its own points (logged). Only foldables are checked for this: an iPad
   in Split View or Stage Manager also has application frames smaller than the screen, untried.
 - The app's own tab bar was not in the tree at all, so it can only be tapped by points.
+
+### 71. Folded, the accessibility service listed only Siri, empty, over the screen
+
+Same foldable (iOS 27.3, USB), folded onto the cover panel (466x678 points, `rot0`), first with an
+app in compatibility mode in front, then the home screen. Every reading, three in a row and again
+after a home press, listed one application and nothing else: the process of
+`/Applications/Siri AI.app` (installation_proxy names it Siri, `com.apple.campo`), a long-running
+pid. With the app in front its application element had no frame and no children; on the home
+screen a frame of the whole screen and empty children (attributes 8 and 9). The screenshot showed
+the app, or the home screen, with no sign of Siri. Unfolded, that process never appeared in a dump.
+`clientNeedsAccessibility:` takes no argument to pick an app, so `ui` printed no element.
+
+- **Ending that process (with the owner's permission, once) brought the tree back at once**:
+  the next dump listed SpringBoard and the widget renderer, with frames that matched the
+  screenshot (cover panel: not turned, #70 holds only for the inner panel, where the panel is turned
+  from the cover). The screen didn't change, and the process had not come back a minute later.
+- Folded, the app in compatibility mode had its own 375x667 points too, in a window filling the
+  cover panel's height from x 0 (381 points wide), and tapping by ref and label hit its elements
+  with the window found as in #70.
+- A `file://` executable path is escaped (`Siri%20AI.app`): `ui` named the process `Siri%20AI` and
+  couldn't find it in installation_proxy's list, which has plain paths. Paths are unescaped now.
+- `ui` now says so in a `note` when the device lists apps with no element and no SpringBoard
+  among them (`Screen::empty_note`). Ending the process from `ui` by itself is not done: it changes
+  the device behind the owner's back, and why Siri took the screen's place is unknown.
