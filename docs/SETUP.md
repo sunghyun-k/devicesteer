@@ -147,9 +147,11 @@ API, downloads the installer with `curl.exe`, checks its SHA-256 against the rel
 SmartScreen doesn't stop the unsigned installer. The checksum catches a broken download; it can't
 catch a compromised release, since both files come from the same place.
 
-The installer itself, `DeviceSteer_<version>_x64-setup.exe` on
-[Releases](https://github.com/sunghyun-k/devicesteer/releases/latest), is an NSIS installer for x64
-Windows 10 and 11. It installs for the current user, without administrator rights, into
+The installer itself,
+[`DeviceSteer_x64-setup.exe`](https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe)
+on [Releases](https://github.com/sunghyun-k/devicesteer/releases/latest)
+(`DeviceSteer_<version>_x64-setup.exe` up to 1.0.0-beta.4), is an NSIS installer for x64 Windows 10
+and 11. It installs for the current user, without administrator rights, into
 `%LOCALAPPDATA%\DeviceSteer`: the app (`devicesteer-app.exe`), the CLI (`devicesteer.exe`, which
 also runs the daemons) and the skill (`skills\devicesteer`). Pairing records, the disk image and
 logs are kept apart, in `%LOCALAPPDATA%\com.sunghyunkim.devicesteer`: updates and uninstalling keep

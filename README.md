@@ -19,8 +19,8 @@ DeviceSteer 1.0 is in beta.
 
 ### macOS
 
-1. Download `DeviceSteer_<version>_universal.dmg` from
-   [Releases](https://github.com/sunghyun-k/devicesteer/releases/latest), open it and drag
+1. Download [`DeviceSteer_universal.dmg`](https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg) (the latest
+   [release](https://github.com/sunghyun-k/devicesteer/releases/latest)), open it and drag
    DeviceSteer to Applications.
 2. Open DeviceSteer. On first launch it offers to set up agents: the `devicesteer` command
    (`~/.local/bin/devicesteer`) and the DeviceSteer skill for the coding agents it finds (Claude
@@ -42,8 +42,8 @@ DeviceSteer 1.0 is in beta.
 
    It downloads the latest installer, checks it against the release's `SHA256SUMS` and installs it
    for your account only (in `%LOCALAPPDATA%\DeviceSteer`), without administrator rights. Or
-   download `DeviceSteer_<version>_x64-setup.exe` from
-   [Releases](https://github.com/sunghyun-k/devicesteer/releases/latest) and run it.
+   download [`DeviceSteer_x64-setup.exe`](https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe) (the latest
+   [release](https://github.com/sunghyun-k/devicesteer/releases/latest)) and run it.
 3. DeviceSteer isn't code-signed yet, so Windows may stop it:
    - **SmartScreen** stops the installer when a browser downloaded it ("Windows protected your
      PC"): click **More info**, then **Run anyway**. The PowerShell install doesn't hit this.

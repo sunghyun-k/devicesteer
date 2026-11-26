@@ -38,7 +38,7 @@
   "operatingSystem": "macOS, Windows",
   "description": "See and control a real iPhone or iPad from macOS or Windows without Xcode, for you or for a coding agent.",
   "url": "https://devicesteer.sunghyunkim.com/",
-  "downloadUrl": "https://github.com/sunghyun-k/devicesteer/releases",
+  "downloadUrl": "https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg",
   "license": "https://opensource.org/licenses/MIT",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "author": { "@type": "Person", "name": "Sunghyun Kim", "url": "https://sunghyunkim.com" }
@@ -66,7 +66,7 @@
       <a href="#agents">For agents</a>
       <a href="#requirements">Requirements</a>
     </nav>
-    <a class="btn small" id="get-top" href="https://github.com/sunghyun-k/devicesteer/releases">Download</a>
+    <a class="btn small" id="get-top" href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg">Download</a>
   </div>
 </header>
 
@@ -86,7 +86,7 @@
            the macOS version. -->
       <p class="get-note" id="get-note" hidden></p>
       <div class="cta">
-        <a class="btn primary" id="get-primary" href="https://github.com/sunghyun-k/devicesteer/releases">Download for macOS</a>
+        <a class="btn primary" id="get-primary" href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg">Download for macOS</a>
         <a class="btn" id="get-secondary" href="https://github.com/sunghyun-k/devicesteer">View on GitHub</a>
       </div>
       <p class="get-alt" id="get-alt">On Windows? <a href="#windows">Get it for Windows</a>.</p>
@@ -288,16 +288,16 @@
     <ol class="rail">
       <li id="install">
         <h3>Install the app</h3>
-        <p>Download <code>DeviceSteer_&lt;version&gt;_universal.dmg</code> from
-          <a href="https://github.com/sunghyun-k/devicesteer/releases">GitHub Releases</a>, open it and drag
+        <p>Download <a href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_universal.dmg"><code>DeviceSteer_universal.dmg</code></a>
+          (also on <a href="https://github.com/sunghyun-k/devicesteer/releases/latest">GitHub Releases</a>), open it and drag
           DeviceSteer to Applications. The app keeps itself up to date.</p>
         <div id="windows">
           <p><strong>On Windows</strong> (10 and 11, x64): for USB, install Apple Devices from the Microsoft Store
             (or iTunes), open it once and accept its license. Then install DeviceSteer from PowerShell, for your
             account only and without administrator rights:</p>
           <pre class="code" aria-label="PowerShell install command">irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1 | iex</pre>
-          <p class="note">Or run <code>DeviceSteer_&lt;version&gt;_x64-setup.exe</code> from
-            <a href="https://github.com/sunghyun-k/devicesteer/releases">GitHub Releases</a>. It isn't code-signed
+          <p class="note">Or download and run <a href="https://github.com/sunghyun-k/devicesteer/releases/latest/download/DeviceSteer_x64-setup.exe"><code>DeviceSteer_x64-setup.exe</code></a>
+            (also on <a href="https://github.com/sunghyun-k/devicesteer/releases/latest">GitHub Releases</a>). It isn't code-signed
             yet: SmartScreen may stop a downloaded installer (<em>More info</em>, then <em>Run anyway</em>), and
             Smart App Control on Windows 11 blocks it while it is on. See the
             <a href="https://github.com/sunghyun-k/devicesteer#windows-10-and-11-x64">README</a>.
@@ -414,10 +414,13 @@ devicesteer session finish</pre>
 // Points the download buttons at the visitor's system. Without this script the page shows the
 // macOS buttons, which is also what Macs get.
 (() => {
-  const RELEASES = 'https://github.com/sunghyun-k/devicesteer/releases';
-  // Set to the Windows installer's URL once a Windows build is published; the Windows buttons
-  // then download it instead of pointing at the build steps.
-  const WINDOWS_DOWNLOAD = null;
+  // Release assets carry no version (scripts/release.sh, docs/RELEASING.md), so these always
+  // fetch the latest release's installers.
+  const LATEST = 'https://github.com/sunghyun-k/devicesteer/releases/latest/download/';
+  const MAC_DOWNLOAD = LATEST + 'DeviceSteer_universal.dmg';
+  // The Windows buttons download the installer; set to null to point them at the install steps
+  // (#windows) instead.
+  const WINDOWS_DOWNLOAD = LATEST + 'DeviceSteer_x64-setup.exe';
   const WINDOWS_STEPS = '#windows';
 
   const ua = navigator.userAgent;
@@ -442,7 +445,7 @@ devicesteer session finish</pre>
   if (os === 'windows') {
     setLink($('get-primary'), windowsText, windowsHref);
     $('get-top').href = windowsHref;
-    altLink('On a Mac?', 'Download for macOS', RELEASES);
+    altLink('On a Mac?', 'Download for macOS', MAC_DOWNLOAD);
   } else {
     const note = $('get-note');
     note.textContent = 'DeviceSteer is an app for a Mac or a Windows PC. It shows and controls the iPhone or iPad connected to that computer.';

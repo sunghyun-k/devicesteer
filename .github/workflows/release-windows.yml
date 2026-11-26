@@ -3,7 +3,8 @@
 # --windows` starts it by itself. It builds the commit the draft points at, so the Windows build is
 # the same source as the macOS one.
 #
-# It uploads DeviceSteer_<version>_x64-setup.exe, scripts/install.ps1 (the PowerShell installer,
+# It uploads the installer as DeviceSteer_x64-setup.exe (no version: the homepage links to
+# releases/latest/download/DeviceSteer_x64-setup.exe), scripts/install.ps1 (the PowerShell installer,
 # `irm .../releases/latest/download/install.ps1 | iex`) and SHA256SUMS for both. The updater signature and the
 # `windows-x86_64` entry in latest.json are made on the release Mac, which alone holds the updater
 # key (docs/RELEASING.md). It never publishes the release and refuses a release that isn't a draft.
@@ -94,7 +95,11 @@ jobs:
           [ "$INSTALLER" = "DeviceSteer_${VERSION}_x64-setup.exe" ] || { echo "::error::unexpected installer name $INSTALLER"; exit 1; }
           # Checked again: someone may have published it while this ran.
           [ "$(gh release view "v$VERSION" --json isDraft -q .isDraft)" = true ] || { echo "::error::v$VERSION was published meanwhile; not uploading"; exit 1; }
+          # Tauri names the installer after the version; the release asset has none, so that
+          # releases/latest/download/DeviceSteer_x64-setup.exe (the homepage's link) always works.
+          asset=DeviceSteer_x64-setup.exe
+          mv "installer/$INSTALLER" "installer/$asset"
           cp src/scripts/install.ps1 installer/install.ps1
           # install.ps1 checks the installer against this before running it.
-          (cd installer && sha256sum "$INSTALLER" install.ps1 > SHA256SUMS && cat SHA256SUMS)
-          gh release upload "v$VERSION" "installer/$INSTALLER" installer/install.ps1 installer/SHA256SUMS --clobber
+          (cd installer && sha256sum "$asset" install.ps1 > SHA256SUMS && cat SHA256SUMS)
+          gh release upload "v$VERSION" "installer/$asset" installer/install.ps1 installer/SHA256SUMS --clobber

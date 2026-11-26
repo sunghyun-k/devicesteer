@@ -6,7 +6,7 @@
 #
 #   & ([scriptblock]::Create((irm https://github.com/sunghyun-k/devicesteer/releases/latest/download/install.ps1))) -Version 1.0.0
 #
-# It downloads DeviceSteer_<version>_x64-setup.exe and the release's SHA256SUMS, checks the
+# It downloads DeviceSteer_x64-setup.exe and the release's SHA256SUMS, checks the
 # installer against it, and runs the installer silently for the current user (no administrator
 # rights). Why a script and not only the installer: a file a browser downloads carries the Mark of
 # the Web, and SmartScreen stops unsigned installers that carry it; curl.exe and
@@ -60,8 +60,14 @@ try {
     Fail "could not read the latest release from github.com/$repo ($($_.Exception.Message))"
 }
 $Version = "$($release.tag_name)".TrimStart('v')
-$name = "DeviceSteer_${Version}_x64-setup.exe"
-$installer = $release.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+# Releases up to 1.0.0-beta.4 named the installer after the version; later ones don't, so that
+# releases/latest/download/DeviceSteer_x64-setup.exe works. -Version may name either kind.
+$installer = $null
+foreach ($candidate in @('DeviceSteer_x64-setup.exe', "DeviceSteer_${Version}_x64-setup.exe")) {
+    $installer = $release.assets | Where-Object { $_.name -eq $candidate } | Select-Object -First 1
+    if ($installer) { $name = $candidate; break }
+}
+if (-not $installer) { $name = 'DeviceSteer_x64-setup.exe' }
 $sums = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
 if (-not $installer) { Fail "release v$Version has no Windows installer ($name)" }
 if (-not $sums) { Fail "release v$Version has no SHA256SUMS to check the installer against" }

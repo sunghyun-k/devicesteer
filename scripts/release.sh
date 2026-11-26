@@ -50,7 +50,9 @@ for tool in $tools; do
 done
 gh auth status >/dev/null 2>&1 || die "gh isn't signed in: run 'gh auth login'"
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-installer="DeviceSteer_${version}_x64-setup.exe"
+# Asset names carry no version: the homepage links to releases/latest/download/<name>, so they must
+# stay the same from release to release (docs/RELEASING.md).
+installer="DeviceSteer_x64-setup.exe"
 
 if [ "$mac" = 1 ]; then
 
@@ -202,7 +204,7 @@ COPYFILE_DISABLE=1 tar -czf "$archive" -C "$out" DeviceSteer.app
 sign_updater "$archive"
 
 step "Making the disk image"
-dmg="$out/DeviceSteer_${version}_universal.dmg"
+dmg="$out/DeviceSteer_universal.dmg"
 stage="$out/dmg"
 mkdir -p "$stage"
 ditto "$app" "$stage/DeviceSteer.app"
