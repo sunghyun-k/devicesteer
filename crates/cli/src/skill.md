@@ -167,6 +167,8 @@ screens, about four times larger); you don't need it to read the screen.
   (a locked device may list SpringBoard with no elements at all).
 - A reading with no elements may carry a `note` saying why (the tree still loading, or the device
   listing an empty app over the screen): do what it says, and fall back to a screenshot.
+- When the device lists only an empty Siri over the screen (seen on a folded foldable), `ui` ends
+  that Siri process and reads again; its `note` says when it did.
 - Widgets (home and lock screen) are listed with their text but **no frame**: their positions
   aren't known, so tap them at the point a screenshot shows.
 - Refs (`@e12`) are valid **until the next `ui`**. Read again after anything that changes the screen.

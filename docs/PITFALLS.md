@@ -1493,5 +1493,11 @@ the app, or the home screen, with no sign of Siri. Unfolded, that process never 
 - A `file://` executable path is escaped (`Siri%20AI.app`): `ui` named the process `Siri%20AI` and
   couldn't find it in installation_proxy's list, which has plain paths. Paths are unescaped now.
 - `ui` now says so in a `note` when the device lists apps with no element and no SpringBoard
-  among them (`Screen::empty_note`). Ending the process from `ui` by itself is not done: it changes
-  the device behind the owner's back, and why Siri took the screen's place is unknown.
+  among them (`Screen::empty_note`).
+- **`ui` ends that Siri process by itself** (the owner decided so): only when Siri
+  (`com.apple.campo`) is the dump's only application with no children and no other element
+  (`ax::overlay::lone_empty_siri`), only that pid, once per `ui` call, and not the same pid again
+  within 60 s. It then reads again and says so in the `note` (and the daemon's log); if the reading
+  is still empty, the empty-reading note follows. The grounds are one observation: the tree came
+  back at once, the screen didn't change and the process didn't return within a minute. Why Siri
+  took the screen's place, and what ending it would cut off while Siri is in use, is not known.

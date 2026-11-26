@@ -6,11 +6,13 @@ mod archive;
 mod attrs;
 #[allow(dead_code)]
 mod dump;
+mod overlay;
 mod service;
 mod tree;
 mod window;
 
 pub(crate) use dump::Dump;
+pub(crate) use overlay::{Cooldown, lone_empty_siri};
 pub use service::{AxClient, AxUnresponsive};
 pub use tree::{AppInfo, BuildOptions, Element, Geometry, Rect, Screen};
 pub(crate) use window::{Image, find as find_window};

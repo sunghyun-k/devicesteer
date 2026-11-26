@@ -57,6 +57,8 @@ pub struct Controller {
     /// Where apps in compatibility mode were found drawn, so `ui` doesn't take a screenshot
     /// every time (PITFALLS #70).
     windows: HashMap<WindowKey, (Rect, Instant)>,
+    /// Siri processes ended because they hid the screen (PITFALLS #71).
+    siri_ended: crate::ax::Cooldown,
 }
 
 /// An app in compatibility mode on one screen: its pid, its own size and the screen's, in
@@ -66,6 +68,9 @@ type WindowKey = (i64, (i64, i64), (i64, i64));
 /// How long a found window is reused. It moves only when the person resizes it, but then taps
 /// would miss until this runs out.
 const WINDOW_REUSE: Duration = Duration::from_secs(30);
+
+/// A pause after ending Siri before reading again, for the device to drop it (PITFALLS #71).
+const SIRI_SETTLE: Duration = Duration::from_millis(300);
 
 /// Longest wait for one accessibility reading.
 const AX_TIMEOUT: Duration = Duration::from_secs(15);
@@ -92,6 +97,7 @@ impl Controller {
             want_keyboard: false,
             typing_ways: HashMap::new(),
             windows: HashMap::new(),
+            siri_ended: Default::default(),
         }
     }
 
@@ -301,8 +307,29 @@ impl Controller {
             Err(e) if e.is::<AxUnresponsive>() => self.restart_axauditd(full).await?,
             r => r?,
         };
-        let pids: Vec<i64> = dump.elements.keys().map(|k| k.pid).collect();
+        let mut pids: Vec<i64> = dump.elements.keys().map(|k| k.pid).collect();
         self.learn_processes(&pids).await;
+        // Folded, the device listed only Siri, empty, over the screen; ending it brought the
+        // tree back with no visible change (PITFALLS #71). Once per call, and not the same pid
+        // again within the cooldown.
+        let mut ended_siri = None;
+        if let Some(pid) = crate::ax::lone_empty_siri(&dump, |p| self.describe(p).bundle_id)
+            && self.siri_ended.allows(pid, Instant::now())
+        {
+            self.siri_ended.record(pid, Instant::now());
+            tracing::warn!("ui: only an empty Siri (pid {pid}) is listed over the screen; ending it and reading again");
+            match self.session.kill(pid).await {
+                Ok(()) => {
+                    ended_siri = Some(pid);
+                    tokio::time::sleep(SIRI_SETTLE).await;
+                    dump = self.read_ax(AX_TIMEOUT, full, true).await?;
+                    pids = dump.elements.keys().map(|k| k.pid).collect();
+                    self.learn_processes(&pids).await;
+                    tracing::warn!("ui: after ending Siri (pid {pid}), {} elements", dump.elements.len());
+                }
+                Err(e) => tracing::warn!("ui: could not end Siri (pid {pid}): {e:#}"),
+            }
+        }
         // Widget renderers come as applications of their own on the home and lock screens
         // (PITFALLS #60).
         let springboard_only = !dump.applications.is_empty()
@@ -335,6 +362,16 @@ impl Controller {
             screen
         })
         .await?;
+        let mut screen = screen;
+        if let Some(pid) = ended_siri {
+            let done = format!(
+                "ended the empty Siri overlay (pid {pid}) that hid the screen from the accessibility service, and read again"
+            );
+            screen.note = Some(match screen.note.take() {
+                Some(n) => format!("{done}; {n}"),
+                None => done,
+            });
+        }
         self.last_screen = Some(screen.clone());
         Ok(screen)
     }
