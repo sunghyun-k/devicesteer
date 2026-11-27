@@ -93,6 +93,8 @@ const state = {
   keyLog: [] as [string, boolean][],
   /** Touch steps the viewer sent, and whether the mock daemon took each. */
   touchLog: [] as { phase: string; refused: boolean }[],
+  /** Hardware buttons the viewer pressed. */
+  buttonLog: [] as string[],
   /** The device clipboard, and the Mac's as the shell would see it. */
   deviceClipboard: "mock text on the device",
   macClipboard: "mock text on the Mac",
@@ -722,6 +724,7 @@ async function send(cmd: string, a: Record<string, unknown>): Promise<unknown> {
       return {};
     }
     case "button":
+      state.buttonLog.push(String(a.name));
       return {};
     case "keyboard":
       state.keyLog.push([String(a.code), Boolean(a.down)]);
@@ -771,6 +774,11 @@ const mock = {
   /** The check of View > Show Touches, as the page last set or the menu left it. */
   menuShowTouches() {
     return state.menuShowTouches;
+  },
+  /** Hardware buttons the viewer pressed (device bar, Toggle Software Keyboard); reading empties
+   * them. With `session=agent` there should be none: the buttons wait for Take over. */
+  takeButtons() {
+    return state.buttonLog.splice(0);
   },
   /** Key steps (`[code, down]`) the viewer sent; reading empties them. */
   takeKeys() {

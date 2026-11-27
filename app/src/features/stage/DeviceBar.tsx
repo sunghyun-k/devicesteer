@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { send } from "../../device/connection";
+import { t as translate } from "../../i18n/i18n";
 import { useT } from "../../i18n/react";
 import { clock, fileName } from "../../lib/format";
-import { useViewer } from "../../store/viewer";
+import { humanHasDevice, useViewer } from "../../store/viewer";
 import { saveScreenshot, toggleRecording } from "./capture";
+import { showNote } from "./notes";
 import s from "./Bottom.module.css";
 
 const BUTTONS = [
@@ -15,6 +17,16 @@ const BUTTONS = [
   ["volume_down", "i-vol-down", "deviceBar.volumeDown", "deviceBar.volumeDownHelp"],
   ["volume_up", "i-vol-up", "deviceBar.volumeUp", "deviceBar.volumeUpHelp"],
 ] as const;
+
+/** Press a hardware button, unless the agent has the device: the disabled button can't be
+ * clicked, but the session can change between render and click, and this is the one way in. */
+function press(name: string): void {
+  if (!humanHasDevice()) {
+    showNote(translate("session.blockedHint"), { error: true });
+    return;
+  }
+  void send("button", { name }).catch(() => {});
+}
 
 /** A recording's running time, ticking twice a second. */
 function useElapsed(since: number | undefined): string {
@@ -80,6 +92,9 @@ function ShotButton() {
 export function DeviceBar() {
   const t = useT();
   const live = useViewer((v) => v.stage === "live");
+  // Like touches and keys, the hardware buttons wait while the agent has the device; screenshot
+  // and record don't touch it, so they stay.
+  const blocked = useViewer((v) => !humanHasDevice(v));
   return (
     <div id="controls" className={`${s.controls} ${live ? "" : s.away}`}>
       {/* A toolbar, not a field: the hardware buttons, a separator, then screenshot and record, all
@@ -87,7 +102,15 @@ export function DeviceBar() {
       <div id="device-bar" className={s.bar} role="toolbar" aria-label={t("deviceBar.label")}>
         <div className={s.row} role="group" aria-label={t("deviceBar.hardware")}>
           {BUTTONS.map(([name, icon, label, help]) => (
-            <button key={name} className={s.tool} type="button" data-button={name} title={t(help)} onClick={() => void send("button", { name }).catch(() => {})}>
+            <button
+              key={name}
+              className={s.tool}
+              type="button"
+              data-button={name}
+              title={blocked ? t("session.blockedHint") : t(help)}
+              disabled={blocked}
+              onClick={() => press(name)}
+            >
               <Icon name={icon} />
               <span>{t(label)}</span>
             </button>
