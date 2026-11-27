@@ -3,7 +3,7 @@
 
 import { Menu, MenuItem, MenuSeparator } from "../../components/Menu";
 import { useT } from "../../i18n/react";
-import { useViewer } from "../../store/viewer";
+import { humanHasDevice, useViewer } from "../../store/viewer";
 import { getClipboard, keyboardButtonState, sendClipboard, toggleForwarding, toggleSharedClipboard, toggleSoftwareKeyboard } from "./keyboard";
 
 const STATE_KEYS = { on: "keyboard.stateOn", connecting: "keyboard.stateConnecting", paused: "keyboard.statePaused", off: "keyboard.label" } as const;
@@ -12,6 +12,7 @@ export function KeyboardMenu({ className, hidden }: { className: string; hidden:
   const t = useT();
   const forwarding = useViewer((v) => v.keyboard.forwarding);
   const hardware = useViewer((v) => v.keyboard.hardware);
+  const blocked = useViewer((v) => !humanHasDevice(v));
   const state = useViewer(keyboardButtonState);
   const shared = useViewer((v) => v.sharedClipboard);
   const sharedUnsupported = useViewer((v) => v.sharedClipboardUnsupported);
@@ -33,9 +34,9 @@ export function KeyboardMenu({ className, hidden }: { className: string; hidden:
           id="kb-software"
           icon="i-keyboard-down"
           label={t("keyboard.software")}
-          title={t("keyboard.softwareHelp")}
+          title={blocked ? t("session.blockedHint") : t("keyboard.softwareHelp")}
           shortcut={t("keyboard.softwareKey")}
-          disabled={!hardware}
+          disabled={!hardware || blocked}
           onSelect={toggleSoftwareKeyboard}
         />
         <MenuSeparator />

@@ -140,6 +140,11 @@ export function toggleSoftwareKeyboard(): void {
     showNote(t("keyboard.softwareAlone"), { icon: "i-keyboard" });
     return;
   }
+  // A button press like the device bar's: it waits while the agent has the device.
+  if (!humanHasDevice()) {
+    showNote(t("session.blockedHint"), { error: true });
+    return;
+  }
   void send("button", { name: "eject" }).catch(() => {});
 }
 
